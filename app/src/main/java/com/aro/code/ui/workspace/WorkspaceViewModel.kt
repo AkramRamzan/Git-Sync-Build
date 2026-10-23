@@ -142,27 +142,34 @@ class WorkspaceViewModel @Inject constructor(
     fun openAntiGravityDialog() = _uiState.update { it.copy(showAntiGravityDialog = true) }
     fun dismissAntiGravityDialog() = _uiState.update { it.copy(showAntiGravityDialog = false) }
 
-    fun submitGoogleAuthCode(code: String, verifier: String, customClientId: String?) {
+    fun submitGoogleAuthCode(
+        code: String,
+        verifier: String,
+        customClientId: String?,
+        onResult: (Result<Unit>) -> Unit
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            authRepo.exchangeGoogleAuthCode(code, verifier, customClientId)
-                .onSuccess {
-                    _uiState.update {
-                        it.copy(
-                            showAntiGravityDialog = false,
-                            isLoading = false,
-                            statusMessage = "Anti-Gravity Google login successful ✓"
-                        )
-                    }
+            val result = authRepo.exchangeGoogleAuthCode(code, verifier, customClientId)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        showAntiGravityDialog = false,
+                        isLoading = false,
+                        statusMessage = "Anti-Gravity Google login successful ✓"
+                    )
                 }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            statusMessage = "Google login failed: ${e.message}"
-                        )
-                    }
+                onResult(Result.success(Unit))
+            } else {
+                val err = result.exceptionOrNull() ?: Exception("Invalid code")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = "Google login failed: ${err.message}"
+                    )
                 }
+                onResult(Result.failure(err))
+            }
         }
     }
 

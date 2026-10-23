@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.*
@@ -33,18 +34,7 @@ import com.aro.code.auth.PKCEUtil
 import java.net.URLEncoder
 
 /**
- * Unified Anti-Gravity Account Dialog.
- *
- * 1. When NOT signed in:
- *    - Generates PKCE verifier & challenge
- *    - Generates Google Sign-In URL targeting https://antigravity.google/oauth-callback
- *    - Shows "Copy Link" and "Open in Chrome"
- *    - Shows "Paste Code" input field
- *    - "OK / Login" button executes login and permanently persists session
- *
- * 2. When SIGNED IN:
- *    - Shows Active status and persistent login confirmation (no need to log in again)
- *    - Displays "Logout" button to sign out anytime
+ * Unified Anti-Gravity Account Dialog with real-time feedback, toasts, and persistent login.
  */
 @Composable
 fun AntiGravityAccountDialog(
@@ -52,15 +42,17 @@ fun AntiGravityAccountDialog(
     userTokenSnippet: String?,
     defaultClientId: String = "",
     onDismiss: () -> Unit,
-    onSubmitCode: (code: String, verifier: String, customClientId: String?) -> Unit,
+    onSubmitCode: (code: String, verifier: String, customClientId: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onSignOut: () -> Unit
 ) {
     val context = LocalContext.current
     var codeInput by remember { mutableStateOf("") }
     var customClientId by remember { mutableStateOf("") }
     var showClientIdConfig by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var submitError by remember { mutableStateOf<String?>(null) }
 
-    // Generate stable PKCE pair for this dialog session
+    // Stable PKCE pair for this dialog session
     val verifier = remember { PKCEUtil.generateVerifier() }
     val challenge = remember(verifier) { PKCEUtil.generateChallenge(verifier) }
 
@@ -87,7 +79,9 @@ fun AntiGravityAccountDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         icon = {
             Icon(
                 Icons.Default.Bolt,
@@ -222,11 +216,15 @@ fun AntiGravityAccountDialog(
 
                     OutlinedTextField(
                         value = codeInput,
-                        onValueChange = { codeInput = it },
+                        onValueChange = {
+                            codeInput = it
+                            submitError = null
+                        },
                         label = { Text("Paste Code") },
                         placeholder = { Text("4/0A...") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        isError = submitError != null,
                         trailingIcon = {
                             IconButton(onClick = {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
@@ -234,13 +232,47 @@ fun AntiGravityAccountDialog(
                                     clipboard.primaryClipDescription?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true
                                 ) {
                                     val item = clipboard.primaryClip?.getItemAt(0)
-                                    item?.text?.toString()?.let { codeInput = it.trim() }
+                                    item?.text?.toString()?.let {
+                                        codeInput = it.trim()
+                                        submitError = null
+                                    }
                                 }
                             }) {
                                 Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
                             }
                         }
                     )
+
+                    // Error message banner inside dialog
+                    submitError?.let { err ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Invalid Code: $err",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+
+                    if (isSubmitting) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
 
                     // Optional Custom Client ID toggle
                     if (showClientIdConfig) {
@@ -265,19 +297,37 @@ fun AntiGravityAccountDialog(
         },
         confirmButton = {
             if (isSignedIn) {
-                Button(
-                    onClick = onDismiss
-                ) {
+                Button(onClick = onDismiss) {
                     Text("OK")
                 }
             } else {
                 Button(
                     onClick = {
                         val cid = customClientId.ifBlank { null }
-                        onSubmitCode(codeInput.trim(), verifier, cid)
+                        isSubmitting = true
+                        submitError = null
+                        onSubmitCode(codeInput.trim(), verifier, cid) { result ->
+                            isSubmitting = false
+                            if (result.isSuccess) {
+                                Toast.makeText(context, "Anti-Gravity Login Successful! ✓", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            } else {
+                                val err = result.exceptionOrNull()?.message ?: "Invalid code"
+                                submitError = err
+                                Toast.makeText(context, "Invalid Code: $err", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     },
-                    enabled = codeInput.isNotBlank()
+                    enabled = codeInput.isNotBlank() && !isSubmitting
                 ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text("OK / Login")
                 }
             }
@@ -285,7 +335,10 @@ fun AntiGravityAccountDialog(
         dismissButton = {
             if (isSignedIn) {
                 OutlinedButton(
-                    onClick = onSignOut,
+                    onClick = {
+                        onSignOut()
+                        Toast.makeText(context, "Signed out of Anti-Gravity", Toast.LENGTH_SHORT).show()
+                    },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
                     Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -293,7 +346,10 @@ fun AntiGravityAccountDialog(
                     Text("Logout")
                 }
             } else {
-                TextButton(onClick = onDismiss) {
+                TextButton(
+                    onClick = onDismiss,
+                    enabled = !isSubmitting
+                ) {
                     Text("Cancel")
                 }
             }

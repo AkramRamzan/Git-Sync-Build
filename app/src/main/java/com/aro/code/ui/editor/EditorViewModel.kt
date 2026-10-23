@@ -65,6 +65,10 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    fun updateContent(newContent: String) {
+        _uiState.update { it.copy(currentContent = newContent) }
+    }
+
     fun saveFile() {
         val targetPath = _uiState.value.currentPath ?: return
         val content = _uiState.value.currentContent ?: return

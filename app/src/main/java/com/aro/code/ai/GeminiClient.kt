@@ -98,7 +98,7 @@ class GeminiClient @Inject constructor(
 
     suspend fun generate(
         apiKey: String,
-        modelId: String = "gemini-2.0-flash",
+        modelId: String = "gemini-3.8-flash",
         systemPrompt: String,
         userPrompt: String
     ): Result<String> {
@@ -147,7 +147,7 @@ class GeminiClient @Inject constructor(
      */
     fun streamGenerate(
         apiKey: String,
-        modelId: String = "gemini-2.0-flash",
+        modelId: String = "gemini-3.8-flash",
         systemPrompt: String,
         userPrompt: String
     ): Flow<String> = channelFlow {

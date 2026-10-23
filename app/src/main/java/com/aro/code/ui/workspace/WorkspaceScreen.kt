@@ -205,8 +205,8 @@ fun WorkspaceScreen(
                     isSignedIn = state.isGoogleSignedIn,
                     userTokenSnippet = state.googleTokenSnippet,
                     onDismiss = { viewModel.dismissAntiGravityDialog() },
-                    onSubmitCode = { code, verifier, cid ->
-                        viewModel.submitGoogleAuthCode(code, verifier, cid)
+                    onSubmitCode = { code, verifier, cid, onResult ->
+                        viewModel.submitGoogleAuthCode(code, verifier, cid, onResult)
                     },
                     onSignOut = { viewModel.signOutGoogle() }
                 )

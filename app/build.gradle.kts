@@ -25,7 +25,7 @@ android {
         buildConfigField("String", "GOOGLE_CLIENT_ID",
             "\"${project.findProperty("GOOGLE_CLIENT_ID") ?: ""}\"")
         buildConfigField("String", "GEMINI_MODEL_ID",
-            "\"gemini-2.0-flash\"")
+            "\"gemini-3.8-flash\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
