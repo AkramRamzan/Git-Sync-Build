@@ -124,12 +124,12 @@ fun AgentChatScreen(
                 actions = {
                     // New Session Thread (Module 2.3)
                     IconButton(onClick = { viewModel.startNewSession() }) {
-                        Icon(Icons.Default.AddComment, contentDescription = "New Conversation Thread")
+                        Icon(Icons.Default.Add, contentDescription = "New Conversation Thread")
                     }
 
                     // Clear Current History
                     IconButton(onClick = { viewModel.clearSessionHistory() }) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "Clear Session History")
+                        Icon(Icons.Default.Delete, contentDescription = "Clear Session History")
                     }
                 }
             )
