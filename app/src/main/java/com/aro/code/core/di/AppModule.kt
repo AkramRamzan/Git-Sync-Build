@@ -30,8 +30,8 @@ object AppModule {
         }
         install(Logging) { level = LogLevel.HEADERS }
         engine {
-            connectTimeout = 30_000
-            socketTimeout  = 60_000
+            connectTimeout = 15_000
+            socketTimeout  = 30_000
         }
     }
 

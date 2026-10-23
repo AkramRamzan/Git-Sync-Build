@@ -29,7 +29,7 @@ data class ChatMessage(
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
-    val selectedModel: GeminiModel = GeminiModel.FLASH_3_8,
+    val selectedModel: GeminiModel = GeminiModel.FLASH_1_5,
     val attachedFiles: List<AttachedFile> = emptyList(),
     val isLoading: Boolean = false,
     val activeDiffForPreview: DiffPreviewBlock? = null,

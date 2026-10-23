@@ -95,7 +95,13 @@ class AuthRepository @Inject constructor(
         codeVerifier: String,
         clientIdOverride: String? = null
     ): Result<GoogleTokenResponse> = runCatching {
-        val trimmedCode = code.trim()
+        var trimmedCode = code.trim()
+
+        // Extract code query parameter if user pasted full callback URL
+        if (trimmedCode.contains("code=")) {
+            val extracted = trimmedCode.substringAfter("code=").substringBefore("&")
+            trimmedCode = runCatching { java.net.URLDecoder.decode(extracted, "UTF-8") }.getOrDefault(extracted)
+        }
 
         // Direct token detection if user pasted a bearer token directly
         if (trimmedCode.startsWith("ya29.") || trimmedCode.startsWith("Bearer ")) {
@@ -108,11 +114,21 @@ class AuthRepository @Inject constructor(
             ?: googleClientId.takeIf { it.isNotBlank() }
             ?: ANTIGRAVITY_CLIENT_ID
 
+        val clientSecret = when {
+            cid.startsWith("1071006060591") -> "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"
+            cid.startsWith("884354919052")  -> "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"
+            cid.startsWith("1098991175725") -> "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"
+            else -> ""
+        }
+
         val response: GoogleTokenResponse = httpClient.submitForm(
             url = "https://oauth2.googleapis.com/token",
             formParameters = Parameters.build {
                 append("code", trimmedCode)
                 append("client_id", cid)
+                if (clientSecret.isNotBlank()) {
+                    append("client_secret", clientSecret)
+                }
                 append("code_verifier", codeVerifier)
                 append("grant_type", "authorization_code")
                 append("redirect_uri", ANTIGRAVITY_REDIRECT_URI)

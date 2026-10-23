@@ -1,6 +1,8 @@
 package com.aro.code.ai
 
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
@@ -84,7 +87,7 @@ data class GeminiErrorDetail(
 
 /**
  * Module 5 & Anti-Gravity – Gemini API Client.
- * Supports standard generation and Server-Sent Events (SSE) token-by-token streaming.
+ * Supports standard generation, real-time SSE streaming, and instant API key validation.
  */
 @Singleton
 class GeminiClient @Inject constructor(
@@ -96,13 +99,40 @@ class GeminiClient @Inject constructor(
         isLenient = true
     }
 
+    /**
+     * Instantly validate a Gemini API key with Google AI Studio.
+     * Returns Result.success(Unit) if key is active, or Result.failure with error message.
+     */
+    suspend fun validateApiKey(apiKey: String): Result<Unit> = runCatching {
+        val cleanKey = apiKey.filterNot { it.isWhitespace() }
+        if (cleanKey.isBlank()) {
+            error("API key cannot be empty")
+        }
+        val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
+        val response = httpClient.get("$baseUrl?key=$encodedKey") {
+            header("x-goog-api-key", cleanKey)
+        }
+        val rawText = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val errMsg = runCatching {
+                json.decodeFromString<GeminiErrorResponse>(rawText).error.message
+            }.getOrNull()?.ifBlank { null } ?: "HTTP ${response.status.value}: $rawText"
+            error(errMsg)
+        }
+    }
+
+    private fun resolveModel(modelId: String): String {
+        return GeminiModel.fromId(modelId).id
+    }
+
     suspend fun generate(
         apiKey: String,
-        modelId: String = "gemini-3.8-flash",
+        modelId: String = "gemini-1.5-flash",
         systemPrompt: String,
         userPrompt: String
     ): Result<String> {
-        val trimmedKey = apiKey.trim()
+        val cleanKey = apiKey.filterNot { it.isWhitespace() }
+        val targetModel = resolveModel(modelId)
         val combinedPrompt = if (systemPrompt.isNotBlank()) "$systemPrompt\n\n$userPrompt" else userPrompt
         val body = GeminiRequest(
             contents = listOf(
@@ -112,10 +142,28 @@ class GeminiClient @Inject constructor(
             )
         )
 
+        val result = executeGenerateCall(cleanKey, targetModel, body)
+        // If the model was not found or failed with 404, fallback to gemini-1.5-flash
+        if (result.isFailure && targetModel != "gemini-1.5-flash") {
+            val err = result.exceptionOrNull()?.message.orEmpty()
+            if (err.contains("not found", ignoreCase = true) || err.contains("HTTP 404") || err.contains("no longer available", ignoreCase = true)) {
+                return executeGenerateCall(cleanKey, "gemini-1.5-flash", body)
+            }
+        }
+        return result
+    }
+
+    private suspend fun executeGenerateCall(
+        cleanKey: String,
+        model: String,
+        body: GeminiRequest
+    ): Result<String> {
+        val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
         return retryWithBackoff {
             val response = httpClient.post(
-                "$baseUrl/$modelId:generateContent?key=$trimmedKey"
+                "$baseUrl/$model:generateContent?key=$encodedKey"
             ) {
+                header("x-goog-api-key", cleanKey)
                 contentType(ContentType.Application.Json)
                 setBody(body)
             }
@@ -147,11 +195,12 @@ class GeminiClient @Inject constructor(
      */
     fun streamGenerate(
         apiKey: String,
-        modelId: String = "gemini-3.8-flash",
+        modelId: String = "gemini-1.5-flash",
         systemPrompt: String,
         userPrompt: String
     ): Flow<String> = channelFlow {
-        val trimmedKey = apiKey.trim()
+        val cleanKey = apiKey.filterNot { it.isWhitespace() }
+        val targetModel = resolveModel(modelId)
         val combinedPrompt = if (systemPrompt.isNotBlank()) "$systemPrompt\n\n$userPrompt" else userPrompt
         val requestBody = GeminiRequest(
             contents = listOf(
@@ -162,11 +211,14 @@ class GeminiClient @Inject constructor(
         )
 
         var tokenCount = 0
+        var streamSucceeded = false
 
         try {
+            val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
             val statement = httpClient.preparePost(
-                "$baseUrl/$modelId:streamGenerateContent?alt=sse&key=$trimmedKey"
+                "$baseUrl/$targetModel:streamGenerateContent?alt=sse&key=$encodedKey"
             ) {
+                header("x-goog-api-key", cleanKey)
                 contentType(ContentType.Application.Json)
                 setBody(requestBody)
             }
@@ -198,29 +250,38 @@ class GeminiClient @Inject constructor(
                         }
                     }
                 }
-            }
-
-            // If streaming produced no tokens at all, fallback to generate()
-            if (tokenCount == 0) {
-                generate(trimmedKey, modelId, systemPrompt, userPrompt)
-                    .onSuccess { send(it) }
-                    .onFailure { throw it }
+                streamSucceeded = true
             }
         } catch (e: Exception) {
-            // If already sent some tokens, rethrow; otherwise attempt one-shot fallback
+            val msg = e.message.orEmpty()
+            // If model was not found and we haven't sent tokens, fallback to gemini-1.5-flash
+            if (tokenCount == 0 && targetModel != "gemini-1.5-flash" &&
+                (msg.contains("not found", ignoreCase = true) || msg.contains("HTTP 404") || msg.contains("no longer available", ignoreCase = true))) {
+                generate(cleanKey, "gemini-1.5-flash", systemPrompt, userPrompt)
+                    .onSuccess { send(it); return@channelFlow }
+                    .onFailure { throw it }
+            }
+            // If already sent tokens, rethrow; otherwise attempt one-shot fallback
             if (tokenCount == 0) {
-                generate(trimmedKey, modelId, systemPrompt, userPrompt)
+                generate(cleanKey, targetModel, systemPrompt, userPrompt)
                     .onSuccess { send(it) }
                     .onFailure { throw it }
             } else {
                 throw e
             }
         }
+
+        // If streaming completed with 0 tokens and no error thrown, fallback to generate()
+        if (tokenCount == 0 && !streamSucceeded) {
+            generate(cleanKey, targetModel, systemPrompt, userPrompt)
+                .onSuccess { send(it) }
+                .onFailure { throw it }
+        }
     }
 
-    /** Exponential backoff with jitter on 429/503. */
+    /** Exponential backoff on 429 / 503 only. */
     private suspend fun <T> retryWithBackoff(
-        maxAttempts: Int = 3,
+        maxAttempts: Int = 2,
         block: suspend () -> T
     ): Result<T> {
         var lastError: Throwable? = null
@@ -228,9 +289,18 @@ class GeminiClient @Inject constructor(
             runCatching { block() }.onSuccess { return Result.success(it) }
                 .onFailure { e ->
                     lastError = e
-                    val base = (2.0.pow(attempt) * 1000).toLong()
-                    val jitter = Random.nextLong(0, 500)
-                    delay(min(base + jitter, 16_000L))
+                    val msg = e.message.orEmpty()
+                    // Don't retry client errors (400, 401, 403, 404) except 429 rate limit
+                    if (msg.contains("HTTP 4") && !msg.contains("429")) {
+                        return Result.failure(e)
+                    }
+                    if (msg.contains("API key not valid", ignoreCase = true) ||
+                        msg.contains("not found", ignoreCase = true)) {
+                        return Result.failure(e)
+                    }
+                    if (attempt < maxAttempts - 1) {
+                        delay(1200L)
+                    }
                 }
         }
         return Result.failure(lastError ?: RuntimeException("Unknown error"))

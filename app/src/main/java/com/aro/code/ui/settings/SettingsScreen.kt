@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -28,11 +30,13 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
-    // Show snackbar on success or error
+    // Show toast and snackbar on success or error
     LaunchedEffect(state.successMessage, state.errorMessage) {
         val msg = state.successMessage ?: state.errorMessage
         if (msg != null) {
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             snackbarHostState.showSnackbar(msg)
             viewModel.clearMessages()
         }

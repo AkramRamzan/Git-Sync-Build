@@ -15,6 +15,8 @@ jobs:
     name: Gradle Build & Sign
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -48,6 +50,20 @@ jobs:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7
+
+      - name: Publish Direct Download Release
+        if: >
+          github.event.action == 'build-debug' ||
+          github.event.inputs.build_type == 'debug'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes || true
+          git tag -d latest || true
+          git push origin :refs/tags/latest || true
+          gh release create latest app/build/outputs/apk/debug/*.apk \
+            --title "Aro Code Latest Debug APK" \
+            --notes "Direct 1-click download of the latest debug APK. No authentication required."
 
       # ── Release Build ───────────────────────────────────────────────────────
       - name: Decode Release Keystore

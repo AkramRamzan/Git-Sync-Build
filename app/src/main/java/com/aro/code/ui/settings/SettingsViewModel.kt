@@ -18,7 +18,8 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val credentialStore: CredentialStore
+    private val credentialStore: CredentialStore,
+    private val geminiClient: com.aro.code.ai.GeminiClient
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -44,26 +45,41 @@ class SettingsViewModel @Inject constructor(
     // ── Gemini API Key ──────────────────────────────────────────────────────
     fun saveGeminiKey(key: String) {
         viewModelScope.launch {
-            val trimmed = key.trim()
-            if (trimmed.isEmpty()) {
+            val cleanKey = key.filterNot { it.isWhitespace() }
+            if (cleanKey.isEmpty()) {
                 _uiState.update { it.copy(errorMessage = "API key cannot be empty") }
                 return@launch
             }
-            _uiState.update { it.copy(isLoading = true) }
-            runCatching { credentialStore.saveGeminiKey(trimmed) }
-                .onSuccess {
-                    _uiState.update {
-                        it.copy(isLoading = false,
-                            geminiKeyMasked = trimmed.mask(),
-                            successMessage  = "Gemini API key saved ✓")
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, successMessage = null) }
+            val validation = geminiClient.validateApiKey(cleanKey)
+            if (validation.isSuccess) {
+                runCatching { credentialStore.saveGeminiKey(cleanKey) }
+                    .onSuccess {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                geminiKeyMasked = cleanKey.mask(),
+                                successMessage  = "✓ Gemini API Key Valid & Saved!"
+                            )
+                        }
                     }
-                }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(isLoading = false,
-                            errorMessage = "Save failed: ${e.message}")
+                    .onFailure { e ->
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = "Save failed: ${e.message}"
+                            )
+                        }
                     }
+            } else {
+                val err = validation.exceptionOrNull()?.message ?: "Invalid API key"
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "❌ Invalid API Key: $err"
+                    )
                 }
+            }
         }
     }
 
