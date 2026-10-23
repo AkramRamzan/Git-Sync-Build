@@ -79,7 +79,13 @@ android {
                 "META-INF/NOTICE*",
                 "META-INF/*.kotlin_module",
                 "META-INF/INDEX.LIST",
-                "META-INF/io.netty.versions.properties"
+                "META-INF/io.netty.versions.properties",
+                "OSGI-INF/**",
+                "OSGI-INF/l10n/plugin.properties",
+                "plugin.properties",
+                "about.html",
+                "META-INF/ECLIPSE_.*",
+                "META-INF/eclipse.inf"
             )
         }
     }
