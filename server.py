@@ -92,9 +92,24 @@ async def stream_agy_execution(model: str, full_prompt: str):
     Spawns the local agy CLI process in Termux and streams output lines via SSE.
     """
     agy_bin = find_agy_binary()
-    cmd = [agy_bin, "--model", model, "--prompt", full_prompt]
 
-    print(f"\n[Termux Bridge] Executing prompt with model: {model} (binary: {agy_bin})")
+    # Map model IDs to correct agy CLI format
+    # agy requires --effort for non-Gemini models to avoid "invalid model selection" error
+    model_effort_map = {
+        "claude-sonnet-4.6": "high",
+        "claude-opus-4.6":   "high",
+        "gpt-oss-120b":      "medium",
+        "gemini-4-argon":    "high",
+        "gemini-3.8-flash":  None,
+    }
+    effort = model_effort_map.get(model, None)
+
+    # Build command
+    cmd = [agy_bin, "--model", model, "--prompt", full_prompt]
+    if effort:
+        cmd += ["--effort", effort]
+
+    print(f"\n[Termux Bridge] Executing model: {model}, effort: {effort or 'default'} (binary: {agy_bin})")
 
     try:
         process = await asyncio.create_subprocess_exec(
