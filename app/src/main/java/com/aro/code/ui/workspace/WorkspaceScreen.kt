@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import java.io.File
 fun WorkspaceScreen(
     onFileOpen: (String) -> Unit,
     onChatOpen: () -> Unit,
+    onSettingsOpen: () -> Unit,
     viewModel: WorkspaceViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -34,7 +36,10 @@ fun WorkspaceScreen(
                         Icon(Icons.Default.Chat, contentDescription = "AI Chat")
                     }
                     IconButton(onClick = { viewModel.triggerCloudBuild() }) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = "Build")
+                        Icon(Icons.Default.CloudUpload, contentDescription = "Cloud Build")
+                    }
+                    IconButton(onClick = onSettingsOpen) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
@@ -79,16 +84,12 @@ private fun FileRow(file: File, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = file.name,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = "${file.length() / 1024} KB",
+        Text(file.name,
+            style    = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f))
+        Text("${file.length() / 1024} KB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -97,14 +98,10 @@ private fun CloneDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var url by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Clone Repository") },
-        text  = {
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("GitHub HTTPS URL") },
-                singleLine = true
-            )
+        title   = { Text("Clone Repository") },
+        text    = {
+            OutlinedTextField(value = url, onValueChange = { url = it },
+                label = { Text("GitHub HTTPS URL") }, singleLine = true)
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(url) }, enabled = url.isNotBlank()) {
