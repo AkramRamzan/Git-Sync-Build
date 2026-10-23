@@ -89,10 +89,11 @@ dependencies {
     // Core desugaring for java.nio on API < 26
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 
-    // AndroidX Core
+    // AndroidX Core & Material
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle)
+    implementation("com.google.android.material:material:1.12.0")
 
     // Compose BOM
     implementation(platform(libs.compose.bom))
