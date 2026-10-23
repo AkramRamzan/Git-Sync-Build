@@ -90,14 +90,23 @@ async def list_models():
 async def stream_agy_execution(model: str, full_prompt: str):
     """
     Spawns the local agy CLI process in Termux and streams output lines via SSE.
-    --effort flag is NOT supported for Claude / Argon models; only --model + --prompt.
+    agy CLI requires full display names, NOT short IDs.
     """
     agy_bin = find_agy_binary()
 
-    # agy CLI only accepts --model and --prompt; --effort is NOT supported for most models
-    cmd = [agy_bin, "--model", model, "--prompt", full_prompt]
+    # agy CLI requires FULL display names (not short IDs)
+    model_display_name_map = {
+        "gemini-3.8-flash":  "Gemini 3.8 Flash (High)",
+        "claude-sonnet-4.6": "Claude Sonnet 4.6 (Thinking)",
+        "claude-opus-4.6":   "Claude Opus 4.6 (Thinking)",
+        "gpt-oss-120b":      "GPT-OSS 120B (Medium)",
+        "gemini-4-argon":    "Gemini 4 Argon",
+    }
+    agy_model_name = model_display_name_map.get(model, model)
 
-    print(f"\n[Termux Bridge] Executing model: {model} (binary: {agy_bin})")
+    cmd = [agy_bin, "--model", agy_model_name, "--prompt", full_prompt]
+
+    print(f"\n[Termux Bridge] Executing: '{agy_model_name}' (from id: {model})")
 
     try:
         process = await asyncio.create_subprocess_exec(
