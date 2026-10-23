@@ -23,8 +23,8 @@ class SyntaxValidator @Inject constructor() {
         withContext(Dispatchers.Default) {
             try {
                 validateWithTreeSitter(source, language)
-            } catch (e: UnsatisfiedLinkError) {
-                // Native lib not loaded in unit-test context – use fallback
+            } catch (e: Throwable) {
+                // Native lib or grammar not loaded in current environment – use fallback
                 fallbackBracketCheck(source)
             }
         }

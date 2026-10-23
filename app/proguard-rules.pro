@@ -13,8 +13,9 @@
 -keepclasseswithmembers class **$serializer { *; }
 -keep @kotlinx.serialization.Serializable class * { *; }
 
-# Tree-Sitter JNI
+# Tree-Sitter / Nikel JNI
 -keep class io.github.treesitter.** { *; }
+-keep class io.github.g00fybuddy2.** { *; }
 -keepclasseswithmembernames class * { native <methods>; }
 
 # Hilt
