@@ -1,5 +1,6 @@
 package com.aro.code.ui.navigation
 
+import android.util.Base64
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -10,13 +11,15 @@ import com.aro.code.ui.chat.AgentChatScreen
 import com.aro.code.ui.editor.CodeEditorScreen
 import com.aro.code.ui.settings.SettingsScreen
 import com.aro.code.ui.workspace.WorkspaceScreen
-import java.net.URLEncoder
 
 sealed class Screen(val route: String) {
     object Workspace : Screen("workspace")
     object Editor    : Screen("editor/{filePath}") {
         fun createRoute(filePath: String): String {
-            val encoded = runCatching { URLEncoder.encode(filePath, "UTF-8") }.getOrDefault(filePath)
+            val encoded = Base64.encodeToString(
+                filePath.toByteArray(Charsets.UTF_8),
+                Base64.URL_SAFE or Base64.NO_WRAP
+            )
             return "editor/$encoded"
         }
     }
@@ -42,9 +45,14 @@ fun AroCodeNavGraph() {
             route = Screen.Editor.route,
             arguments = listOf(navArgument("filePath") { type = NavType.StringType })
         ) { backStack ->
-            val path = backStack.arguments?.getString("filePath") ?: ""
+            val rawParam = backStack.arguments?.getString("filePath") ?: ""
+            val decodedPath = runCatching {
+                val bytes = Base64.decode(rawParam, Base64.URL_SAFE or Base64.NO_WRAP)
+                String(bytes, Charsets.UTF_8)
+            }.getOrDefault(rawParam)
+
             CodeEditorScreen(
-                filePath = path,
+                filePath = decodedPath,
                 onBack = { navController.popBackStack() }
             )
         }

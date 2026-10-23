@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aro.code.auth.AuthRepository
 import com.aro.code.auth.PKCEUtil
 import java.net.URLEncoder
 
@@ -36,7 +37,7 @@ import java.net.URLEncoder
  *
  * 1. When NOT signed in:
  *    - Generates PKCE verifier & challenge
- *    - Generates Google Sign-In URL
+ *    - Generates Google Sign-In URL targeting https://antigravity.google/oauth-callback
  *    - Shows "Copy Link" and "Open in Chrome"
  *    - Shows "Paste Code" input field
  *    - "OK / Login" button executes login and permanently persists session
@@ -64,13 +65,15 @@ fun AntiGravityAccountDialog(
     val challenge = remember(verifier) { PKCEUtil.generateChallenge(verifier) }
 
     val effectiveClientId = remember(customClientId, defaultClientId) {
-        customClientId.ifBlank { defaultClientId.ifBlank { "YOUR_CLIENT_ID" } }
+        customClientId.ifBlank {
+            defaultClientId.ifBlank { AuthRepository.ANTIGRAVITY_CLIENT_ID }
+        }
     }
 
     val authUrl = remember(effectiveClientId, challenge) {
         val cid = URLEncoder.encode(effectiveClientId, "UTF-8")
-        val red = URLEncoder.encode("urn:ietf:wg:oauth:2.0:oob", "UTF-8")
-        val scope = URLEncoder.encode("openid email profile", "UTF-8")
+        val red = URLEncoder.encode(AuthRepository.ANTIGRAVITY_REDIRECT_URI, "UTF-8")
+        val scope = URLEncoder.encode(AuthRepository.ANTIGRAVITY_SCOPES, "UTF-8")
         val chall = URLEncoder.encode(challenge, "UTF-8")
         "https://accounts.google.com/o/oauth2/v2/auth?" +
                 "client_id=$cid" +
@@ -165,7 +168,7 @@ fun AntiGravityAccountDialog(
                             text = authUrl,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            maxLines = 3,
+                            maxLines = 4,
                             modifier = Modifier.padding(8.dp)
                         )
                     }

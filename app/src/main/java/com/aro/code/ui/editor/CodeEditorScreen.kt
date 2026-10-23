@@ -28,14 +28,12 @@ fun CodeEditorScreen(
 
     LaunchedEffect(filePath) {
         if (filePath.isNotBlank()) {
-            val decodedPath = runCatching { URLDecoder.decode(filePath, "UTF-8") }.getOrDefault(filePath)
-            viewModel.loadFile(decodedPath)
+            viewModel.loadFile(filePath)
         }
     }
 
     val displayTitle = remember(filePath) {
-        val decoded = runCatching { URLDecoder.decode(filePath, "UTF-8") }.getOrDefault(filePath)
-        decoded.substringAfterLast('/').substringAfterLast(':')
+        filePath.substringAfterLast('/').substringAfterLast(':')
     }
 
     Column(modifier = Modifier.fillMaxSize()) {

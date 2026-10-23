@@ -50,7 +50,7 @@ data class GoogleTokenResponse(
 /**
  * Module 2 & Anti-Gravity Authentication Repository.
  * Handles:
- * 1. Web-based Google OAuth via PKCE + Out-of-Band (urn:ietf:wg:oauth:2.0:oob).
+ * 1. Web-based Google OAuth via PKCE + Anti-Gravity Callback (https://antigravity.google/oauth-callback).
  * 2. Credential Manager Google Sign-In.
  * 3. GitHub Device Flow.
  */
@@ -62,19 +62,28 @@ class AuthRepository @Inject constructor(
     @Named("github_client_id") private val githubClientId: String,
     @Named("google_client_id") private val googleClientId: String
 ) {
-    // ── Anti-Gravity Google Web OAuth (PKCE + OOB) ───────────────────────────
+    companion object {
+        const val ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+        const val ANTIGRAVITY_REDIRECT_URI = "https://antigravity.google/oauth-callback"
+        const val ANTIGRAVITY_SCOPES = "openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/aicode"
+    }
+
+    // ── Anti-Gravity Google Web OAuth (PKCE + https://antigravity.google/oauth-callback) ──
     fun createGoogleAuthUrl(codeChallenge: String, clientIdOverride: String? = null): String {
         val cid = clientIdOverride?.takeIf { it.isNotBlank() }
             ?: googleClientId.takeIf { it.isNotBlank() }
-            ?: githubClientId // fallback placeholder
+            ?: ANTIGRAVITY_CLIENT_ID
+
+        val encodedCid = URLEncoder.encode(cid, "UTF-8")
+        val encodedRedirect = URLEncoder.encode(ANTIGRAVITY_REDIRECT_URI, "UTF-8")
+        val encodedScope = URLEncoder.encode(ANTIGRAVITY_SCOPES, "UTF-8")
         val encodedChallenge = URLEncoder.encode(codeChallenge, "UTF-8")
-        val redirectUri = URLEncoder.encode("urn:ietf:wg:oauth:2.0:oob", "UTF-8")
-        val scope = URLEncoder.encode("openid email profile", "UTF-8")
+
         return "https://accounts.google.com/o/oauth2/v2/auth?" +
-                "client_id=$cid" +
-                "&redirect_uri=$redirectUri" +
+                "client_id=$encodedCid" +
+                "&redirect_uri=$encodedRedirect" +
                 "&response_type=code" +
-                "&scope=$scope" +
+                "&scope=$encodedScope" +
                 "&code_challenge=$encodedChallenge" +
                 "&code_challenge_method=S256" +
                 "&access_type=offline" +
@@ -87,6 +96,8 @@ class AuthRepository @Inject constructor(
         clientIdOverride: String? = null
     ): Result<GoogleTokenResponse> = runCatching {
         val trimmedCode = code.trim()
+
+        // Direct token detection if user pasted a bearer token directly
         if (trimmedCode.startsWith("ya29.") || trimmedCode.startsWith("Bearer ")) {
             val directToken = trimmedCode.removePrefix("Bearer ").trim()
             store.saveGoogleTokens(accessToken = directToken, refreshToken = null, idToken = null)
@@ -95,7 +106,7 @@ class AuthRepository @Inject constructor(
 
         val cid = clientIdOverride?.takeIf { it.isNotBlank() }
             ?: googleClientId.takeIf { it.isNotBlank() }
-            ?: githubClientId
+            ?: ANTIGRAVITY_CLIENT_ID
 
         val response: GoogleTokenResponse = httpClient.submitForm(
             url = "https://oauth2.googleapis.com/token",
@@ -104,7 +115,7 @@ class AuthRepository @Inject constructor(
                 append("client_id", cid)
                 append("code_verifier", codeVerifier)
                 append("grant_type", "authorization_code")
-                append("redirect_uri", "urn:ietf:wg:oauth:2.0:oob")
+                append("redirect_uri", ANTIGRAVITY_REDIRECT_URI)
             }
         ).body()
 
@@ -124,7 +135,7 @@ class AuthRepository @Inject constructor(
     // ── Google Credential Manager (Native Fallback) ─────────────────────────
     suspend fun signInWithGoogle(): Result<String> = runCatching {
         val credentialManager = CredentialManager.create(context)
-        val cid = googleClientId.takeIf { it.isNotBlank() } ?: githubClientId
+        val cid = googleClientId.takeIf { it.isNotBlank() } ?: ANTIGRAVITY_CLIENT_ID
         val googleIdOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false)
             .setServerClientId(cid)

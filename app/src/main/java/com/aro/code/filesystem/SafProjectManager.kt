@@ -28,7 +28,7 @@ data class ProjectNode(
 /**
  * Module 2 – Storage Access Framework (SAF) Project Manager.
  * Handles directory picking, persistent permissions, async tree scanning,
- * and atomic read/write operations for project files.
+ * and crash-proof atomic read/write operations for project files.
  */
 @Singleton
 class SafProjectManager @Inject constructor(
@@ -42,8 +42,8 @@ class SafProjectManager @Inject constructor(
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         try {
             context.contentResolver.takePersistableUriPermission(uri, flags)
-        } catch (_: SecurityException) {
-            // Already persisted or not supported by provider
+        } catch (_: Exception) {
+            // Permission grant may already exist or provider might not support persist
         }
     }
 
@@ -52,6 +52,7 @@ class SafProjectManager @Inject constructor(
      */
     suspend fun scanSafTree(treeUri: Uri, maxDepth: Int = 4): List<ProjectNode> =
         withContext(Dispatchers.IO) {
+            takePersistableUriPermission(treeUri)
             val rootDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext emptyList()
             scanDocumentDirectory(rootDoc, level = 0, currentPath = rootDoc.name ?: "Project", maxDepth = maxDepth)
         }
@@ -67,7 +68,6 @@ class SafProjectManager @Inject constructor(
         val files = dir.listFiles()
         val nodes = mutableListOf<ProjectNode>()
 
-        // Directories first, then files sorted by name
         val sorted = files.sortedWith(compareBy({ !it.isDirectory }, { it.name?.lowercase() ?: "" }))
 
         for (item in sorted) {
@@ -158,15 +158,42 @@ class SafProjectManager @Inject constructor(
     }
 
     /**
-     * Read text from either a SAF Uri or a local File.
+     * Read text from either a SAF Uri or a local File with multi-tier fallback.
      */
     suspend fun readText(uriStringOrPath: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             if (uriStringOrPath.startsWith("content://")) {
                 val uri = Uri.parse(uriStringOrPath)
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader(Charsets.UTF_8).readText()
-                } ?: error("Failed to open content stream")
+
+                // Strategy 1: ContentResolver stream
+                val streamContent = runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.bufferedReader(Charsets.UTF_8).readText()
+                    }
+                }.getOrNull()
+
+                if (streamContent != null) {
+                    return@runCatching streamContent
+                }
+
+                // Strategy 2: Physical /storage/emulated/0 fallback for primary storage
+                val physicalFile = resolvePhysicalFileFromUri(uriStringOrPath)
+                if (physicalFile != null && physicalFile.exists() && physicalFile.canRead()) {
+                    return@runCatching physicalFile.readText(Charsets.UTF_8)
+                }
+
+                // Strategy 3: DocumentFile wrapper
+                val doc = DocumentFile.fromSingleUri(context, uri)
+                if (doc != null && doc.canRead()) {
+                    val docStreamContent = context.contentResolver.openInputStream(doc.uri)?.use { stream ->
+                        stream.bufferedReader(Charsets.UTF_8).readText()
+                    }
+                    if (docStreamContent != null) {
+                        return@runCatching docStreamContent
+                    }
+                }
+
+                error("Failed to read content from: $uriStringOrPath")
             } else {
                 val file = File(uriStringOrPath)
                 file.readText(Charsets.UTF_8)
@@ -182,10 +209,29 @@ class SafProjectManager @Inject constructor(
             runCatching {
                 if (uriStringOrPath.startsWith("content://")) {
                     val uri = Uri.parse(uriStringOrPath)
-                    context.contentResolver.openOutputStream(uri, "rwt")?.use { out ->
-                        out.write(content.toByteArray(Charsets.UTF_8))
-                        out.flush()
-                    } ?: error("Failed to open output stream for writing")
+
+                    // Strategy 1: ContentResolver output stream
+                    val streamWritten = runCatching {
+                        context.contentResolver.openOutputStream(uri, "rwt")?.use { out ->
+                            out.write(content.toByteArray(Charsets.UTF_8))
+                            out.flush()
+                        }
+                        true
+                    }.getOrDefault(false)
+
+                    if (streamWritten) return@runCatching Unit
+
+                    // Strategy 2: Physical /storage/emulated/0 atomic write fallback
+                    val physicalFile = resolvePhysicalFileFromUri(uriStringOrPath)
+                    if (physicalFile != null) {
+                        physicalFile.parentFile?.mkdirs()
+                        val tmp = File(physicalFile.parent, ".tmp_${physicalFile.name}")
+                        tmp.writeText(content, Charsets.UTF_8)
+                        Files.move(tmp.toPath(), physicalFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                        return@runCatching Unit
+                    }
+
+                    error("Failed to write content to: $uriStringOrPath")
                 } else {
                     val file = File(uriStringOrPath)
                     file.parentFile?.mkdirs()
@@ -196,4 +242,19 @@ class SafProjectManager @Inject constructor(
                 Unit
             }
         }
+
+    private fun resolvePhysicalFileFromUri(uriString: String): File? {
+        val decoded = Uri.decode(uriString)
+        val docPattern = "/document/primary:"
+        val treePattern = "/tree/primary:"
+
+        val relative = when {
+            decoded.contains(docPattern) -> decoded.substringAfter(docPattern)
+            decoded.contains(treePattern) -> decoded.substringAfter(treePattern)
+            else -> null
+        } ?: return null
+
+        val candidate = File("/storage/emulated/0", relative)
+        return if (candidate.exists()) candidate else null
+    }
 }
