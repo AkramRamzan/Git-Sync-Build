@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Anti-Gravity Termux Bridge Server (v2.0)
+Anti-Gravity Termux Bridge Server (v2.1)
 Allows Aro Code (Android App) to execute Anti-Gravity models:
-- Gemini 3.8 Flash
+- Gemini 3.8 Flash (High)
 - Claude Sonnet 4.6 (Thinking)
 - Claude Opus 4.6 (Thinking)
 - GPT-OSS 120B (Medium)
@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.0")
+app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.1")
 
 # Enable CORS for local network and webview
 app.add_middleware(
@@ -64,7 +64,7 @@ async def health_check():
     agy_bin = find_agy_binary()
     return {
         "status": "ok",
-        "engine": "Anti-Gravity Termux Bridge v2.0",
+        "engine": "Anti-Gravity Termux Bridge v2.1",
         "agy_binary": agy_bin,
         "available_models": [
             "gemini-3.8-flash",
@@ -90,47 +90,61 @@ async def list_models():
 async def stream_agy_execution(model: str, full_prompt: str):
     """
     Spawns the local agy CLI process in Termux and streams output lines via SSE.
-    agy CLI requires full display names, NOT short IDs.
+    Uses stdin piping to completely bypass Linux command-line ARG_MAX limits.
     """
     agy_bin = find_agy_binary()
 
-    # agy CLI requires FULL display names (not short IDs)
-    model_display_name_map = {
-        "gemini-3.8-flash":  "Gemini 3.8 Flash (High)",
-        "claude-sonnet-4.6": "Claude Sonnet 4.6 (Thinking)",
-        "claude-opus-4.6":   "Claude Opus 4.6 (Thinking)",
-        "gpt-oss-120b":      "GPT-OSS 120B (Medium)",
-        "gemini-4-argon":    "Gemini 4 Argon",
+    # Exact agy internal CLI model identifiers
+    model_id_map = {
+        "gemini-3.8-flash":  "gemini-3.8-flash-high",
+        "claude-sonnet-4.6": "claude-sonnet-4-6",
+        "claude-opus-4.6":   "claude-opus-4-6-thinking",
+        "gpt-oss-120b":      "gpt-oss-120b-medium",
+        "gemini-4-argon":    "gemini-3.8-flash-high",
     }
-    agy_model_name = model_display_name_map.get(model, model)
+    agy_model_name = model_id_map.get(model, model)
 
-    cmd = [agy_bin, "--model", agy_model_name, "--prompt", full_prompt]
+    # Use stdin piping with --input-format text to bypass ARG_MAX
+    cmd = [
+        agy_bin,
+        "--model", agy_model_name,
+        "--dangerously-skip-permissions",
+        "--input-format", "text"
+    ]
 
-    print(f"\n[Termux Bridge] Executing: '{agy_model_name}' (from id: {model})")
+    print(f"\n[Termux Bridge] Executing model: '{agy_model_name}' (stdin prompt length: {len(full_prompt)} chars)")
 
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+        # Pipe full prompt through stdin
+        process.stdin.write(full_prompt.encode("utf-8"))
+        await process.stdin.drain()
+        process.stdin.close()
+        await process.stdin.wait_closed()
     except Exception as e:
-        err_msg = f"⚠️ Error launching '{agy_bin}': {str(e)}. Please ensure agy CLI is installed in Termux ('curl -fsSL https://antigravity.google/install.sh | bash')."
+        err_msg = f"⚠️ Error launching '{agy_bin}': {str(e)}."
         print(f"[Termux Bridge Error] {err_msg}")
         yield f"data: {json.dumps({'token': err_msg})}\n\n"
         yield "data: [DONE]\n\n"
         return
 
+    token_count = 0
     # Stream stdout tokens in real-time
     while True:
         line = await process.stdout.readline()
         if not line:
             break
         text = line.decode("utf-8", errors="replace")
+        token_count += 1
         yield f"data: {json.dumps({'token': text})}\n\n"
 
     stderr_output = await process.stderr.read()
-    if stderr_output and process.returncode != 0:
+    if stderr_output and (token_count == 0 or process.returncode != 0):
         err_text = stderr_output.decode("utf-8", errors="replace").strip()
         if err_text:
             print(f"[Termux Bridge Stderr] {err_text}")
@@ -156,8 +170,9 @@ async def chat_stream(req: ChatRequest):
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*55)
-    print("⚡ Anti-Gravity Termux Bridge Server Started!")
+    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.1)!")
     print("📍 Host: http://0.0.0.0:8000 (accessible via 127.0.0.1:8000)")
+    print("🚀 Stdin stream mode enabled: No file or prompt size limits!")
     print("📱 Aro Code app will automatically connect to this URL.")
     print("="*55 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
