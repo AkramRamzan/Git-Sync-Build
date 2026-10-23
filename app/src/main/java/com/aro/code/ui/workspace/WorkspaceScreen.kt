@@ -23,7 +23,7 @@ import com.aro.code.ui.auth.AntiGravityAccountDialog
 @Composable
 fun WorkspaceScreen(
     onFileOpen: (String) -> Unit,
-    onChatOpen: () -> Unit,
+    onChatOpen: (engine: String) -> Unit,
     onSettingsOpen: () -> Unit,
     viewModel: WorkspaceViewModel = hiltViewModel()
 ) {
@@ -116,9 +116,19 @@ fun WorkspaceScreen(
                         Icon(Icons.Default.FolderOpen, contentDescription = "Open Project Folder")
                     }
 
-                    // AI Agent Chat Drawer / Screen
-                    IconButton(onClick = onChatOpen) {
-                        Icon(Icons.Default.Chat, contentDescription = "Anti-Gravity AI Chat")
+                    // Anti-Gravity Autonomous Agent (⚡)
+                    IconButton(onClick = { onChatOpen("antigravity") }) {
+                        Icon(
+                            Icons.Default.Bolt,
+                            contentDescription = "Anti-Gravity Autonomous Agent",
+                            tint = if (state.isGoogleSignedIn) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Gemini AI Chat (💬)
+                    IconButton(onClick = { onChatOpen("gemini") }) {
+                        Icon(Icons.Default.Chat, contentDescription = "Gemini AI Chat")
                     }
 
                     // Cloud Build Trigger
@@ -266,7 +276,7 @@ fun WorkspaceScreen(
                     isSignedIn = state.isGoogleSignedIn,
                     userTokenSnippet = state.googleTokenSnippet,
                     onDismiss = { viewModel.dismissAntiGravityDialog() },
-                    onOpenChat = onChatOpen,
+                    onOpenChat = { onChatOpen("antigravity") },
                     onOpenFolder = { directoryPickerLauncher.launch(null) },
                     onSubmitCode = { code, verifier, cid, onResult ->
                         viewModel.submitGoogleAuthCode(code, verifier, cid, onResult)

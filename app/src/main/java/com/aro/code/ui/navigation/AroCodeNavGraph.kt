@@ -23,7 +23,9 @@ sealed class Screen(val route: String) {
             return "editor/$encoded"
         }
     }
-    object Chat     : Screen("chat")
+    object Chat     : Screen("chat?engine={engine}") {
+        fun createRoute(engine: String = "antigravity"): String = "chat?engine=$engine"
+    }
     object Settings : Screen("settings")
 }
 
@@ -36,7 +38,7 @@ fun AroCodeNavGraph() {
         composable(Screen.Workspace.route) {
             WorkspaceScreen(
                 onFileOpen = { path -> navController.navigate(Screen.Editor.createRoute(path)) },
-                onChatOpen = { navController.navigate(Screen.Chat.route) },
+                onChatOpen = { engine -> navController.navigate(Screen.Chat.createRoute(engine)) },
                 onSettingsOpen = { navController.navigate(Screen.Settings.route) }
             )
         }
@@ -57,8 +59,23 @@ fun AroCodeNavGraph() {
             )
         }
 
-        composable(Screen.Chat.route) {
+        composable(
+            route = Screen.Chat.route,
+            arguments = listOf(
+                navArgument("engine") {
+                    type = NavType.StringType
+                    defaultValue = "antigravity"
+                }
+            )
+        ) { backStack ->
+            val engineStr = backStack.arguments?.getString("engine") ?: "antigravity"
+            val engine = if (engineStr.equals("gemini", ignoreCase = true)) {
+                com.aro.code.ui.chat.ChatEngine.GEMINI
+            } else {
+                com.aro.code.ui.chat.ChatEngine.ANTIGRAVITY
+            }
             AgentChatScreen(
+                initialEngine = engine,
                 onBack = { navController.popBackStack() }
             )
         }

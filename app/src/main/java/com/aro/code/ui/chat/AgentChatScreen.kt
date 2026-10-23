@@ -18,9 +18,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,11 +36,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aro.code.ai.DiffPreviewBlock
 import com.aro.code.ai.GeminiModel
+import com.aro.code.ui.auth.AntiGravityAccountDialog
 import com.aro.code.ui.editor.DiffPreviewDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentChatScreen(
+    initialEngine: ChatEngine = ChatEngine.ANTIGRAVITY,
     onBack: (() -> Unit)? = null,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
@@ -45,6 +51,10 @@ fun AgentChatScreen(
     var input by remember { mutableStateOf("") }
     var showModelMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    LaunchedEffect(initialEngine) {
+        viewModel.selectEngine(initialEngine)
+    }
 
     // File picker launcher for text files
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -70,22 +80,39 @@ fun AgentChatScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("AI Agent", style = MaterialTheme.typography.titleMedium)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { showModelMenu = true }
-                        ) {
+                        if (state.engine == ChatEngine.ANTIGRAVITY) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Anti-Gravity Agent", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
                             Text(
-                                text = state.selectedModel.displayName,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
+                                text = if (state.isAntiGravitySignedIn) "Connected (${state.antiGravityTokenSnippet?.take(10)}••••)" else "Not signed in · Tap to connect",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (state.isAntiGravitySignedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
-                            Icon(
-                                Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Switch model",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Chat, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Gemini AI Chat", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable { showModelMenu = true }
+                            ) {
+                                Text(
+                                    text = state.selectedModel.displayName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Switch model",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
 
                         DropdownMenu(
@@ -124,6 +151,15 @@ fun AgentChatScreen(
                     }
                 },
                 actions = {
+                    if (state.engine == ChatEngine.ANTIGRAVITY) {
+                        IconButton(onClick = { viewModel.openAuthDialog() }) {
+                            Icon(
+                                Icons.Default.Bolt,
+                                contentDescription = "Anti-Gravity Account",
+                                tint = if (state.isAntiGravitySignedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     // New Session Thread (Module 2.3)
                     IconButton(onClick = { viewModel.startNewSession() }) {
                         Icon(Icons.Default.Add, contentDescription = "New Conversation Thread")
@@ -142,6 +178,124 @@ fun AgentChatScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
+            // ── Primary Engine Selector (Anti-Gravity Agent vs Gemini Chat) ──
+            TabRow(
+                selectedTabIndex = if (state.engine == ChatEngine.ANTIGRAVITY) 0 else 1,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                Tab(
+                    selected = state.engine == ChatEngine.ANTIGRAVITY,
+                    onClick = { viewModel.selectEngine(ChatEngine.ANTIGRAVITY) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Anti-Gravity Agent", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                )
+                Tab(
+                    selected = state.engine == ChatEngine.GEMINI,
+                    onClick = { viewModel.selectEngine(ChatEngine.GEMINI) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Gemini Chat", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                )
+            }
+
+            // Mode specific banner
+            if (state.engine == ChatEngine.ANTIGRAVITY) {
+                if (state.isAntiGravitySignedIn) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Connected via Google OAuth · Autonomous Workspace Tools Active",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    Icons.Default.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Anti-Gravity login required",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                            TextButton(
+                                onClick = { viewModel.openAuthDialog() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("Sign In", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "Google AI Studio Mode · Model: ${state.selectedModel.displayName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        TextButton(
+                            onClick = { showModelMenu = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text("Switch Model", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -215,7 +369,14 @@ fun AgentChatScreen(
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    placeholder = { Text("Ask agent or describe code change…") },
+                    placeholder = {
+                        Text(
+                            if (state.engine == ChatEngine.ANTIGRAVITY)
+                                "Instruct Anti-Gravity agent (fix bug, edit file)..."
+                            else
+                                "Ask Gemini a question or explain code..."
+                        )
+                    },
                     modifier = Modifier.weight(1f),
                     maxLines = 4
                 )
@@ -242,6 +403,19 @@ fun AgentChatScreen(
             diff = diff,
             onApply = { viewModel.applyDiff(it) },
             onDismiss = { viewModel.dismissDiffPreview() }
+        )
+    }
+
+    // Anti-Gravity Google Account Dialog
+    if (state.showAuthDialog) {
+        AntiGravityAccountDialog(
+            isSignedIn = state.isAntiGravitySignedIn,
+            userTokenSnippet = state.antiGravityTokenSnippet,
+            onDismiss = { viewModel.dismissAuthDialog() },
+            onSubmitCode = { code, verifier, cid, onResult ->
+                viewModel.submitGoogleAuthCode(code, verifier, cid, onResult)
+            },
+            onSignOut = { viewModel.signOutGoogle() }
         )
     }
 }

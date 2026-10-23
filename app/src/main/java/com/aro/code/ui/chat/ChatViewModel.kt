@@ -30,6 +30,11 @@ data class ChatMessage(
     val isStreaming: Boolean = false
 )
 
+enum class ChatEngine {
+    ANTIGRAVITY,
+    GEMINI
+}
+
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val selectedModel: GeminiModel = GeminiModel.FLASH_1_5,
@@ -38,7 +43,11 @@ data class ChatUiState(
     val activeDiffForPreview: DiffPreviewBlock? = null,
     val error: String? = null,
     val statusMessage: String? = null,
-    val sessionId: String = ""
+    val sessionId: String = "",
+    val engine: ChatEngine = ChatEngine.ANTIGRAVITY,
+    val isAntiGravitySignedIn: Boolean = false,
+    val antiGravityTokenSnippet: String? = null,
+    val showAuthDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -54,31 +63,39 @@ class ChatViewModel @Inject constructor(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private var currentSessionId: String = ""
 
-    private val systemPrompt = """
-        You are an expert Android developer assistant embedded in the Aro Code IDE.
-        You can inspect provided files and suggest edits.
-        When modifying code, respond with clear diff blocks in either format:
+    private val antiGravitySystemPrompt = """
+        You are Google Anti-Gravity Agent, an autonomous software development agent embedded in the Aro Code IDE.
+        You have direct access to analyze workspace files and output production modifications.
         
+        When proposing code changes, you must ALWAYS provide precise file diff blocks in the format:
         FILE: <path/to/File.kt>
         <<<<<<< SEARCH
         <exact original lines>
         =======
         <exact replacement lines>
         >>>>>>> REPLACE
-        
-        OR standard markdown diff:
-        ```diff
-        --- a/<path/to/File.kt>
-        +++ b/<path/to/File.kt>
-        @@ -line,len +line,len @@
-        - <removed line>
-        + <added line>
-        ```
-        
-        Keep explanations concise and focused on high-quality production Kotlin/Java/XML code.
+
+        Keep explanations concise, professional, and focus on production Kotlin/Java/XML/Gradle code.
+    """.trimIndent()
+
+    private val geminiSystemPrompt = """
+        You are Gemini Developer Assistant inside Aro Code IDE.
+        You help developers with coding questions, algorithms, syntax, and general guidance.
     """.trimIndent()
 
     init {
+        // Monitor Anti-Gravity OAuth sign-in state
+        viewModelScope.launch {
+            credentialStore.googleAccessToken.collect { token ->
+                _uiState.update {
+                    it.copy(
+                        isAntiGravitySignedIn = !token.isNullOrBlank(),
+                        antiGravityTokenSnippet = token
+                    )
+                }
+            }
+        }
+
         viewModelScope.launch {
             val savedModelId = credentialStore.geminiModel.firstOrNull()
             if (savedModelId != null) {
@@ -140,6 +157,56 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(selectedModel = model) }
         viewModelScope.launch {
             credentialStore.saveGeminiModel(model.id)
+        }
+    }
+
+    fun selectEngine(engine: ChatEngine) {
+        _uiState.update { it.copy(engine = engine, error = null) }
+    }
+
+    fun openAuthDialog() = _uiState.update { it.copy(showAuthDialog = true) }
+    fun dismissAuthDialog() = _uiState.update { it.copy(showAuthDialog = false) }
+
+    fun submitGoogleAuthCode(
+        code: String,
+        verifier: String,
+        customClientId: String?,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val result = authRepo.exchangeGoogleAuthCode(code, verifier, customClientId)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        showAuthDialog = false,
+                        isLoading = false,
+                        statusMessage = "Anti-Gravity Agent connected ✓"
+                    )
+                }
+                onResult(Result.success(Unit))
+            } else {
+                val err = result.exceptionOrNull() ?: Exception("Invalid code")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = "Anti-Gravity login failed: ${err.message}"
+                    )
+                }
+                onResult(Result.failure(err))
+            }
+        }
+    }
+
+    fun signOutGoogle() {
+        viewModelScope.launch {
+            credentialStore.clearGoogleTokens()
+            _uiState.update {
+                it.copy(
+                    showAuthDialog = false,
+                    statusMessage = "Signed out of Anti-Gravity"
+                )
+            }
         }
     }
 
@@ -237,22 +304,41 @@ class ChatViewModel @Inject constructor(
                 chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
             }
 
-            val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
-            val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
+            val currentEngine = _uiState.value.engine
+            val authKey: String
+            val activeSystemPrompt: String
 
-            val key = apiKey ?: googleToken ?: run {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = "No API key or Anti-Gravity account set. Please login with Anti-Gravity or set a Gemini API key in Settings."
-                    )
+            if (currentEngine == ChatEngine.ANTIGRAVITY) {
+                val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
+                if (googleToken == null) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Anti-Gravity account not connected. Please tap 'Sign In' to login with Google Anti-Gravity."
+                        )
+                    }
+                    return@launch
                 }
-                return@launch
+                authKey = googleToken
+                activeSystemPrompt = antiGravitySystemPrompt
+            } else {
+                val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
+                if (apiKey == null) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "No Gemini API key set. Please configure your Gemini API Key in Settings (⚙)."
+                        )
+                    }
+                    return@launch
+                }
+                authKey = apiKey
+                activeSystemPrompt = geminiSystemPrompt
             }
 
             // Module 3.2 & 3.3 — Dynamic Capability Verification & Model Resolution
             val effectiveModelId = runCatching {
-                geminiClient.getValidatedModel(key, activeModel)
+                geminiClient.getValidatedModel(authKey, activeModel)
             }.getOrDefault(activeModel.id)
 
             if (effectiveModelId != activeModel.id) {
@@ -282,12 +368,13 @@ class ChatViewModel @Inject constructor(
             val responseAccumulator = StringBuilder()
 
             geminiClient.streamGenerate(
-                apiKey = key,
+                apiKey = authKey,
                 modelId = effectiveModelId,
-                systemPrompt = systemPrompt,
+                systemPrompt = activeSystemPrompt,
                 userPrompt = fullUserPrompt
             ).catch { e ->
-                val errorMsg = "⚠️ Gemini Error: ${e.message ?: "Failed to generate response"}"
+                val errorPrefix = if (currentEngine == ChatEngine.ANTIGRAVITY) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
+                val errorMsg = "$errorPrefix: ${e.message ?: "Failed to generate response"}"
                 _uiState.update { state ->
                     val msgs = state.messages.toMutableList()
                     if (msgs.isNotEmpty()) {
