@@ -121,11 +121,17 @@ async def stream_agy_execution(model: str, full_prompt: str):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        # Pipe full prompt through stdin
-        process.stdin.write(full_prompt.encode("utf-8"))
-        await process.stdin.drain()
-        process.stdin.close()
-        await process.stdin.wait_closed()
+
+        # Feed stdin concurrently in background to prevent buffer deadlocks
+        async def feed_stdin():
+            try:
+                process.stdin.write(full_prompt.encode("utf-8"))
+                await process.stdin.drain()
+                process.stdin.close()
+            except Exception as e:
+                print(f"[Termux Bridge Stdin Error] {e}")
+
+        asyncio.create_task(feed_stdin())
     except Exception as e:
         err_msg = f"⚠️ Error launching '{agy_bin}': {str(e)}."
         print(f"[Termux Bridge Error] {err_msg}")
