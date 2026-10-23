@@ -105,7 +105,7 @@ fun AgentChatScreen(
         }
     }
 
-    LaunchedEffect(state.currentMessages.size, state.currentMessages.lastOrNull()?.text?.length) {
+    LaunchedEffect(state.currentMessages.size, state.currentMessages.lastOrNull()?.text?.length, input.isNotEmpty()) {
         if (state.currentMessages.isNotEmpty()) {
             listState.animateScrollToItem(state.currentMessages.lastIndex)
         }
@@ -231,6 +231,7 @@ fun AgentChatScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .imePadding()
         ) {
             // ── Primary Engine Selector (Anti-Gravity Agent vs Gemini Chat) ──
             TabRow(
@@ -395,6 +396,52 @@ fun AgentChatScreen(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
                             Text("Switch Model", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+
+            // ── Active Project Context Badge & Pro Summary Mode ──
+            Surface(
+                color = if (state.activeProjectName != null) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = if (state.activeProjectName != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (state.activeProjectName != null) "📁 Project: ${state.activeProjectName}" else "📁 No Project Selected",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
+
+                    if (state.activeProjectName != null) {
+                        TextButton(
+                            onClick = { viewModel.generateProjectSummary() },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            enabled = !state.isLoading
+                        ) {
+                            Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Summary Mode (Pro)", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }

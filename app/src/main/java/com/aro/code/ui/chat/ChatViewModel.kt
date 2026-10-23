@@ -1,5 +1,6 @@
 package com.aro.code.ui.chat
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aro.code.ai.AntiGravityBridgeClient
@@ -11,6 +12,7 @@ import com.aro.code.ai.GeminiModel
 import com.aro.code.auth.AuthRepository
 import com.aro.code.auth.CredentialStore
 import com.aro.code.db.ChatHistoryDatabase
+import com.aro.code.filesystem.ProjectNode
 import com.aro.code.filesystem.SafProjectManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -43,6 +45,8 @@ data class ChatUiState(
     val selectedModel: GeminiModel = GeminiModel.FLASH_3_8,
     val selectedAntiGravityModel: AntiGravityModel = AntiGravityModel.FLASH_3_8,
     val attachedFiles: List<AttachedFile> = emptyList(),
+    val activeProjectName: String? = null,
+    val activeProjectUri: String? = null,
     val isLoading: Boolean = false,
     val activeStep: String? = null,
     val activeDiffForPreview: DiffPreviewBlock? = null,
@@ -93,6 +97,20 @@ class ChatViewModel @Inject constructor(
     """.trimIndent()
 
     init {
+        // Monitor Project Directory URI for Active Project Badge & Summary Mode
+        viewModelScope.launch {
+            credentialStore.projectDirUri.collect { uriStr ->
+                val name = if (!uriStr.isNullOrBlank()) {
+                    val uri = Uri.parse(uriStr)
+                    val segment = uri.lastPathSegment ?: ""
+                    segment.substringAfterLast('/').substringAfterLast(':').ifBlank { "Project" }
+                } else {
+                    null
+                }
+                _uiState.update { it.copy(activeProjectName = name, activeProjectUri = uriStr) }
+            }
+        }
+
         // Monitor Anti-Gravity OAuth sign-in state
         viewModelScope.launch {
             credentialStore.googleAccessToken.collect { token ->
@@ -353,6 +371,84 @@ class ChatViewModel @Inject constructor(
     }
 
     fun send(userText: String) {
+        val trimmed = userText.trim()
+        val isUnderstandCmd = trimmed.equals("understand project", ignoreCase = true) ||
+                              trimmed.equals("understand this project", ignoreCase = true) ||
+                              trimmed.equals("analyze project", ignoreCase = true) ||
+                              trimmed.equals("project summary", ignoreCase = true) ||
+                              trimmed.equals("summarize project", ignoreCase = true)
+
+        if (isUnderstandCmd && _uiState.value.activeProjectUri != null) {
+            generateProjectSummary()
+            return
+        }
+
+        sendChatMessage(userText)
+    }
+
+    fun generateProjectSummary() {
+        viewModelScope.launch {
+            val uriStr = _uiState.value.activeProjectUri
+            val projectName = _uiState.value.activeProjectName ?: "Current Project"
+            _uiState.update { it.copy(isLoading = true, activeStep = "📁 [1/3] Scanning project file tree ($projectName)...") }
+
+            val tree = mutableListOf<String>()
+            fun collectPaths(nodes: List<ProjectNode>) {
+                for (node in nodes) {
+                    if (node.isDirectory) {
+                        collectPaths(node.children)
+                    } else {
+                        tree.add(node.path)
+                    }
+                }
+            }
+
+            try {
+                val nodes = if (!uriStr.isNullOrBlank()) {
+                    projectManager.scanSafTree(Uri.parse(uriStr), maxDepth = 6)
+                } else {
+                    emptyList()
+                }
+                collectPaths(nodes)
+
+                if (tree.isEmpty()) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            activeStep = null,
+                            error = "No files found in project. Please open a project folder in Workspace first."
+                        )
+                    }
+                    return@launch
+                }
+
+                val summaryPrompt = buildString {
+                    appendLine("=== PROJECT SUMMARY MODE (PRO) ===")
+                    appendLine("Project Name: $projectName")
+                    appendLine("Total Files: ${tree.size}")
+                    appendLine("Full File Structure:")
+                    tree.take(120).forEachIndexed { index, path ->
+                        appendLine("  ${index + 1}. $path")
+                    }
+                    if (tree.size > 120) {
+                        appendLine("  ... [and ${tree.size - 120} more files]")
+                    }
+                    appendLine()
+                    appendLine("INSTRUCTION:")
+                    appendLine("Understand this project based on the complete file structure above.")
+                    appendLine("1. Give a high-level architectural overview of this project (what type of app/system it is, core modules, tech stack).")
+                    appendLine("2. List the key entry points and critical source files.")
+                    appendLine("3. Ask me which specific files or features I would like to inspect, modify, or debug in detail.")
+                }
+
+                sendChatMessage(summaryPrompt)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, activeStep = null, error = "Failed to scan project: ${e.message}") }
+            }
+        }
+    }
+
+    private fun sendChatMessage(userText: String) {
         if (userText.isBlank() && _uiState.value.attachedFiles.isEmpty()) return
 
         val currentAttachments = _uiState.value.attachedFiles
