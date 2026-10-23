@@ -80,12 +80,25 @@ android {
                 "META-INF/*.kotlin_module",
                 "META-INF/INDEX.LIST",
                 "META-INF/io.netty.versions.properties",
+                "META-INF/DEPENDENCIES",
+                "META-INF/DEPENDENCIES.txt",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE.txt",
+                "META-INF/ASL2.0",
+                "META-INF/eclipse.inf",
+                "META-INF/ECLIPSE_.SF",
+                "META-INF/ECLIPSE_.RSA",
+                "META-INF/ECLIPSE_.DSA",
+                "META-INF/*.SF",
+                "META-INF/*.RSA",
+                "META-INF/*.DSA",
                 "OSGI-INF/**",
-                "OSGI-INF/l10n/plugin.properties",
                 "plugin.properties",
                 "about.html",
-                "META-INF/ECLIPSE_.*",
-                "META-INF/eclipse.inf"
+                "about_files/**",
+                "ant_tasks/**",
+                "NOTICE",
+                "LICENSE"
             )
         }
     }
