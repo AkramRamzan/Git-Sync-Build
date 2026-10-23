@@ -34,9 +34,6 @@ jgit                  = "6.10.0.202406032230-r"
 # Coroutines
 coroutines            = "1.9.0"
 
-# Tree-sitter / Nikel (JNI AAR)
-nikel                 = "0.2.0.0"
-
 # Testing
 junit                 = "4.13.2"
 androidxJunit         = "1.2.1"
@@ -86,9 +83,6 @@ kotlinx-coroutines        = { group = "org.jetbrains.kotlinx",   name = "kotlinx
 # JGit
 jgit-core                 = { group = "org.eclipse.jgit",        name = "org.eclipse.jgit",      version.ref = "jgit" }
 jgit-http                 = { group = "org.eclipse.jgit",        name = "org.eclipse.jgit.http.apache", version.ref = "jgit" }
-
-# Tree-Sitter / Nikel JNI
-nikel                     = { group = "io.github.g00fybuddy2",   name = "nikel",                 version.ref = "nikel" }
 
 # Testing
 junit                     = { group = "junit",                    name = "junit",                 version.ref = "junit" }

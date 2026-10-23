@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -12,6 +13,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
  * Module 4 – Hybrid editor screen.
  * Jetpack Compose wrapper around the Monaco/CodeMirror WebView.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodeEditorScreen(
     filePath: String,
@@ -56,8 +58,11 @@ fun CodeEditorScreen(
         // Status bar
         if (uiState.isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         uiState.statusMessage?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium))
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
         }
     }
 }

@@ -133,9 +133,6 @@ dependencies {
     implementation(libs.jgit.core)
     implementation(libs.jgit.http)
 
-    // Tree-Sitter / Nikel AST (JNI)
-    implementation("io.github.g00fybuddy2:nikel:0.2.0.0")
-
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

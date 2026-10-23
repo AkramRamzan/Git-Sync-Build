@@ -3,6 +3,8 @@ package com.aro.code.ui.editor
 import android.webkit.JavascriptInterface
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,10 +21,8 @@ class EditorBridge @Inject constructor() {
 
     @JavascriptInterface
     fun onContentChanged(filePath: String, content: String) {
-        _events.tryEmit(EditorEvent("content_changed", """{"path":"$filePath","content":${
-            kotlinx.serialization.json.Json.encodeToString(
-                kotlinx.serialization.builtins.serializer(), content)
-        }}"""))
+        val encoded = Json.encodeToString(content)
+        _events.tryEmit(EditorEvent("content_changed", """{"path":"$filePath","content":$encoded}"""))
     }
 
     @JavascriptInterface
@@ -37,9 +37,7 @@ class EditorBridge @Inject constructor() {
 
     @JavascriptInterface
     fun onPromptSubmitted(prompt: String) {
-        _events.tryEmit(EditorEvent("prompt", """{"text":${
-            kotlinx.serialization.json.Json.encodeToString(
-                kotlinx.serialization.builtins.serializer(), prompt)
-        }}"""))
+        val encoded = Json.encodeToString(prompt)
+        _events.tryEmit(EditorEvent("prompt", """{"text":$encoded}"""))
     }
 }

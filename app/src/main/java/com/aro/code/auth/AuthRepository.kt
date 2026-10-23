@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Serializable
@@ -42,7 +43,7 @@ class AuthRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val httpClient: HttpClient,
     private val store: CredentialStore,
-    private val clientId: String   // injected from BuildConfig
+    @Named("github_client_id") private val clientId: String
 ) {
     // ── Google Login ────────────────────────────────────────────────────────
     suspend fun signInWithGoogle(): Result<String> = runCatching {
