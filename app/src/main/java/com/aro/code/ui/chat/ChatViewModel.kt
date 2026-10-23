@@ -7,10 +7,12 @@ import com.aro.code.ai.DiffPreviewBlock
 import com.aro.code.ai.GeminiClient
 import com.aro.code.ai.GeminiModel
 import com.aro.code.auth.CredentialStore
+import com.aro.code.db.ChatHistoryDatabase
 import com.aro.code.filesystem.SafProjectManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 data class AttachedFile(
@@ -34,18 +36,21 @@ data class ChatUiState(
     val isLoading: Boolean = false,
     val activeDiffForPreview: DiffPreviewBlock? = null,
     val error: String? = null,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val sessionId: String = ""
 )
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val geminiClient: GeminiClient,
     private val credentialStore: CredentialStore,
-    private val projectManager: SafProjectManager
+    private val projectManager: SafProjectManager,
+    private val chatDb: ChatHistoryDatabase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+    private var currentSessionId: String = ""
 
     private val systemPrompt = """
         You are an expert Android developer assistant embedded in the Aro Code IDE.
@@ -76,6 +81,55 @@ class ChatViewModel @Inject constructor(
             val savedModelId = credentialStore.geminiModel.firstOrNull()
             if (savedModelId != null) {
                 _uiState.update { it.copy(selectedModel = GeminiModel.fromId(savedModelId)) }
+            }
+
+            // Module 2.3 — Restore conversation history from chat_history.db
+            runCatching {
+                val sid = chatDb.getLastActiveSessionId()
+                currentSessionId = sid
+                _uiState.update { it.copy(sessionId = sid) }
+                val pastMessages = chatDb.getMessagesForSession(sid)
+                if (pastMessages.isNotEmpty()) {
+                    val restored = pastMessages.map { entity ->
+                        ChatMessage(
+                            role = if (entity.sender == "USER") "user" else "model",
+                            text = entity.messageText,
+                            attachments = entity.attachedFiles.map { AttachedFile(name = it, content = "", uriString = null) },
+                            diffBlocks = DiffParser.parseAllDiffs(entity.messageText),
+                            isStreaming = false
+                        )
+                    }
+                    _uiState.update { it.copy(messages = restored) }
+                }
+            }
+        }
+    }
+
+    fun startNewSession() {
+        viewModelScope.launch {
+            val newSid = UUID.randomUUID().toString()
+            currentSessionId = newSid
+            chatDb.saveLastSessionId(newSid)
+            _uiState.update {
+                it.copy(
+                    sessionId = newSid,
+                    messages = emptyList(),
+                    error = null,
+                    statusMessage = "Started fresh conversation thread"
+                )
+            }
+        }
+    }
+
+    fun clearSessionHistory() {
+        viewModelScope.launch {
+            chatDb.clearSession(currentSessionId)
+            _uiState.update {
+                it.copy(
+                    messages = emptyList(),
+                    error = null,
+                    statusMessage = "Cleared conversation history"
+                )
             }
         }
     }
@@ -176,6 +230,11 @@ class ChatViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            // Save user message in local SQLite chat_history.db (Module 2.3)
+            runCatching {
+                chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
+            }
+
             val key = credentialStore.geminiApiKey.firstOrNull() ?: run {
                 _uiState.update {
                     it.copy(
@@ -184,6 +243,15 @@ class ChatViewModel @Inject constructor(
                     )
                 }
                 return@launch
+            }
+
+            // Module 3.2 & 3.3 — Dynamic Capability Verification & Model Resolution
+            val effectiveModelId = runCatching {
+                geminiClient.getValidatedModel(key, activeModel)
+            }.getOrDefault(activeModel.id)
+
+            if (effectiveModelId != activeModel.id) {
+                _uiState.update { it.copy(statusMessage = "Auto-switched to active model: $effectiveModelId") }
             }
 
             // Construct prompt with attached file contexts
@@ -210,7 +278,7 @@ class ChatViewModel @Inject constructor(
 
             geminiClient.streamGenerate(
                 apiKey = key,
-                modelId = activeModel.id,
+                modelId = effectiveModelId,
                 systemPrompt = systemPrompt,
                 userPrompt = fullUserPrompt
             ).catch { e ->
@@ -248,6 +316,13 @@ class ChatViewModel @Inject constructor(
                 if (_uiState.value.error != null) "" else "⚠️ No response received. Please verify your Gemini API key in Settings."
             }
             val parsedDiffs = if (finalText.isNotBlank()) DiffParser.parseAllDiffs(finalText) else emptyList()
+
+            // Persist agent response in local SQLite chat_history.db (Module 2.3)
+            if (finalText.isNotBlank()) {
+                runCatching {
+                    chatDb.insertMessage(currentSessionId, "AGENT", finalText, emptyList())
+                }
+            }
 
             _uiState.update { state ->
                 val msgs = state.messages.toMutableList()

@@ -14,6 +14,7 @@ data class EditorUiState(
     val currentPath: String? = null,
     val currentContent: String? = null,
     val isLoading: Boolean = false,
+    val isDirty: Boolean = false,
     val statusMessage: String? = null
 )
 
@@ -25,6 +26,7 @@ class EditorViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(EditorUiState())
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
+    private var originalContent: String? = null
 
     init {
         viewModelScope.launch {
@@ -32,7 +34,7 @@ class EditorViewModel @Inject constructor(
                 when (event.type) {
                     "content_changed" -> {
                         event.payload?.let { newText ->
-                            _uiState.update { it.copy(currentContent = newText) }
+                            updateContent(newText)
                         }
                     }
                     "prompt" -> { /* forwarded to AI module */ }
@@ -46,9 +48,11 @@ class EditorViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, currentPath = pathOrUri) }
             safManager.readText(pathOrUri)
                 .onSuccess { content ->
+                    originalContent = content
                     _uiState.update {
                         it.copy(
                             currentContent = content,
+                            isDirty = false,
                             isLoading = false,
                             statusMessage = "Loaded"
                         )
@@ -66,7 +70,8 @@ class EditorViewModel @Inject constructor(
     }
 
     fun updateContent(newContent: String) {
-        _uiState.update { it.copy(currentContent = newContent) }
+        val dirty = (newContent != originalContent)
+        _uiState.update { it.copy(currentContent = newContent, isDirty = dirty) }
     }
 
     fun saveFile() {
@@ -75,7 +80,8 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             safManager.writeTextAtomic(targetPath, content)
                 .onSuccess {
-                    _uiState.update { it.copy(statusMessage = "Saved ✓") }
+                    originalContent = content
+                    _uiState.update { it.copy(isDirty = false, statusMessage = "Saved ✓") }
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(statusMessage = "Save failed: ${e.message}") }

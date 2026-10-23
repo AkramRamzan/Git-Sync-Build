@@ -38,7 +38,14 @@ fun WorkspaceScreen(
 
     Scaffold(
         topBar = {
+            var modelMenuExpanded by remember { mutableStateOf(false) }
+
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { directoryPickerLauncher.launch(null) }) {
+                        Icon(Icons.Default.Menu, contentDescription = "Explorer (Open Folder)")
+                    }
+                },
                 title = {
                     Column {
                         Text("Aro Code", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -50,14 +57,58 @@ fun WorkspaceScreen(
                     }
                 },
                 actions = {
-                    // Anti-Gravity Google Auth Icon
-                    IconButton(onClick = { viewModel.openAntiGravityDialog() }) {
-                        Icon(
-                            Icons.Default.Bolt,
-                            contentDescription = "Anti-Gravity Account",
-                            tint = if (state.isGoogleSignedIn) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    // Module 2.1 & 2.2 — Model Switcher Dropdown
+                    Box {
+                        Surface(
+                            onClick = { modelMenuExpanded = true },
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = state.selectedModel.displayName.take(16),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = "Select Model",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = modelMenuExpanded,
+                            onDismissRequest = { modelMenuExpanded = false }
+                        ) {
+                            com.aro.code.ai.GeminiModel.entries.forEach { model ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(
+                                                model.displayName,
+                                                fontWeight = if (model == state.selectedModel) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                            Text(
+                                                model.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.selectModel(model)
+                                        modelMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     }
 
                     // Open SAF Folder
@@ -65,19 +116,29 @@ fun WorkspaceScreen(
                         Icon(Icons.Default.FolderOpen, contentDescription = "Open Project Folder")
                     }
 
-                    // AI Chat
+                    // AI Agent Chat Drawer / Screen
                     IconButton(onClick = onChatOpen) {
-                        Icon(Icons.Default.Chat, contentDescription = "AI Agent Chat")
+                        Icon(Icons.Default.AutoAwesome, contentDescription = "Anti-Gravity AI Chat")
                     }
 
-                    // Cloud Build
+                    // Cloud Build Trigger
                     IconButton(onClick = { viewModel.triggerCloudBuild() }) {
                         Icon(Icons.Default.CloudUpload, contentDescription = "Cloud Build")
                     }
 
-                    // Settings
+                    // Settings Button (⚙)
                     IconButton(onClick = onSettingsOpen) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+
+                    // Profile Icon (👤) — Anti-Gravity Account & Logout Trigger
+                    IconButton(onClick = { viewModel.openAntiGravityDialog() }) {
+                        Icon(
+                            Icons.Default.AccountCircle,
+                            contentDescription = "Profile & Account",
+                            tint = if (state.isGoogleSignedIn) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             )

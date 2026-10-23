@@ -58,9 +58,11 @@ fun CodeEditorScreen(
             TopAppBar(
                 title = {
                     Column {
+                        val dirtySuffix = if (uiState.isDirty) " *" else ""
                         Text(
-                            text = displayTitle.ifBlank { "Untitled" },
+                            text = "${displayTitle.ifBlank { "Untitled" }}$dirtySuffix",
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (uiState.isDirty) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1
                         )
                         Text(
@@ -83,7 +85,11 @@ fun CodeEditorScreen(
                         onClick = { viewModel.saveFile() },
                         enabled = !uiState.isLoading
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = "Save File")
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = "Save File",
+                            tint = if (uiState.isDirty) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             )

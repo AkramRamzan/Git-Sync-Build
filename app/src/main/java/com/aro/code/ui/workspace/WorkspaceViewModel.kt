@@ -3,6 +3,7 @@ package com.aro.code.ui.workspace
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aro.code.ai.GeminiModel
 import com.aro.code.auth.AuthRepository
 import com.aro.code.auth.CredentialStore
 import com.aro.code.cloudbuild.BuildType
@@ -23,6 +24,7 @@ data class WorkspaceUiState(
     val projectUriString: String? = null,
     val isGoogleSignedIn: Boolean = false,
     val googleTokenSnippet: String? = null,
+    val selectedModel: GeminiModel = GeminiModel.FLASH_1_5,
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
     val showCloneDialog: Boolean = false,
@@ -46,6 +48,19 @@ class WorkspaceViewModel @Inject constructor(
     private val expandedPaths = mutableSetOf<String>()
 
     init {
+        // Module 1.2 & TASK-201 — Silent token refresh on app boot
+        viewModelScope.launch {
+            authRepo.refreshGoogleTokensIfNeeded()
+        }
+
+        // Monitor selected Gemini model
+        viewModelScope.launch {
+            credentialStore.geminiModel.collect { modelId ->
+                val model = GeminiModel.fromId(modelId)
+                _uiState.update { it.copy(selectedModel = model) }
+            }
+        }
+
         // Monitor Google Auth state
         viewModelScope.launch {
             credentialStore.googleAccessToken.collect { token ->
@@ -134,6 +149,13 @@ class WorkspaceViewModel @Inject constructor(
                 )
             }
             refreshFileTree()
+        }
+    }
+
+    fun selectModel(model: GeminiModel) {
+        viewModelScope.launch {
+            credentialStore.saveGeminiModel(model.id)
+            _uiState.update { it.copy(selectedModel = model) }
         }
     }
 

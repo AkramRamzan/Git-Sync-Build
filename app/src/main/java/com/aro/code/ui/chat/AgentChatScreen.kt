@@ -120,6 +120,17 @@ fun AgentChatScreen(
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
+                },
+                actions = {
+                    // New Session Thread (Module 2.3)
+                    IconButton(onClick = { viewModel.startNewSession() }) {
+                        Icon(Icons.Default.AddComment, contentDescription = "New Conversation Thread")
+                    }
+
+                    // Clear Current History
+                    IconButton(onClick = { viewModel.clearSessionHistory() }) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Clear Session History")
+                    }
                 }
             )
         }
@@ -195,7 +206,7 @@ fun AgentChatScreen(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { filePickerLauncher.launch("text/*") }) {
+                IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
                     Icon(Icons.Default.AttachFile, contentDescription = "Attach code file")
                 }
 

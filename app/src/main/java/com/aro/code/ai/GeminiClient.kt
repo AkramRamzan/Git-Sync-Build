@@ -85,6 +85,17 @@ data class GeminiErrorDetail(
     val status: String? = null
 )
 
+@Serializable
+data class ModelListResponse(
+    val models: List<GeminiModelItem> = emptyList()
+)
+
+@Serializable
+data class GeminiModelItem(
+    val name: String,
+    val supportedGenerationMethods: List<String> = emptyList()
+)
+
 /**
  * Module 5 & Anti-Gravity – Gemini API Client.
  * Supports standard generation, real-time SSE streaming, and instant API key validation.
@@ -118,6 +129,49 @@ class GeminiClient @Inject constructor(
                 json.decodeFromString<GeminiErrorResponse>(rawText).error.message
             }.getOrNull()?.ifBlank { null } ?: "HTTP ${response.status.value}: $rawText"
             error(errMsg)
+        }
+    }
+
+    /**
+     * Module 3.2 — List available models for this user's API key.
+     */
+    suspend fun listModels(apiKey: String): Result<List<String>> = runCatching {
+        val cleanKey = apiKey.filterNot { it.isWhitespace() }
+        val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
+        val response = httpClient.get("$baseUrl?key=$encodedKey") {
+            header("x-goog-api-key", cleanKey)
+        }
+        val rawText = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val errMsg = runCatching {
+                json.decodeFromString<GeminiErrorResponse>(rawText).error.message
+            }.getOrNull()?.ifBlank { null } ?: "HTTP ${response.status.value}: $rawText"
+            error(errMsg)
+        }
+        val listResp = json.decodeFromString<ModelListResponse>(rawText)
+        listResp.models
+            .filter { it.supportedGenerationMethods.contains("generateContent") }
+            .map { it.name }
+    }
+
+    /**
+     * Module 3.3 — Dynamic Model Verification & Fallback Strategy.
+     * Verifies that the preferred model is active for this API key.
+     * If not supported, smoothly falls back to a valid model.
+     */
+    suspend fun getValidatedModel(apiKey: String, preferredModel: GeminiModel): String {
+        return try {
+            val availableModels = listModels(apiKey).getOrNull() ?: emptyList()
+            if (availableModels.contains("models/${preferredModel.id}") || availableModels.contains(preferredModel.id)) {
+                preferredModel.id
+            } else {
+                // Smart fallback to first available flash model or gemini-1.5-flash
+                availableModels.firstOrNull { it.contains("flash", ignoreCase = true) }
+                    ?.replace("models/", "")
+                    ?: GeminiModel.FLASH_1_5.id
+            }
+        } catch (e: Exception) {
+            GeminiModel.FLASH_1_5.id
         }
     }
 

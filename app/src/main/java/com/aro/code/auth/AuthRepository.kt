@@ -14,6 +14,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.http.Parameters
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.net.URLEncoder
@@ -146,6 +147,54 @@ class AuthRepository @Inject constructor(
             idToken = response.idToken
         )
         response
+    }
+
+    /**
+     * Module 1.2 — Automatic token refresh on application boot.
+     * Uses the encrypted refresh_token to obtain a fresh access_token silently.
+     */
+    suspend fun refreshGoogleTokensIfNeeded(): Result<GoogleTokenResponse> = runCatching {
+        val refreshToken = store.googleRefreshToken.firstOrNull()?.takeIf { it.isNotBlank() }
+            ?: error("No refresh token stored")
+
+        val cid = googleClientId.takeIf { it.isNotBlank() } ?: ANTIGRAVITY_CLIENT_ID
+        val clientSecret = when {
+            cid.startsWith("1071006060591") -> "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"
+            cid.startsWith("884354919052")  -> "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"
+            cid.startsWith("1098991175725") -> "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"
+            else -> ""
+        }
+
+        val response: GoogleTokenResponse = httpClient.submitForm(
+            url = "https://oauth2.googleapis.com/token",
+            formParameters = Parameters.build {
+                append("refresh_token", refreshToken)
+                append("client_id", cid)
+                if (clientSecret.isNotBlank()) {
+                    append("client_secret", clientSecret)
+                }
+                append("grant_type", "refresh_token")
+            }
+        ).body()
+
+        if (response.error != null) {
+            error(response.errorDescription ?: response.error)
+        }
+
+        val newAccessToken = response.accessToken ?: error("No access token in response")
+        store.saveGoogleTokens(
+            accessToken = newAccessToken,
+            refreshToken = response.refreshToken ?: refreshToken,
+            idToken = response.idToken
+        )
+        response
+    }
+
+    /**
+     * Module 1.2 & TASK-208 — Revoke and clear cached session tokens on logout.
+     */
+    suspend fun clearGoogleAuth() {
+        store.clearGoogleTokens()
     }
 
     // ── Google Credential Manager (Native Fallback) ─────────────────────────
