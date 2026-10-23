@@ -71,7 +71,7 @@ fun SettingsScreen(
             // ── Gemini API Key Card ────────────────────────────────────────
             ApiKeyCard(
                 title        = "Gemini API Key",
-                subtitle     = "Used for AI code generation (gemini-2.0-flash)",
+                subtitle     = "Used for AI code generation (gemini-3.8-flash)",
                 currentMask  = state.geminiKeyMasked,
                 placeholder  = "AIza...",
                 onSave       = { viewModel.saveGeminiKey(it) },

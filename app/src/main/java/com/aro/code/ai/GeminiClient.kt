@@ -178,17 +178,15 @@ class GeminiClient @Inject constructor(
             if (availableModels.contains("models/${preferredModel.id}") || availableModels.contains(preferredModel.id)) {
                 preferredModel.id
             } else {
-                // Smart fallback: 2026 active flash models (2.5 or 3.8)
-                availableModels.firstOrNull { it.contains("2.5-flash", ignoreCase = true) }
+                // Smart fallback: 2026 active flash models (3.8)
+                availableModels.firstOrNull { it.contains("3.8", ignoreCase = true) }
                     ?.replace("models/", "")
-                    ?: availableModels.firstOrNull { it.contains("3.8-flash", ignoreCase = true) }
-                        ?.replace("models/", "")
                     ?: availableModels.firstOrNull { it.contains("flash", ignoreCase = true) }
                         ?.replace("models/", "")
-                    ?: GeminiModel.FLASH_2_5.id
+                    ?: GeminiModel.FLASH_3_8.id
             }
         } catch (e: Exception) {
-            GeminiModel.FLASH_2_5.id
+            GeminiModel.FLASH_3_8.id
         }
     }
 
@@ -198,7 +196,7 @@ class GeminiClient @Inject constructor(
 
     suspend fun generate(
         apiKey: String,
-        modelId: String = "gemini-2.5-flash",
+        modelId: String = "gemini-3.8-flash",
         systemPrompt: String,
         userPrompt: String
     ): Result<String> {
@@ -214,11 +212,11 @@ class GeminiClient @Inject constructor(
         )
 
         val result = executeGenerateCall(cleanKey, targetModel, body)
-        // If the model was not found or failed with 404, fallback to 2026 default gemini-2.5-flash
-        if (result.isFailure && targetModel != "gemini-2.5-flash") {
+        // If the model was not found or failed with 404, fallback to 2026 default gemini-3.8-flash
+        if (result.isFailure && targetModel != "gemini-3.8-flash") {
             val err = result.exceptionOrNull()?.message.orEmpty()
             if (err.contains("not found", ignoreCase = true) || err.contains("HTTP 404") || err.contains("no longer available", ignoreCase = true)) {
-                return executeGenerateCall(cleanKey, "gemini-2.5-flash", body)
+                return executeGenerateCall(cleanKey, "gemini-3.8-flash", body)
             }
         }
         return result
@@ -274,7 +272,7 @@ class GeminiClient @Inject constructor(
      */
     fun streamGenerate(
         apiKey: String,
-        modelId: String = "gemini-2.5-flash",
+        modelId: String = "gemini-3.8-flash",
         systemPrompt: String,
         userPrompt: String
     ): Flow<String> = channelFlow {
@@ -341,10 +339,10 @@ class GeminiClient @Inject constructor(
             }
         } catch (e: Exception) {
             val msg = e.message.orEmpty()
-            // If model was not found and we haven't sent tokens, fallback to 2026 default gemini-2.5-flash
-            if (tokenCount == 0 && targetModel != "gemini-2.5-flash" &&
+            // If model was not found and we haven't sent tokens, fallback to 2026 default gemini-3.8-flash
+            if (tokenCount == 0 && targetModel != "gemini-3.8-flash" &&
                 (msg.contains("not found", ignoreCase = true) || msg.contains("HTTP 404") || msg.contains("no longer available", ignoreCase = true))) {
-                generate(cleanKey, "gemini-2.5-flash", systemPrompt, userPrompt)
+                generate(cleanKey, "gemini-3.8-flash", systemPrompt, userPrompt)
                     .onSuccess { send(it); return@channelFlow }
                     .onFailure { throw it }
             }

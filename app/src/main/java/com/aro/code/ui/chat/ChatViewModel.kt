@@ -39,8 +39,8 @@ enum class ChatEngine {
 data class ChatUiState(
     val antiGravityMessages: List<ChatMessage> = emptyList(),
     val geminiMessages: List<ChatMessage> = emptyList(),
-    val selectedModel: GeminiModel = GeminiModel.FLASH_2_5,
-    val selectedAntiGravityModel: AntiGravityModel = AntiGravityModel.FLASH_2_5,
+    val selectedModel: GeminiModel = GeminiModel.FLASH_3_8,
+    val selectedAntiGravityModel: AntiGravityModel = AntiGravityModel.FLASH_3_8,
     val attachedFiles: List<AttachedFile> = emptyList(),
     val isLoading: Boolean = false,
     val activeStep: String? = null,
@@ -383,9 +383,10 @@ class ChatViewModel @Inject constructor(
             val targetModelId: String
 
             if (isAntiGravity) {
-                // Priority: Use Gemini API key if present (bypasses Google's OAuth scope restrictions on restricted client IDs)
-                val keyToUse = apiKey ?: googleToken
-                if (keyToUse == null) {
+                // Anti-Gravity Agent uses Gemini API Key to bypass Google's OAuth restricted_client scope restrictions
+                if (apiKey.isNullOrBlank()) {
+                    val promptKeyMsg = "⚠️ Anti-Gravity Agent ko chalane ke liye Gemini API Key zaroori hai. Please Settings (⚙) mein jakar apni free Google AI Studio key enter karein."
+                    appendMessage(ChatMessage(role = "model", text = promptKeyMsg, isStreaming = false), isAntiGravity = true)
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -395,14 +396,16 @@ class ChatViewModel @Inject constructor(
                     }
                     return@launch
                 }
-                authKey = keyToUse
+                authKey = apiKey
                 activeSystemPrompt = antiGravitySystemPrompt
                 targetModelId = _uiState.value.selectedAntiGravityModel.id
                 _uiState.update {
                     it.copy(activeStep = "🧠 [2/3] agy: Reasoning (${_uiState.value.selectedAntiGravityModel.displayName.take(15)})...")
                 }
             } else {
-                if (apiKey == null) {
+                if (apiKey.isNullOrBlank()) {
+                    val promptKeyMsg = "⚠️ Please configure your Gemini API Key in Settings (⚙)."
+                    appendMessage(ChatMessage(role = "model", text = promptKeyMsg, isStreaming = false), isAntiGravity = false)
                     _uiState.update {
                         it.copy(
                             isLoading = false,
