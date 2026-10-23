@@ -375,30 +375,33 @@ class ChatViewModel @Inject constructor(
                 chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
             }
 
+            val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
+            val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
+
             val authKey: String
             val activeSystemPrompt: String
             val targetModelId: String
 
             if (isAntiGravity) {
-                val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
-                if (googleToken == null) {
+                // Priority: Use Gemini API key if present (bypasses Google's OAuth scope restrictions on restricted client IDs)
+                val keyToUse = apiKey ?: googleToken
+                if (keyToUse == null) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             activeStep = null,
-                            error = "Anti-Gravity account not connected. Please tap 'Sign In' to login with Google Anti-Gravity."
+                            error = "Anti-Gravity Engine requires a Gemini API key. Please set your free Google AI Studio key in Settings (⚙)."
                         )
                     }
                     return@launch
                 }
-                authKey = googleToken
+                authKey = keyToUse
                 activeSystemPrompt = antiGravitySystemPrompt
                 targetModelId = _uiState.value.selectedAntiGravityModel.id
                 _uiState.update {
                     it.copy(activeStep = "🧠 [2/3] agy: Reasoning (${_uiState.value.selectedAntiGravityModel.displayName.take(15)})...")
                 }
             } else {
-                val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
                 if (apiKey == null) {
                     _uiState.update {
                         it.copy(
@@ -441,14 +444,23 @@ class ChatViewModel @Inject constructor(
                 systemPrompt = activeSystemPrompt,
                 userPrompt = fullUserPrompt
             ).catch { e ->
-                val errorPrefix = if (isAntiGravity) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
-                val errorMsg = "$errorPrefix: ${e.message ?: "Failed to generate response"}"
-                updateLastMessage(isAntiGravity) { it.copy(text = errorMsg, isStreaming = false) }
+                val rawMsg = e.message.orEmpty()
+                val friendlyMsg = when {
+                    rawMsg.contains("insufficient authentication scopes", ignoreCase = true) ->
+                        "⚠️ Anti-Gravity Scope Restriction: Google OAuth token lacks generative scope. Please enter your free Gemini API Key in Settings (⚙) to power the reasoning engine."
+                    rawMsg.contains("429") || rawMsg.contains("quota", ignoreCase = true) || rawMsg.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
+                        "⚠️ Quota Exceeded (429): Rate limit reached. Quota resets in ~30 seconds, or you can enter a new free API key in Settings (⚙)."
+                    else -> {
+                        val prefix = if (isAntiGravity) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
+                        "$prefix: ${e.message ?: "Failed to generate response"}"
+                    }
+                }
+                updateLastMessage(isAntiGravity) { it.copy(text = friendlyMsg, isStreaming = false) }
                 _uiState.update { state ->
                     state.copy(
                         isLoading = false,
                         activeStep = null,
-                        error = e.message
+                        error = friendlyMsg
                     )
                 }
             }.collect { token ->
