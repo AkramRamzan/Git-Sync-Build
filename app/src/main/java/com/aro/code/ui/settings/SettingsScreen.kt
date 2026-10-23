@@ -88,6 +88,16 @@ fun SettingsScreen(
                 onDelete     = { viewModel.deleteGithubToken() }
             )
 
+            // ── Anti-Gravity Termux / VPS Bridge Card ─────────────────────
+            ApiKeyCard(
+                title        = "Anti-Gravity Termux Bridge URL",
+                subtitle     = "Used for Claude 4.6, Opus, GPT-OSS, and Argon (Default: http://127.0.0.1:8000)",
+                currentMask  = state.bridgeUrl,
+                placeholder  = "http://127.0.0.1:8000",
+                onSave       = { viewModel.saveBridgeUrl(it) },
+                onDelete     = { viewModel.resetBridgeUrl() }
+            )
+
             // ── Danger Zone ───────────────────────────────────────────────
             DangerZoneCard(onClearAll = { viewModel.deleteAllCredentials() })
         }

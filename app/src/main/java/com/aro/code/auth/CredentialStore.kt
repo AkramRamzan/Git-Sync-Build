@@ -28,6 +28,8 @@ class CredentialStore @Inject constructor(
         private val GOOGLE_ACCESS_TOKEN  = stringPreferencesKey("google_access_token")
         private val GOOGLE_REFRESH_TOKEN = stringPreferencesKey("google_refresh_token")
         private val PROJECT_DIR_URI      = stringPreferencesKey("project_dir_uri")
+        private val ANTIGRAVITY_BRIDGE_URL = stringPreferencesKey("antigravity_bridge_url")
+        private val ANTIGRAVITY_BRIDGE_TOKEN = stringPreferencesKey("antigravity_bridge_token")
     }
 
     val githubToken: Flow<String?> = context.dataStore.data.map { it[GITHUB_TOKEN] }
@@ -37,6 +39,8 @@ class CredentialStore @Inject constructor(
     val googleAccessToken: Flow<String?> = context.dataStore.data.map { it[GOOGLE_ACCESS_TOKEN] }
     val googleRefreshToken: Flow<String?> = context.dataStore.data.map { it[GOOGLE_REFRESH_TOKEN] }
     val projectDirUri: Flow<String?> = context.dataStore.data.map { it[PROJECT_DIR_URI] }
+    val antigravityBridgeUrl: Flow<String?> = context.dataStore.data.map { it[ANTIGRAVITY_BRIDGE_URL] }
+    val antigravityBridgeToken: Flow<String?> = context.dataStore.data.map { it[ANTIGRAVITY_BRIDGE_TOKEN] }
 
     suspend fun saveGithubToken(token: String) {
         context.dataStore.edit { it[GITHUB_TOKEN] = token }
@@ -81,6 +85,22 @@ class CredentialStore @Inject constructor(
             } else {
                 it.remove(PROJECT_DIR_URI)
             }
+        }
+    }
+
+    suspend fun saveAntiGravityBridge(url: String, token: String? = null) {
+        context.dataStore.edit {
+            it[ANTIGRAVITY_BRIDGE_URL] = url
+            if (!token.isNullOrBlank()) {
+                it[ANTIGRAVITY_BRIDGE_TOKEN] = token
+            }
+        }
+    }
+
+    suspend fun clearAntiGravityBridge() {
+        context.dataStore.edit {
+            it.remove(ANTIGRAVITY_BRIDGE_URL)
+            it.remove(ANTIGRAVITY_BRIDGE_TOKEN)
         }
     }
 

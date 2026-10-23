@@ -2,6 +2,7 @@ package com.aro.code.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aro.code.ai.AntiGravityBridgeClient
 import com.aro.code.ai.AntiGravityModel
 import com.aro.code.ai.DiffParser
 import com.aro.code.ai.DiffPreviewBlock
@@ -61,6 +62,7 @@ data class ChatUiState(
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val geminiClient: GeminiClient,
+    private val bridgeClient: AntiGravityBridgeClient,
     private val credentialStore: CredentialStore,
     private val projectManager: SafProjectManager,
     private val chatDb: ChatHistoryDatabase,
@@ -376,33 +378,62 @@ class ChatViewModel @Inject constructor(
             }
 
             val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
-            val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
+            val bridgeUrl = credentialStore.antigravityBridgeUrl.firstOrNull()?.takeIf { it.isNotBlank() } ?: "http://127.0.0.1:8000"
+            val bridgeToken = credentialStore.antigravityBridgeToken.firstOrNull()?.takeIf { it.isNotBlank() }
 
+            val useBridge: Boolean
             val authKey: String
             val activeSystemPrompt: String
             val targetModelId: String
 
             if (isAntiGravity) {
-                // Anti-Gravity Agent uses Gemini API Key to bypass Google's OAuth restricted_client scope restrictions
-                if (apiKey.isNullOrBlank()) {
-                    val promptKeyMsg = "⚠️ Anti-Gravity Agent ko chalane ke liye Gemini API Key zaroori hai. Please Settings (⚙) mein jakar apni free Google AI Studio key enter karein."
-                    appendMessage(ChatMessage(role = "model", text = promptKeyMsg, isStreaming = false), isAntiGravity = true)
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            activeStep = null,
-                            error = "Anti-Gravity Engine requires a Gemini API key. Please set your free Google AI Studio key in Settings (⚙)."
-                        )
-                    }
-                    return@launch
-                }
-                authKey = apiKey
+                val selectedAgModel = _uiState.value.selectedAntiGravityModel
+                targetModelId = selectedAgModel.id
                 activeSystemPrompt = antiGravitySystemPrompt
-                targetModelId = _uiState.value.selectedAntiGravityModel.id
+
+                val isBridgeRunning = bridgeClient.isBridgeAlive(bridgeUrl)
+
+                if (selectedAgModel.isExternalBridgeOnly) {
+                    if (!isBridgeRunning) {
+                        val promptMsg = "⚠️ Termux Bridge Offline ($bridgeUrl):\n\nModel '${selectedAgModel.displayName}' chalane ke liye Termux mein server run karein:\n1. termux-wake-lock\n2. python server.py\n\nYa chat switch karke Gemini 3.8 Flash use karein."
+                        appendMessage(ChatMessage(role = "model", text = promptMsg, isStreaming = false), isAntiGravity = true)
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                activeStep = null,
+                                error = "Termux Bridge offline ($bridgeUrl)"
+                            )
+                        }
+                        return@launch
+                    }
+                    useBridge = true
+                    authKey = ""
+                } else {
+                    if (isBridgeRunning) {
+                        useBridge = true
+                        authKey = ""
+                    } else if (!apiKey.isNullOrBlank()) {
+                        useBridge = false
+                        authKey = apiKey
+                    } else {
+                        val promptKeyMsg = "⚠️ Anti-Gravity Agent chalane ke liye ya toh Termux mein 'python server.py' run karein, ya Settings (⚙) mein apni free Gemini API Key enter karein."
+                        appendMessage(ChatMessage(role = "model", text = promptKeyMsg, isStreaming = false), isAntiGravity = true)
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                activeStep = null,
+                                error = "Termux Bridge offline aur Gemini API Key missing"
+                            )
+                        }
+                        return@launch
+                    }
+                }
+
                 _uiState.update {
-                    it.copy(activeStep = "🧠 [2/3] agy: Reasoning (${_uiState.value.selectedAntiGravityModel.displayName.take(15)})...")
+                    it.copy(activeStep = "🧠 [2/3] agy: Reasoning (${selectedAgModel.displayName.take(15)})...")
                 }
             } else {
+                useBridge = false
                 if (apiKey.isNullOrBlank()) {
                     val promptKeyMsg = "⚠️ Please configure your Gemini API Key in Settings (⚙)."
                     appendMessage(ChatMessage(role = "model", text = promptKeyMsg, isStreaming = false), isAntiGravity = false)
@@ -441,18 +472,32 @@ class ChatViewModel @Inject constructor(
 
             val responseAccumulator = StringBuilder()
 
-            geminiClient.streamGenerate(
-                apiKey = authKey,
-                modelId = targetModelId,
-                systemPrompt = activeSystemPrompt,
-                userPrompt = fullUserPrompt
-            ).catch { e ->
+            val streamFlow = if (useBridge) {
+                bridgeClient.streamGenerate(
+                    bridgeUrl = bridgeUrl,
+                    bridgeToken = bridgeToken,
+                    modelId = targetModelId,
+                    systemPrompt = activeSystemPrompt,
+                    userPrompt = fullUserPrompt
+                )
+            } else {
+                geminiClient.streamGenerate(
+                    apiKey = authKey,
+                    modelId = targetModelId,
+                    systemPrompt = activeSystemPrompt,
+                    userPrompt = fullUserPrompt
+                )
+            }
+
+            streamFlow.catch { e ->
                 val rawMsg = e.message.orEmpty()
                 val friendlyMsg = when {
                     rawMsg.contains("insufficient authentication scopes", ignoreCase = true) ->
                         "⚠️ Anti-Gravity Scope Restriction: Google OAuth token lacks generative scope. Please enter your free Gemini API Key in Settings (⚙) to power the reasoning engine."
                     rawMsg.contains("429") || rawMsg.contains("quota", ignoreCase = true) || rawMsg.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
                         "⚠️ Quota Exceeded (429): Rate limit reached. Quota resets in ~30 seconds, or you can enter a new free API key in Settings (⚙)."
+                    rawMsg.contains("Connection refused", ignoreCase = true) || rawMsg.contains("Failed to connect", ignoreCase = true) ->
+                        "⚠️ Termux Bridge Offline: Connection refused at $bridgeUrl. Please run 'python server.py' in Termux."
                     else -> {
                         val prefix = if (isAntiGravity) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
                         "$prefix: ${e.message ?: "Failed to generate response"}"

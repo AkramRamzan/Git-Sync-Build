@@ -11,6 +11,7 @@ import javax.inject.Inject
 data class SettingsUiState(
     val geminiKeyMasked:  String?  = null,   // e.g. "AIza••••••••••••xxYZ"
     val githubTokenMasked: String? = null,   // e.g. "ghp_••••••••••••abcd"
+    val bridgeUrl: String?         = null,   // e.g. "http://127.0.0.1:8000"
     val isLoading: Boolean         = false,
     val successMessage: String?    = null,
     val errorMessage: String?      = null
@@ -32,11 +33,13 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             combine(
                 credentialStore.geminiApiKey,
-                credentialStore.githubToken
-            ) { gemini, github ->
+                credentialStore.githubToken,
+                credentialStore.antigravityBridgeUrl
+            ) { gemini, github, bridge ->
                 SettingsUiState(
                     geminiKeyMasked   = gemini?.mask(),
-                    githubTokenMasked = github?.mask()
+                    githubTokenMasked = github?.mask(),
+                    bridgeUrl         = bridge ?: "http://127.0.0.1:8000"
                 )
             }.collect { _uiState.value = it }
         }
@@ -139,6 +142,26 @@ class SettingsViewModel @Inject constructor(
                 .onFailure { e ->
                     _uiState.update { it.copy(isLoading = false, errorMessage = e.message) }
                 }
+        }
+    }
+
+    // ── Anti-Gravity Bridge URL ───────────────────────────────────────────────
+    fun saveBridgeUrl(url: String) {
+        viewModelScope.launch {
+            val cleanUrl = url.trim()
+            if (cleanUrl.isBlank()) {
+                credentialStore.saveAntiGravityBridge("http://127.0.0.1:8000")
+            } else {
+                credentialStore.saveAntiGravityBridge(cleanUrl)
+            }
+            _uiState.update { it.copy(successMessage = "✓ Bridge URL Saved!") }
+        }
+    }
+
+    fun resetBridgeUrl() {
+        viewModelScope.launch {
+            credentialStore.clearAntiGravityBridge()
+            _uiState.update { it.copy(successMessage = "Bridge URL reset to default") }
         }
     }
 
