@@ -70,6 +70,7 @@ class CloudBuildPipeline @Inject constructor(
             contentType(ContentType.Application.Json)
             setBody("""{"event_type":"build-${buildType.name.lowercase()}","client_payload":{"branch":"$branch"}}""")
         }
+        Unit
     }
 
     /**

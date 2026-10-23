@@ -87,6 +87,7 @@ class ArtifactInstaller @Inject constructor(
 
             // 5. Clean up cached APK
             apkFile.delete()
+            Unit
         }
     }
 }

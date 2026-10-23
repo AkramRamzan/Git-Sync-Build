@@ -39,6 +39,7 @@ class LocalFileSystemEngine @Inject constructor(
                 val tmp = File(file.parent, ".tmp_${file.name}")
                 tmp.writeText(content, Charsets.UTF_8)
                 Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                Unit
             }
         }
 
@@ -54,7 +55,10 @@ class LocalFileSystemEngine @Inject constructor(
     }
 
     suspend fun delete(file: File): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching { file.deleteRecursively() }
+        runCatching {
+            file.deleteRecursively()
+            Unit
+        }
     }
 
     fun posixPath(file: File): Path = file.toPath()

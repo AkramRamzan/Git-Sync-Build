@@ -5,7 +5,6 @@ import com.aro.code.filesystem.MAX_REPO_SIZE_BYTES
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.api.ResetCommand
 import org.eclipse.jgit.lib.ProgressMonitor
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import java.io.File
@@ -78,6 +77,7 @@ class GitRepository @Inject constructor(
                         )
                         .call()
                 }
+                Unit
             }
         }
 
@@ -87,6 +87,7 @@ class GitRepository @Inject constructor(
             Git.open(repoDir).use { git ->
                 git.stashCreate().call()
             }
+            Unit
         }
     }
 
@@ -97,6 +98,7 @@ class GitRepository @Inject constructor(
                 git.stashApply().call()
                 git.stashDrop().call()
             }
+            Unit
         }
     }
 
@@ -107,10 +109,11 @@ class GitRepository @Inject constructor(
                 Git.open(repoDir).use { git ->
                     git.checkout().setCreateBranch(true).setName(branchName).call()
                 }
+                Unit
             }
         }
 
-    // ── Status ──────────────────────────────────────────────────────────────
+    // ── Status ──────────────────────────────────────────────────────
     suspend fun status(repoDir: File): Result<Set<String>> = withContext(Dispatchers.IO) {
         runCatching {
             Git.open(repoDir).use { git ->
