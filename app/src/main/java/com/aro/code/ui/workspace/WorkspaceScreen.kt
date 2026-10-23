@@ -118,7 +118,7 @@ fun WorkspaceScreen(
 
                     // AI Agent Chat Drawer / Screen
                     IconButton(onClick = onChatOpen) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = "Anti-Gravity AI Chat")
+                        Icon(Icons.Default.Chat, contentDescription = "Anti-Gravity AI Chat")
                     }
 
                     // Cloud Build Trigger
@@ -134,7 +134,7 @@ fun WorkspaceScreen(
                     // Profile Icon (👤) — Anti-Gravity Account & Logout Trigger
                     IconButton(onClick = { viewModel.openAntiGravityDialog() }) {
                         Icon(
-                            Icons.Default.AccountCircle,
+                            Icons.Default.Person,
                             contentDescription = "Profile & Account",
                             tint = if (state.isGoogleSignedIn) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
