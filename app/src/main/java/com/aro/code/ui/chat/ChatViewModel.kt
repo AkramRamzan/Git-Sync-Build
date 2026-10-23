@@ -277,26 +277,42 @@ class ChatViewModel @Inject constructor(
 
     fun applyDiff(diff: DiffPreviewBlock) {
         viewModelScope.launch {
-            val uriStr = diff.targetUriString ?: _uiState.value.attachedFiles
-                .firstOrNull { it.name == diff.targetFileName }?.uriString
+            _uiState.update { it.copy(activeDiffForPreview = null, isLoading = true) }
 
-            if (uriStr != null) {
-                val uri = android.net.Uri.parse(uriStr)
-                projectManager.atomicWriteText(uri, diff.replacementContent).onSuccess {
-                    _uiState.update {
-                        it.copy(
-                            activeDiffForPreview = null,
-                            statusMessage = "Diff applied successfully to ${diff.targetFileName} ✓"
-                        )
-                    }
-                }.onFailure { e ->
-                    _uiState.update {
-                        it.copy(error = "Failed to apply diff: ${e.message}")
-                    }
+            // Find file content if possible
+            val readRes = projectManager.readText(diff.filePath)
+            val writeRes = if (readRes.isSuccess) {
+                val originalText = readRes.getOrNull().orEmpty()
+                val updatedText = if (originalText.contains(diff.originalSnippet) && diff.originalSnippet.isNotBlank()) {
+                    originalText.replaceFirst(diff.originalSnippet, diff.replacementSnippet)
+                } else {
+                    diff.replacementSnippet
+                }
+                projectManager.writeTextAtomic(diff.filePath, updatedText)
+            } else {
+                projectManager.writeTextAtomic(diff.filePath, diff.replacementSnippet)
+            }
+
+            val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
+            if (writeRes.isSuccess) {
+                val confirmMsg = ChatMessage(
+                    role = "model",
+                    text = "✅ Successfully applied modifications to `${diff.filePath}`."
+                )
+                appendMessage(confirmMsg, isAntiGravity)
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = "Applied changes to ${diff.filePath} ✓"
+                    )
                 }
             } else {
+                val errMsg = "Failed to apply diff to ${diff.filePath}: ${writeRes.exceptionOrNull()?.message}"
                 _uiState.update {
-                    it.copy(error = "Cannot apply diff: File URI not found for ${diff.targetFileName}")
+                    it.copy(
+                        isLoading = false,
+                        error = errMsg
+                    )
                 }
             }
         }
