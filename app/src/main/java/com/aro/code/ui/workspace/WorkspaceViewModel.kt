@@ -3,8 +3,8 @@ package com.aro.code.ui.workspace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aro.code.auth.CredentialStore
-import com.aro.code.build.BuildType
-import com.aro.code.build.CloudBuildPipeline
+import com.aro.code.cloudbuild.BuildType
+import com.aro.code.cloudbuild.CloudBuildPipeline
 import com.aro.code.filesystem.LocalFileSystemEngine
 import com.aro.code.vcs.GitRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
