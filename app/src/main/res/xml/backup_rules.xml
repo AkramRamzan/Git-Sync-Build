@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclude credentials – they live in encrypted KeyStore-backed DataStore -->
+    <exclude domain="sharedpref" path="secure_credentials.preferences_pb" />
+</full-backup-content>

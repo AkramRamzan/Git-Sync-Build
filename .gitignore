@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+local.properties
+*.keystore
+release.keystore
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Android
+/app/build/
+/app/src/main/assets/editor/node_modules/
+
+# Secrets – never commit
+gradle.properties.local
+**/secrets.properties

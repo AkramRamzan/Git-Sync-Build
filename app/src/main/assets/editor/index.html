@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aro Code Editor</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { height:100%; background:#1e1e1e; color:#d4d4d4; font-family:monospace; }
+    #editor { width:100%; height:100%; }
+  </style>
+  <!-- Replace src with your bundled Monaco loader.js for production -->
+  <script>
+    // Lightweight stub – swap with Monaco AMD loader in production build
+    var _content = "";
+    var _path    = "";
+
+    window.aroSetContent = function(content, path) {
+      _content = content;
+      _path    = path;
+      var el = document.getElementById("editor");
+      if (el) el.value = content;
+    };
+
+    function notifyChange() {
+      if (window.AroCode) {
+        window.AroCode.onContentChanged(_path, document.getElementById("editor").value);
+      }
+    }
+  </script>
+</head>
+<body>
+  <textarea id="editor"
+    oninput="notifyChange()"
+    spellcheck="false"
+    autocorrect="off"
+    autocapitalize="off"
+    style="width:100%;height:100%;background:#1e1e1e;color:#d4d4d4;
+           font-size:14px;line-height:1.5;padding:8px;border:none;
+           resize:none;outline:none;tab-size:2;">
+  </textarea>
+</body>
+</html>

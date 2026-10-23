@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Aro Code</string>
+    <string name="clone_repo">Clone Repository</string>
+    <string name="trigger_build">Trigger Cloud Build</string>
+    <string name="open_chat">Open AI Chat</string>
+    <string name="save_file">Save File</string>
+    <string name="no_api_key">No Gemini API key configured. Go to Settings.</string>
+    <string name="install_permission_needed">Enable "Install unknown apps" for self-updates.</string>
+</resources>

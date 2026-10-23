@@ -1,0 +1,104 @@
+[versions]
+# Core SDK
+agp                   = "8.5.1"
+kotlin                = "2.0.21"
+ksp                   = "2.0.21-1.0.27"
+coreKtx               = "1.13.1"
+appcompat             = "1.7.0"
+
+# Jetpack Compose
+composeBom            = "2024.09.02"
+composeActivity       = "1.9.2"
+composeNavigation     = "2.8.2"
+lifecycleRuntime      = "2.8.6"
+
+# DI
+hilt                  = "2.52"
+hiltNavCompose        = "1.2.0"
+
+# Credential Manager / Auth
+credentialManager     = "1.3.0"
+googleId              = "1.1.1"
+
+# DataStore / Security
+datastore             = "1.1.1"
+securityCrypto        = "1.1.0-alpha06"
+
+# Networking
+ktor                  = "2.3.12"
+kotlinxSerialization  = "1.7.3"
+
+# JGit
+jgit                  = "6.10.0.202406032230-r"
+
+# Coroutines
+coroutines            = "1.9.0"
+
+# Tree-sitter (JNI AAR – published to Maven Central by nickel-org)
+treesitter            = "0.23.0"
+
+# Testing
+junit                 = "4.13.2"
+androidxJunit         = "1.2.1"
+espresso              = "3.6.1"
+
+[libraries]
+# AndroidX Core
+androidx-core-ktx         = { group = "androidx.core",            name = "core-ktx",              version.ref = "coreKtx" }
+androidx-appcompat        = { group = "androidx.appcompat",       name = "appcompat",             version.ref = "appcompat" }
+androidx-lifecycle        = { group = "androidx.lifecycle",       name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntime" }
+
+# Compose
+compose-bom               = { group = "androidx.compose",         name = "compose-bom",           version.ref = "composeBom" }
+compose-ui                = { group = "androidx.compose.ui",      name = "ui" }
+compose-ui-tooling        = { group = "androidx.compose.ui",      name = "ui-tooling" }
+compose-ui-tooling-preview= { group = "androidx.compose.ui",      name = "ui-tooling-preview" }
+compose-material3         = { group = "androidx.compose.material3",name = "material3" }
+compose-activity          = { group = "androidx.activity",        name = "activity-compose",      version.ref = "composeActivity" }
+compose-navigation        = { group = "androidx.navigation",      name = "navigation-compose",    version.ref = "composeNavigation" }
+compose-viewmodel         = { group = "androidx.lifecycle",       name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntime" }
+
+# Hilt DI
+hilt-android              = { group = "com.google.dagger",        name = "hilt-android",          version.ref = "hilt" }
+hilt-compiler             = { group = "com.google.dagger",        name = "hilt-android-compiler", version.ref = "hilt" }
+hilt-nav-compose          = { group = "androidx.hilt",            name = "hilt-navigation-compose",version.ref = "hiltNavCompose" }
+
+# Credential Manager
+credentials               = { group = "androidx.credentials",     name = "credentials",           version.ref = "credentialManager" }
+credentials-play          = { group = "androidx.credentials",     name = "credentials-play-services-auth", version.ref = "credentialManager" }
+googleid                  = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleId" }
+
+# DataStore & Security
+datastore-prefs           = { group = "androidx.datastore",       name = "datastore-preferences", version.ref = "datastore" }
+security-crypto           = { group = "androidx.security",        name = "security-crypto",       version.ref = "securityCrypto" }
+
+# Networking – Ktor
+ktor-client-android       = { group = "io.ktor",                  name = "ktor-client-android",   version.ref = "ktor" }
+ktor-client-content-neg   = { group = "io.ktor",                  name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-json   = { group = "io.ktor",                  name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-logging       = { group = "io.ktor",                  name = "ktor-client-logging",   version.ref = "ktor" }
+ktor-client-auth          = { group = "io.ktor",                  name = "ktor-client-auth",      version.ref = "ktor" }
+kotlinx-serialization     = { group = "org.jetbrains.kotlinx",   name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+# Coroutines
+kotlinx-coroutines        = { group = "org.jetbrains.kotlinx",   name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# JGit
+jgit-core                 = { group = "org.eclipse.jgit",        name = "org.eclipse.jgit",      version.ref = "jgit" }
+jgit-http                 = { group = "org.eclipse.jgit",        name = "org.eclipse.jgit.http.apache", version.ref = "jgit" }
+
+# Tree-Sitter JNI
+tree-sitter               = { group = "io.github.nickel-org",    name = "tree-sitter",           version.ref = "treesitter" }
+
+# Testing
+junit                     = { group = "junit",                    name = "junit",                 version.ref = "junit" }
+androidx-junit            = { group = "androidx.test.ext",        name = "junit",                 version.ref = "androidxJunit" }
+espresso                  = { group = "androidx.test.espresso",   name = "espresso-core",         version.ref = "espresso" }
+
+[plugins]
+android-application       = { id = "com.android.application",          version.ref = "agp" }
+kotlin-android            = { id = "org.jetbrains.kotlin.android",     version.ref = "kotlin" }
+kotlin-compose            = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+hilt                      = { id = "com.google.dagger.hilt.android",   version.ref = "hilt" }
+ksp                       = { id = "com.google.devtools.ksp",          version.ref = "ksp" }
+kotlin-serialization      = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
