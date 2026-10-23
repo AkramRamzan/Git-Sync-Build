@@ -86,6 +86,13 @@ class AuthRepository @Inject constructor(
         codeVerifier: String,
         clientIdOverride: String? = null
     ): Result<GoogleTokenResponse> = runCatching {
+        val trimmedCode = code.trim()
+        if (trimmedCode.startsWith("ya29.") || trimmedCode.startsWith("Bearer ")) {
+            val directToken = trimmedCode.removePrefix("Bearer ").trim()
+            store.saveGoogleTokens(accessToken = directToken, refreshToken = null, idToken = null)
+            return@runCatching GoogleTokenResponse(accessToken = directToken)
+        }
+
         val cid = clientIdOverride?.takeIf { it.isNotBlank() }
             ?: googleClientId.takeIf { it.isNotBlank() }
             ?: githubClientId
@@ -93,7 +100,7 @@ class AuthRepository @Inject constructor(
         val response: GoogleTokenResponse = httpClient.submitForm(
             url = "https://oauth2.googleapis.com/token",
             formParameters = Parameters.build {
-                append("code", code.trim())
+                append("code", trimmedCode)
                 append("client_id", cid)
                 append("code_verifier", codeVerifier)
                 append("grant_type", "authorization_code")

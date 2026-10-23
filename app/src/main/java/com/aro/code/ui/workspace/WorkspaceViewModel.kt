@@ -26,8 +26,7 @@ data class WorkspaceUiState(
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
     val showCloneDialog: Boolean = false,
-    val showAntiGravityDialog: Boolean = false,
-    val showCodeInputDialog: Boolean = false
+    val showAntiGravityDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -143,27 +142,16 @@ class WorkspaceViewModel @Inject constructor(
     fun openAntiGravityDialog() = _uiState.update { it.copy(showAntiGravityDialog = true) }
     fun dismissAntiGravityDialog() = _uiState.update { it.copy(showAntiGravityDialog = false) }
 
-    fun onStartWebAuth(url: String, verifier: String) {
-        pendingCodeVerifier = verifier
-        _uiState.update {
-            it.copy(
-                showAntiGravityDialog = false,
-                showCodeInputDialog = true
-            )
-        }
-    }
-
-    fun dismissCodeInputDialog() = _uiState.update { it.copy(showCodeInputDialog = false) }
-
-    fun submitGoogleAuthCode(code: String) {
+    fun submitGoogleAuthCode(code: String, verifier: String, customClientId: String?) {
         viewModelScope.launch {
-            _uiState.update { it.copy(showCodeInputDialog = false, isLoading = true) }
-            authRepo.exchangeGoogleAuthCode(code, pendingCodeVerifier)
+            _uiState.update { it.copy(isLoading = true) }
+            authRepo.exchangeGoogleAuthCode(code, verifier, customClientId)
                 .onSuccess {
                     _uiState.update {
                         it.copy(
+                            showAntiGravityDialog = false,
                             isLoading = false,
-                            statusMessage = "Anti-Gravity Google authentication successful ✓"
+                            statusMessage = "Anti-Gravity Google login successful ✓"
                         )
                     }
                 }

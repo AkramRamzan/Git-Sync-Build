@@ -1,11 +1,11 @@
 package com.aro.code.ai
 
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.utils.io.*
@@ -26,22 +26,61 @@ data class GeminiRequest(
     val contents: List<Content>,
     @SerialName("generationConfig") val generationConfig: GenerationConfig = GenerationConfig()
 ) {
-    @Serializable data class Content(val role: String, val parts: List<Part>)
-    @Serializable data class Part(val text: String)
-    @Serializable data class GenerationConfig(
-        val temperature: Float = 0.2f,
+    @Serializable
+    data class Content(
+        val role: String = "user",
+        val parts: List<Part> = emptyList()
+    )
+
+    @Serializable
+    data class Part(
+        val text: String = ""
+    )
+
+    @Serializable
+    data class GenerationConfig(
+        val temperature: Float = 0.7f,
         @SerialName("maxOutputTokens") val maxOutputTokens: Int = 8192
     )
 }
 
 @Serializable
 data class GeminiResponse(
-    val candidates: List<Candidate> = emptyList()
+    val candidates: List<Candidate> = emptyList(),
+    val error: GeminiErrorDetail? = null
 ) {
-    @Serializable data class Candidate(val content: GeminiRequest.Content? = null)
+    @Serializable
+    data class Candidate(
+        val content: Content? = null,
+        val finishReason: String? = null
+    )
+
+    @Serializable
+    data class Content(
+        val role: String? = null,
+        val parts: List<Part> = emptyList()
+    )
+
+    @Serializable
+    data class Part(
+        val text: String = ""
+    )
+
     fun text(): String = candidates.firstOrNull()
-        ?.content?.parts?.firstOrNull()?.text ?: ""
+        ?.content?.parts?.joinToString("") { it.text } ?: ""
 }
+
+@Serializable
+data class GeminiErrorResponse(
+    val error: GeminiErrorDetail
+)
+
+@Serializable
+data class GeminiErrorDetail(
+    val code: Int = 0,
+    val message: String = "Unknown Gemini API error",
+    val status: String? = null
+)
 
 /**
  * Module 5 & Anti-Gravity – Gemini API Client.
@@ -63,21 +102,42 @@ class GeminiClient @Inject constructor(
         systemPrompt: String,
         userPrompt: String
     ): Result<String> {
+        val trimmedKey = apiKey.trim()
+        val combinedPrompt = if (systemPrompt.isNotBlank()) "$systemPrompt\n\n$userPrompt" else userPrompt
         val body = GeminiRequest(
             contents = listOf(
                 GeminiRequest.Content("user", listOf(
-                    GeminiRequest.Part(systemPrompt + "\n\n" + userPrompt)
+                    GeminiRequest.Part(combinedPrompt)
                 ))
             )
         )
+
         return retryWithBackoff {
-            val resp: GeminiResponse = httpClient.post(
-                "$baseUrl/$modelId:generateContent?key=$apiKey"
+            val response = httpClient.post(
+                "$baseUrl/$modelId:generateContent?key=$trimmedKey"
             ) {
                 contentType(ContentType.Application.Json)
                 setBody(body)
-            }.body()
-            resp.text()
+            }
+
+            val rawText = response.bodyAsText()
+
+            if (response.status.value !in 200..299) {
+                val errMsg = runCatching {
+                    json.decodeFromString<GeminiErrorResponse>(rawText).error.message
+                }.getOrNull()?.ifBlank { null } ?: "HTTP ${response.status.value}: $rawText"
+                error(errMsg)
+            }
+
+            val resp: GeminiResponse = json.decodeFromString(rawText)
+            val resultText = resp.text()
+            if (resultText.isBlank()) {
+                if (resp.error != null) {
+                    error(resp.error.message)
+                }
+                error("Received empty response from Gemini.")
+            }
+            resultText
         }
     }
 
@@ -91,23 +151,35 @@ class GeminiClient @Inject constructor(
         systemPrompt: String,
         userPrompt: String
     ): Flow<String> = channelFlow {
+        val trimmedKey = apiKey.trim()
+        val combinedPrompt = if (systemPrompt.isNotBlank()) "$systemPrompt\n\n$userPrompt" else userPrompt
         val requestBody = GeminiRequest(
             contents = listOf(
                 GeminiRequest.Content("user", listOf(
-                    GeminiRequest.Part(systemPrompt + "\n\n" + userPrompt)
+                    GeminiRequest.Part(combinedPrompt)
                 ))
             )
         )
 
+        var tokenCount = 0
+
         try {
             val statement = httpClient.preparePost(
-                "$baseUrl/$modelId:streamGenerateContent?alt=sse&key=$apiKey"
+                "$baseUrl/$modelId:streamGenerateContent?alt=sse&key=$trimmedKey"
             ) {
                 contentType(ContentType.Application.Json)
                 setBody(requestBody)
             }
 
             statement.execute { response ->
+                if (response.status.value !in 200..299) {
+                    val rawError = response.bodyAsText()
+                    val errMsg = runCatching {
+                        json.decodeFromString<GeminiErrorResponse>(rawError).error.message
+                    }.getOrNull()?.ifBlank { null } ?: "HTTP ${response.status.value}: $rawError"
+                    error(errMsg)
+                }
+
                 val channel = response.bodyAsChannel()
                 while (!channel.isClosedForRead) {
                     val line = channel.readUTF8Line() ?: break
@@ -119,6 +191,7 @@ class GeminiClient @Inject constructor(
                                 val chunk = json.decodeFromString<GeminiResponse>(jsonStr)
                                 val chunkText = chunk.text()
                                 if (chunkText.isNotEmpty()) {
+                                    tokenCount++
                                     send(chunkText)
                                 }
                             }
@@ -126,17 +199,28 @@ class GeminiClient @Inject constructor(
                     }
                 }
             }
+
+            // If streaming produced no tokens at all, fallback to generate()
+            if (tokenCount == 0) {
+                generate(trimmedKey, modelId, systemPrompt, userPrompt)
+                    .onSuccess { send(it) }
+                    .onFailure { throw it }
+            }
         } catch (e: Exception) {
-            // Fallback to one-shot generation if SSE streaming encounters transport errors
-            generate(apiKey, modelId, systemPrompt, userPrompt)
-                .onSuccess { send(it) }
-                .onFailure { throw it }
+            // If already sent some tokens, rethrow; otherwise attempt one-shot fallback
+            if (tokenCount == 0) {
+                generate(trimmedKey, modelId, systemPrompt, userPrompt)
+                    .onSuccess { send(it) }
+                    .onFailure { throw it }
+            } else {
+                throw e
+            }
         }
     }
 
     /** Exponential backoff with jitter on 429/503. */
     private suspend fun <T> retryWithBackoff(
-        maxAttempts: Int = 5,
+        maxAttempts: Int = 3,
         block: suspend () -> T
     ): Result<T> {
         var lastError: Throwable? = null
@@ -146,7 +230,7 @@ class GeminiClient @Inject constructor(
                     lastError = e
                     val base = (2.0.pow(attempt) * 1000).toLong()
                     val jitter = Random.nextLong(0, 500)
-                    delay(min(base + jitter, 32_000L))
+                    delay(min(base + jitter, 16_000L))
                 }
         }
         return Result.failure(lastError ?: RuntimeException("Unknown error"))

@@ -18,7 +18,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aro.code.filesystem.ProjectNode
 import com.aro.code.ui.auth.AntiGravityAccountDialog
-import com.aro.code.ui.auth.CodeInputDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,22 +199,16 @@ fun WorkspaceScreen(
                 )
             }
 
-            // Anti-Gravity Google Account Dialog
+            // Anti-Gravity Google Account Dialog (Link generation + Code Input + Logout)
             if (state.showAntiGravityDialog) {
                 AntiGravityAccountDialog(
                     isSignedIn = state.isGoogleSignedIn,
                     userTokenSnippet = state.googleTokenSnippet,
                     onDismiss = { viewModel.dismissAntiGravityDialog() },
-                    onStartWebAuth = { url, verifier -> viewModel.onStartWebAuth(url, verifier) },
+                    onSubmitCode = { code, verifier, cid ->
+                        viewModel.submitGoogleAuthCode(code, verifier, cid)
+                    },
                     onSignOut = { viewModel.signOutGoogle() }
-                )
-            }
-
-            // Google Auth Code Input Dialog
-            if (state.showCodeInputDialog) {
-                CodeInputDialog(
-                    onDismiss = { viewModel.dismissCodeInputDialog() },
-                    onSubmit = { code -> viewModel.submitGoogleAuthCode(code) }
                 )
             }
         }

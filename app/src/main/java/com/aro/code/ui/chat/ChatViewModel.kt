@@ -214,10 +214,20 @@ class ChatViewModel @Inject constructor(
                 systemPrompt = systemPrompt,
                 userPrompt = fullUserPrompt
             ).catch { e ->
-                _uiState.update {
-                    it.copy(
+                val errorMsg = "⚠️ Gemini Error: ${e.message ?: "Failed to generate response"}"
+                _uiState.update { state ->
+                    val msgs = state.messages.toMutableList()
+                    if (msgs.isNotEmpty()) {
+                        val lastIdx = msgs.lastIndex
+                        msgs[lastIdx] = msgs[lastIdx].copy(
+                            text = errorMsg,
+                            isStreaming = false
+                        )
+                    }
+                    state.copy(
+                        messages = msgs,
                         isLoading = false,
-                        error = "Streaming failed: ${e.message}"
+                        error = e.message
                     )
                 }
             }.collect { token ->
@@ -234,15 +244,19 @@ class ChatViewModel @Inject constructor(
             }
 
             // Stream completed: finalize message and parse any diff blocks
-            val finalText = responseAccumulator.toString()
-            val parsedDiffs = DiffParser.parseAllDiffs(finalText)
+            val finalText = responseAccumulator.toString().ifBlank {
+                if (_uiState.value.error != null) "" else "⚠️ No response received. Please verify your Gemini API key in Settings."
+            }
+            val parsedDiffs = if (finalText.isNotBlank()) DiffParser.parseAllDiffs(finalText) else emptyList()
 
             _uiState.update { state ->
                 val msgs = state.messages.toMutableList()
                 if (msgs.isNotEmpty()) {
                     val lastIdx = msgs.lastIndex
+                    val existingText = msgs[lastIdx].text
+                    val textToDisplay = if (existingText.startsWith("⚠️")) existingText else finalText
                     msgs[lastIdx] = msgs[lastIdx].copy(
-                        text = finalText,
+                        text = textToDisplay,
                         diffBlocks = parsedDiffs,
                         isStreaming = false
                     )
