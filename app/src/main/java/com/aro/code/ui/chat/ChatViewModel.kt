@@ -261,6 +261,10 @@ class ChatViewModel @Inject constructor(
         _uiState.update { it.copy(attachedFiles = it.attachedFiles + attached) }
     }
 
+    fun attachMultipleFiles(files: List<AttachedFile>) {
+        _uiState.update { it.copy(attachedFiles = it.attachedFiles + files) }
+    }
+
     fun removeAttachment(index: Int) {
         _uiState.update {
             val list = it.attachedFiles.toMutableList()
