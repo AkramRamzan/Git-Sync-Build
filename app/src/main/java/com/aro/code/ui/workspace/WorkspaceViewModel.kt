@@ -24,7 +24,7 @@ data class WorkspaceUiState(
     val projectUriString: String? = null,
     val isGoogleSignedIn: Boolean = false,
     val googleTokenSnippet: String? = null,
-    val selectedModel: GeminiModel = GeminiModel.FLASH_1_5,
+    val selectedModel: GeminiModel = GeminiModel.FLASH_2_5,
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
     val showCloneDialog: Boolean = false,

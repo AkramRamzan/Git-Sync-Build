@@ -39,8 +39,8 @@ enum class ChatEngine {
 data class ChatUiState(
     val antiGravityMessages: List<ChatMessage> = emptyList(),
     val geminiMessages: List<ChatMessage> = emptyList(),
-    val selectedModel: GeminiModel = GeminiModel.FLASH_1_5,
-    val selectedAntiGravityModel: AntiGravityModel = AntiGravityModel.THINKING_2_5,
+    val selectedModel: GeminiModel = GeminiModel.FLASH_2_5,
+    val selectedAntiGravityModel: AntiGravityModel = AntiGravityModel.FLASH_2_5,
     val attachedFiles: List<AttachedFile> = emptyList(),
     val isLoading: Boolean = false,
     val activeStep: String? = null,
