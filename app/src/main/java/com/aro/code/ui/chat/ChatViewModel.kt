@@ -2,6 +2,7 @@ package com.aro.code.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aro.code.ai.AntiGravityModel
 import com.aro.code.ai.DiffParser
 import com.aro.code.ai.DiffPreviewBlock
 import com.aro.code.ai.GeminiClient
@@ -36,19 +37,26 @@ enum class ChatEngine {
 }
 
 data class ChatUiState(
-    val messages: List<ChatMessage> = emptyList(),
+    val antiGravityMessages: List<ChatMessage> = emptyList(),
+    val geminiMessages: List<ChatMessage> = emptyList(),
     val selectedModel: GeminiModel = GeminiModel.FLASH_1_5,
+    val selectedAntiGravityModel: AntiGravityModel = AntiGravityModel.THINKING_2_5,
     val attachedFiles: List<AttachedFile> = emptyList(),
     val isLoading: Boolean = false,
+    val activeStep: String? = null,
     val activeDiffForPreview: DiffPreviewBlock? = null,
     val error: String? = null,
     val statusMessage: String? = null,
-    val sessionId: String = "",
+    val antiGravitySessionId: String = "antigravity_default",
+    val geminiSessionId: String = "gemini_default",
     val engine: ChatEngine = ChatEngine.ANTIGRAVITY,
     val isAntiGravitySignedIn: Boolean = false,
     val antiGravityTokenSnippet: String? = null,
     val showAuthDialog: Boolean = false
-)
+) {
+    val currentMessages: List<ChatMessage>
+        get() = if (engine == ChatEngine.ANTIGRAVITY) antiGravityMessages else geminiMessages
+}
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -61,13 +69,12 @@ class ChatViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
-    private var currentSessionId: String = ""
 
     private val antiGravitySystemPrompt = """
-        You are Google Anti-Gravity Agent, an autonomous software development agent embedded in the Aro Code IDE.
-        You have direct access to analyze workspace files and output production modifications.
+        You are Google Anti-Gravity Agent (Termux CLI agy v2.0), an autonomous software engineering agent.
+        You have direct access to inspect workspace files and generate production code modifications.
         
-        When proposing code changes, you must ALWAYS provide precise file diff blocks in the format:
+        When proposing code modifications, you MUST output clean, unambiguous diff blocks in the format:
         FILE: <path/to/File.kt>
         <<<<<<< SEARCH
         <exact original lines>
@@ -75,7 +82,7 @@ class ChatViewModel @Inject constructor(
         <exact replacement lines>
         >>>>>>> REPLACE
 
-        Keep explanations concise, professional, and focus on production Kotlin/Java/XML/Gradle code.
+        Always format your responses with concise engineering precision.
     """.trimIndent()
 
     private val geminiSystemPrompt = """
@@ -102,23 +109,34 @@ class ChatViewModel @Inject constructor(
                 _uiState.update { it.copy(selectedModel = GeminiModel.fromId(savedModelId)) }
             }
 
-            // Module 2.3 — Restore conversation history from chat_history.db
+            // Restore conversation history from chat_history.db for BOTH engines independently
             runCatching {
-                val sid = chatDb.getLastActiveSessionId()
-                currentSessionId = sid
-                _uiState.update { it.copy(sessionId = sid) }
-                val pastMessages = chatDb.getMessagesForSession(sid)
-                if (pastMessages.isNotEmpty()) {
-                    val restored = pastMessages.map { entity ->
-                        ChatMessage(
-                            role = if (entity.sender == "USER") "user" else "model",
-                            text = entity.messageText,
-                            attachments = entity.attachedFiles.map { AttachedFile(name = it, content = "", uriString = null) },
-                            diffBlocks = DiffParser.parseAllDiffs(entity.messageText),
-                            isStreaming = false
-                        )
-                    }
-                    _uiState.update { it.copy(messages = restored) }
+                val agMessages = chatDb.getMessagesForSession("antigravity_default")
+                val gemMessages = chatDb.getMessagesForSession("gemini_default")
+
+                val mappedAg = agMessages.map { entity ->
+                    ChatMessage(
+                        role = if (entity.sender == "USER") "user" else "model",
+                        text = entity.messageText,
+                        attachments = entity.attachedFiles.map { AttachedFile(name = it, content = "", uriString = null) },
+                        diffBlocks = DiffParser.parseAllDiffs(entity.messageText),
+                        isStreaming = false
+                    )
+                }
+                val mappedGem = gemMessages.map { entity ->
+                    ChatMessage(
+                        role = if (entity.sender == "USER") "user" else "model",
+                        text = entity.messageText,
+                        attachments = entity.attachedFiles.map { AttachedFile(name = it, content = "", uriString = null) },
+                        diffBlocks = DiffParser.parseAllDiffs(entity.messageText),
+                        isStreaming = false
+                    )
+                }
+                _uiState.update {
+                    it.copy(
+                        antiGravityMessages = mappedAg,
+                        geminiMessages = mappedGem
+                    )
                 }
             }
         }
@@ -126,29 +144,51 @@ class ChatViewModel @Inject constructor(
 
     fun startNewSession() {
         viewModelScope.launch {
-            val newSid = UUID.randomUUID().toString()
-            currentSessionId = newSid
-            chatDb.saveLastSessionId(newSid)
-            _uiState.update {
-                it.copy(
-                    sessionId = newSid,
-                    messages = emptyList(),
-                    error = null,
-                    statusMessage = "Started fresh conversation thread"
-                )
+            val currentEngine = _uiState.value.engine
+            val newSid = "${if (currentEngine == ChatEngine.ANTIGRAVITY) "antigravity" else "gemini"}_${UUID.randomUUID()}"
+            if (currentEngine == ChatEngine.ANTIGRAVITY) {
+                _uiState.update {
+                    it.copy(
+                        antiGravitySessionId = newSid,
+                        antiGravityMessages = emptyList(),
+                        error = null,
+                        statusMessage = "Started fresh Anti-Gravity agent session"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        geminiSessionId = newSid,
+                        geminiMessages = emptyList(),
+                        error = null,
+                        statusMessage = "Started fresh Gemini conversation"
+                    )
+                }
             }
         }
     }
 
     fun clearSessionHistory() {
         viewModelScope.launch {
-            chatDb.clearSession(currentSessionId)
-            _uiState.update {
-                it.copy(
-                    messages = emptyList(),
-                    error = null,
-                    statusMessage = "Cleared conversation history"
-                )
+            val currentEngine = _uiState.value.engine
+            if (currentEngine == ChatEngine.ANTIGRAVITY) {
+                chatDb.clearSession(_uiState.value.antiGravitySessionId)
+                _uiState.update {
+                    it.copy(
+                        antiGravityMessages = emptyList(),
+                        error = null,
+                        statusMessage = "Cleared Anti-Gravity history"
+                    )
+                }
+            } else {
+                chatDb.clearSession(_uiState.value.geminiSessionId)
+                _uiState.update {
+                    it.copy(
+                        geminiMessages = emptyList(),
+                        error = null,
+                        statusMessage = "Cleared Gemini history"
+                    )
+                }
             }
         }
     }
@@ -160,8 +200,12 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun switchAntiGravityModel(model: AntiGravityModel) {
+        _uiState.update { it.copy(selectedAntiGravityModel = model) }
+    }
+
     fun selectEngine(engine: ChatEngine) {
-        _uiState.update { it.copy(engine = engine, error = null) }
+        _uiState.update { it.copy(engine = engine, error = null, activeStep = null) }
     }
 
     fun openAuthDialog() = _uiState.update { it.copy(showAuthDialog = true) }
@@ -216,16 +260,11 @@ class ChatViewModel @Inject constructor(
     }
 
     fun removeAttachment(index: Int) {
-        _uiState.update { state ->
-            val updated = state.attachedFiles.toMutableList().apply {
-                if (index in indices) removeAt(index)
-            }
-            state.copy(attachedFiles = updated)
+        _uiState.update {
+            val list = it.attachedFiles.toMutableList()
+            if (index in list.indices) list.removeAt(index)
+            it.copy(attachedFiles = list)
         }
-    }
-
-    fun clearAttachments() {
-        _uiState.update { it.copy(attachedFiles = emptyList()) }
     }
 
     fun showDiffPreview(diff: DiffPreviewBlock) {
@@ -238,41 +277,55 @@ class ChatViewModel @Inject constructor(
 
     fun applyDiff(diff: DiffPreviewBlock) {
         viewModelScope.launch {
-            _uiState.update { it.copy(activeDiffForPreview = null, isLoading = true) }
+            val uriStr = diff.targetUriString ?: _uiState.value.attachedFiles
+                .firstOrNull { it.name == diff.targetFileName }?.uriString
 
-            // Find file content if possible
-            val readRes = projectManager.readText(diff.filePath)
-            val writeRes = if (readRes.isSuccess) {
-                val originalText = readRes.getOrNull().orEmpty()
-                val updatedText = if (originalText.contains(diff.originalSnippet) && diff.originalSnippet.isNotBlank()) {
-                    originalText.replaceFirst(diff.originalSnippet, diff.replacementSnippet)
-                } else {
-                    diff.replacementSnippet
+            if (uriStr != null) {
+                val uri = android.net.Uri.parse(uriStr)
+                projectManager.atomicWriteText(uri, diff.replacementContent).onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            activeDiffForPreview = null,
+                            statusMessage = "Diff applied successfully to ${diff.targetFileName} ✓"
+                        )
+                    }
+                }.onFailure { e ->
+                    _uiState.update {
+                        it.copy(error = "Failed to apply diff: ${e.message}")
+                    }
                 }
-                projectManager.writeTextAtomic(diff.filePath, updatedText)
             } else {
-                projectManager.writeTextAtomic(diff.filePath, diff.replacementSnippet)
+                _uiState.update {
+                    it.copy(error = "Cannot apply diff: File URI not found for ${diff.targetFileName}")
+                }
             }
+        }
+    }
 
-            if (writeRes.isSuccess) {
-                val confirmMsg = ChatMessage(
-                    role = "assistant",
-                    text = "✅ Successfully applied modifications to `${diff.filePath}`."
-                )
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        messages = it.messages + confirmMsg,
-                        statusMessage = "Changes saved to ${diff.filePath}"
-                    )
-                }
+    private fun appendMessage(msg: ChatMessage, isAntiGravity: Boolean) {
+        _uiState.update { state ->
+            if (isAntiGravity) {
+                state.copy(antiGravityMessages = state.antiGravityMessages + msg)
             } else {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = "Failed to write file: ${writeRes.exceptionOrNull()?.message}"
-                    )
+                state.copy(geminiMessages = state.geminiMessages + msg)
+            }
+        }
+    }
+
+    private fun updateLastMessage(isAntiGravity: Boolean, transform: (ChatMessage) -> ChatMessage) {
+        _uiState.update { state ->
+            if (isAntiGravity) {
+                val list = state.antiGravityMessages.toMutableList()
+                if (list.isNotEmpty()) {
+                    list[list.lastIndex] = transform(list[list.lastIndex])
                 }
+                state.copy(antiGravityMessages = list)
+            } else {
+                val list = state.geminiMessages.toMutableList()
+                if (list.isNotEmpty()) {
+                    list[list.lastIndex] = transform(list[list.lastIndex])
+                }
+                state.copy(geminiMessages = list)
             }
         }
     }
@@ -281,7 +334,8 @@ class ChatViewModel @Inject constructor(
         if (userText.isBlank() && _uiState.value.attachedFiles.isEmpty()) return
 
         val currentAttachments = _uiState.value.attachedFiles
-        val activeModel = _uiState.value.selectedModel
+        val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
+        val currentSessionId = if (isAntiGravity) _uiState.value.antiGravitySessionId else _uiState.value.geminiSessionId
 
         val userMsg = ChatMessage(
             role = "user",
@@ -289,11 +343,12 @@ class ChatViewModel @Inject constructor(
             attachments = currentAttachments
         )
 
+        appendMessage(userMsg, isAntiGravity)
         _uiState.update {
             it.copy(
-                messages = it.messages + userMsg,
                 attachedFiles = emptyList(),
                 isLoading = true,
+                activeStep = if (isAntiGravity) "⚡ [1/3] agy: Scanning project files & context..." else null,
                 error = null
             )
         }
@@ -304,16 +359,17 @@ class ChatViewModel @Inject constructor(
                 chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
             }
 
-            val currentEngine = _uiState.value.engine
             val authKey: String
             val activeSystemPrompt: String
+            val targetModelId: String
 
-            if (currentEngine == ChatEngine.ANTIGRAVITY) {
+            if (isAntiGravity) {
                 val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
                 if (googleToken == null) {
                     _uiState.update {
                         it.copy(
                             isLoading = false,
+                            activeStep = null,
                             error = "Anti-Gravity account not connected. Please tap 'Sign In' to login with Google Anti-Gravity."
                         )
                     }
@@ -321,6 +377,10 @@ class ChatViewModel @Inject constructor(
                 }
                 authKey = googleToken
                 activeSystemPrompt = antiGravitySystemPrompt
+                targetModelId = _uiState.value.selectedAntiGravityModel.id
+                _uiState.update {
+                    it.copy(activeStep = "🧠 [2/3] agy: Reasoning (${_uiState.value.selectedAntiGravityModel.displayName.take(15)})...")
+                }
             } else {
                 val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
                 if (apiKey == null) {
@@ -334,15 +394,7 @@ class ChatViewModel @Inject constructor(
                 }
                 authKey = apiKey
                 activeSystemPrompt = geminiSystemPrompt
-            }
-
-            // Module 3.2 & 3.3 — Dynamic Capability Verification & Model Resolution
-            val effectiveModelId = runCatching {
-                geminiClient.getValidatedModel(authKey, activeModel)
-            }.getOrDefault(activeModel.id)
-
-            if (effectiveModelId != activeModel.id) {
-                _uiState.update { it.copy(statusMessage = "Auto-switched to active model: $effectiveModelId") }
+                targetModelId = _uiState.value.selectedModel.id
             }
 
             // Construct prompt with attached file contexts
@@ -363,49 +415,38 @@ class ChatViewModel @Inject constructor(
 
             // Prepare placeholder assistant message for streaming
             val assistantMsg = ChatMessage(role = "model", text = "", isStreaming = true)
-            _uiState.update { it.copy(messages = it.messages + assistantMsg) }
+            appendMessage(assistantMsg, isAntiGravity)
 
             val responseAccumulator = StringBuilder()
 
             geminiClient.streamGenerate(
                 apiKey = authKey,
-                modelId = effectiveModelId,
+                modelId = targetModelId,
                 systemPrompt = activeSystemPrompt,
                 userPrompt = fullUserPrompt
             ).catch { e ->
-                val errorPrefix = if (currentEngine == ChatEngine.ANTIGRAVITY) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
+                val errorPrefix = if (isAntiGravity) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
                 val errorMsg = "$errorPrefix: ${e.message ?: "Failed to generate response"}"
+                updateLastMessage(isAntiGravity) { it.copy(text = errorMsg, isStreaming = false) }
                 _uiState.update { state ->
-                    val msgs = state.messages.toMutableList()
-                    if (msgs.isNotEmpty()) {
-                        val lastIdx = msgs.lastIndex
-                        msgs[lastIdx] = msgs[lastIdx].copy(
-                            text = errorMsg,
-                            isStreaming = false
-                        )
-                    }
                     state.copy(
-                        messages = msgs,
                         isLoading = false,
+                        activeStep = null,
                         error = e.message
                     )
                 }
             }.collect { token ->
                 responseAccumulator.append(token)
                 val currentText = responseAccumulator.toString()
-                _uiState.update { state ->
-                    val msgs = state.messages.toMutableList()
-                    if (msgs.isNotEmpty()) {
-                        val lastIdx = msgs.lastIndex
-                        msgs[lastIdx] = msgs[lastIdx].copy(text = currentText)
-                    }
-                    state.copy(messages = msgs)
+                if (isAntiGravity && _uiState.value.activeStep != "✏️ [3/3] agy: Generating unified diff & code changes...") {
+                    _uiState.update { it.copy(activeStep = "✏️ [3/3] agy: Generating unified diff & code changes...") }
                 }
+                updateLastMessage(isAntiGravity) { it.copy(text = currentText) }
             }
 
             // Stream completed: finalize message and parse any diff blocks
             val finalText = responseAccumulator.toString().ifBlank {
-                if (_uiState.value.error != null) "" else "⚠️ No response received. Please verify your Gemini API key in Settings."
+                if (_uiState.value.error != null) "" else "⚠️ No response received."
             }
             val parsedDiffs = if (finalText.isNotBlank()) DiffParser.parseAllDiffs(finalText) else emptyList()
 
@@ -416,21 +457,18 @@ class ChatViewModel @Inject constructor(
                 }
             }
 
+            updateLastMessage(isAntiGravity) { current ->
+                val textToDisplay = if (current.text.startsWith("⚡ Anti-Gravity Agent Error") || current.text.startsWith("⚠️ Gemini Error")) current.text else finalText
+                current.copy(
+                    text = textToDisplay,
+                    diffBlocks = parsedDiffs,
+                    isStreaming = false
+                )
+            }
             _uiState.update { state ->
-                val msgs = state.messages.toMutableList()
-                if (msgs.isNotEmpty()) {
-                    val lastIdx = msgs.lastIndex
-                    val existingText = msgs[lastIdx].text
-                    val textToDisplay = if (existingText.startsWith("⚠️")) existingText else finalText
-                    msgs[lastIdx] = msgs[lastIdx].copy(
-                        text = textToDisplay,
-                        diffBlocks = parsedDiffs,
-                        isStreaming = false
-                    )
-                }
                 state.copy(
-                    messages = msgs,
-                    isLoading = false
+                    isLoading = false,
+                    activeStep = null
                 )
             }
         }

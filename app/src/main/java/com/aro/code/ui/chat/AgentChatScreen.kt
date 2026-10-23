@@ -5,7 +5,6 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -20,20 +20,22 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.aro.code.ai.AntiGravityModel
 import com.aro.code.ai.DiffPreviewBlock
 import com.aro.code.ai.GeminiModel
 import com.aro.code.ui.auth.AntiGravityAccountDialog
@@ -50,6 +52,7 @@ fun AgentChatScreen(
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var showModelMenu by remember { mutableStateOf(false) }
+    var showAntiGravityModelMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     LaunchedEffect(initialEngine) {
@@ -69,9 +72,9 @@ fun AgentChatScreen(
         }
     }
 
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length) {
-        if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.lastIndex)
+    LaunchedEffect(state.currentMessages.size, state.currentMessages.lastOrNull()?.text?.length) {
+        if (state.currentMessages.isNotEmpty()) {
+            listState.animateScrollToItem(state.currentMessages.lastIndex)
         }
     }
 
@@ -82,20 +85,38 @@ fun AgentChatScreen(
                     Column {
                         if (state.engine == ChatEngine.ANTIGRAVITY) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Icon(
+                                    Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Anti-Gravity Agent", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Anti-Gravity Agent",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Text(
-                                text = if (state.isAntiGravitySignedIn) "Connected (${state.antiGravityTokenSnippet?.take(10)}••••)" else "Not signed in · Tap to connect",
+                                text = state.selectedAntiGravityModel.displayName,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (state.isAntiGravitySignedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.primary
                             )
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Chat, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
+                                Icon(
+                                    Icons.Default.Chat,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                                 Spacer(Modifier.width(6.dp))
-                                Text("Gemini AI Chat", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Gemini AI Chat",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -160,7 +181,7 @@ fun AgentChatScreen(
                             )
                         }
                     }
-                    // New Session Thread (Module 2.3)
+                    // New Session Thread
                     IconButton(onClick = { viewModel.startNewSession() }) {
                         Icon(Icons.Default.Add, contentDescription = "New Conversation Thread")
                     }
@@ -208,65 +229,114 @@ fun AgentChatScreen(
                 )
             }
 
-            // Mode specific banner
+            // ── Termux CLI Header Box for Anti-Gravity ──
             if (state.engine == ChatEngine.ANTIGRAVITY) {
-                if (state.isAntiGravitySignedIn) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                        shape = MaterialTheme.shapes.small
-                    ) {
+                Surface(
+                    color = Color(0xFF1E1E1E),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Connected via Google OAuth · Autonomous Workspace Tools Active",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                } else {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    Icons.Default.ErrorOutline,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "❯_ agy",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4CAF50),
+                                    fontSize = 13.sp
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "Anti-Gravity login required",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                    "Termux CLI v2.0",
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFFB0BEC5),
+                                    fontSize = 11.sp
                                 )
                             }
-                            TextButton(
-                                onClick = { viewModel.openAuthDialog() },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text("Sign In", fontWeight = FontWeight.Bold)
+
+                            // Termux CLI Model selector
+                            Box {
+                                Surface(
+                                    onClick = { showAntiGravityModelMenu = true },
+                                    color = Color(0xFF2C2C2C),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            state.selectedAntiGravityModel.displayName,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF81D4FA)
+                                        )
+                                        Icon(
+                                            Icons.Default.KeyboardArrowDown,
+                                            contentDescription = null,
+                                            tint = Color(0xFF81D4FA),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = showAntiGravityModelMenu,
+                                    onDismissRequest = { showAntiGravityModelMenu = false }
+                                ) {
+                                    AntiGravityModel.entries.forEach { model ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(
+                                                        model.displayName,
+                                                        fontWeight = if (model == state.selectedAntiGravityModel) FontWeight.Bold else FontWeight.Normal
+                                                    )
+                                                    Text(
+                                                        model.description,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                viewModel.switchAntiGravityModel(model)
+                                                showAntiGravityModelMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (state.isAntiGravitySignedIn)
+                                    "● auth: Google OAuth (ya29... connected)"
+                                else
+                                    "○ auth: Not signed in",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = if (state.isAntiGravitySignedIn) Color(0xFF81C784) else Color(0xFFE57373)
+                            )
+                            if (!state.isAntiGravitySignedIn) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "[Sign In]",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF64B5F6),
+                                    modifier = Modifier.clickable { viewModel.openAuthDialog() }
+                                )
                             }
                         }
                     }
@@ -296,6 +366,37 @@ fun AgentChatScreen(
                     }
                 }
             }
+
+            // ── Step Execution Box (Termux CLI style) ──
+            state.activeStep?.let { step ->
+                Surface(
+                    color = Color(0xFF1E1E1E),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = step,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = Color(0xFFA5D6A7)
+                        )
+                    }
+                }
+            }
+
+            // ── Messages List (Completely Separated per Engine) ──
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -303,38 +404,43 @@ fun AgentChatScreen(
                     .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(state.messages) { msg ->
+                items(state.currentMessages) { msg ->
                     ChatBubble(
                         message = msg,
+                        isAntiGravity = state.engine == ChatEngine.ANTIGRAVITY,
                         onViewDiff = { diff -> viewModel.showDiffPreview(diff) }
                     )
                 }
             }
 
-            if (state.isLoading) {
+            if (state.isLoading && state.activeStep == null) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            state.error?.let {
+            // Error banner
+            state.error?.let { err ->
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier.fillMaxWidth()
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = it,
+                        text = err,
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(8.dp)
                     )
                 }
             }
 
-            // Attached files chips preview
+            // Attached files row
             if (state.attachedFiles.isNotEmpty()) {
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     itemsIndexed(state.attachedFiles) { index, file ->
@@ -423,6 +529,7 @@ fun AgentChatScreen(
 @Composable
 private fun ChatBubble(
     message: ChatMessage,
+    isAntiGravity: Boolean,
     onViewDiff: (DiffPreviewBlock) -> Unit
 ) {
     val isUser = message.role == "user"
@@ -431,12 +538,33 @@ private fun ChatBubble(
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         Surface(
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.widthIn(max = 320.dp)
+            color = if (isUser) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else if (isAntiGravity) {
+                Color(0xFF1E1E1E)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            },
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.widthIn(max = 330.dp)
         ) {
             Column(modifier = Modifier.padding(10.dp)) {
+                // Header badge for Anti-Gravity
+                if (!isUser && isAntiGravity) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Text(
+                            "⚡ agy agent",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = Color(0xFF4CAF50)
+                        )
+                    }
+                }
+
                 // Attached file tags on user messages
                 if (message.attachments.isNotEmpty()) {
                     message.attachments.forEach { file ->
@@ -456,6 +584,9 @@ private fun ChatBubble(
 
                 Text(
                     text = if (message.isStreaming && message.text.isEmpty()) "..." else message.text,
+                    fontFamily = if (isAntiGravity) FontFamily.Monospace else FontFamily.Default,
+                    fontSize = if (isAntiGravity) 12.sp else 14.sp,
+                    color = if (!isUser && isAntiGravity) Color(0xFFE0E0E0) else Color.Unspecified,
                     style = MaterialTheme.typography.bodyMedium
                 )
 
@@ -467,13 +598,13 @@ private fun ChatBubble(
                             onClick = { onViewDiff(diff) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
+                                containerColor = if (isAntiGravity) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
                             )
                         ) {
                             Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Preview Diff (${diff.filePath.substringAfterLast('/')})",
+                                text = "Review & Apply Diff (${diff.filePath.substringAfterLast('/')})",
                                 style = MaterialTheme.typography.labelMedium
                             )
                         }
