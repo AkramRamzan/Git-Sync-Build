@@ -13,22 +13,30 @@ import javax.inject.Singleton
 private val Context.dataStore by preferencesDataStore(name = "secure_credentials")
 
 /**
- * Module 2 – Secure Credential Store.
- * Uses Jetpack DataStore; the underlying file is encrypted via Android KeyStore
- * (EncryptedSharedPreferences or security-crypto layer wrapping DataStore).
+ * Module 2 & Anti-Gravity – Secure Credential Store.
+ * Uses Jetpack DataStore to persist OAuth tokens, API keys, and project settings.
  */
 @Singleton
 class CredentialStore @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
-        private val GITHUB_TOKEN  = stringPreferencesKey("github_token")
-        private val GEMINI_KEY    = stringPreferencesKey("gemini_api_key")
-        private val GOOGLE_ID     = stringPreferencesKey("google_id_token")
+        private val GITHUB_TOKEN         = stringPreferencesKey("github_token")
+        private val GEMINI_KEY           = stringPreferencesKey("gemini_api_key")
+        private val GEMINI_MODEL         = stringPreferencesKey("gemini_model")
+        private val GOOGLE_ID            = stringPreferencesKey("google_id_token")
+        private val GOOGLE_ACCESS_TOKEN  = stringPreferencesKey("google_access_token")
+        private val GOOGLE_REFRESH_TOKEN = stringPreferencesKey("google_refresh_token")
+        private val PROJECT_DIR_URI      = stringPreferencesKey("project_dir_uri")
     }
 
     val githubToken: Flow<String?> = context.dataStore.data.map { it[GITHUB_TOKEN] }
     val geminiApiKey: Flow<String?> = context.dataStore.data.map { it[GEMINI_KEY] }
+    val geminiModel: Flow<String?> = context.dataStore.data.map { it[GEMINI_MODEL] }
+    val googleIdToken: Flow<String?> = context.dataStore.data.map { it[GOOGLE_ID] }
+    val googleAccessToken: Flow<String?> = context.dataStore.data.map { it[GOOGLE_ACCESS_TOKEN] }
+    val googleRefreshToken: Flow<String?> = context.dataStore.data.map { it[GOOGLE_REFRESH_TOKEN] }
+    val projectDirUri: Flow<String?> = context.dataStore.data.map { it[PROJECT_DIR_URI] }
 
     suspend fun saveGithubToken(token: String) {
         context.dataStore.edit { it[GITHUB_TOKEN] = token }
@@ -38,8 +46,42 @@ class CredentialStore @Inject constructor(
         context.dataStore.edit { it[GEMINI_KEY] = key }
     }
 
+    suspend fun saveGeminiModel(modelId: String) {
+        context.dataStore.edit { it[GEMINI_MODEL] = modelId }
+    }
+
+    suspend fun saveGoogleTokens(accessToken: String, refreshToken: String?, idToken: String?) {
+        context.dataStore.edit {
+            it[GOOGLE_ACCESS_TOKEN] = accessToken
+            if (!refreshToken.isNullOrBlank()) {
+                it[GOOGLE_REFRESH_TOKEN] = refreshToken
+            }
+            if (!idToken.isNullOrBlank()) {
+                it[GOOGLE_ID] = idToken
+            }
+        }
+    }
+
     suspend fun saveGoogleIdToken(token: String) {
         context.dataStore.edit { it[GOOGLE_ID] = token }
+    }
+
+    suspend fun clearGoogleTokens() {
+        context.dataStore.edit {
+            it.remove(GOOGLE_ACCESS_TOKEN)
+            it.remove(GOOGLE_REFRESH_TOKEN)
+            it.remove(GOOGLE_ID)
+        }
+    }
+
+    suspend fun saveProjectDirUri(uri: String?) {
+        context.dataStore.edit {
+            if (uri != null) {
+                it[PROJECT_DIR_URI] = uri
+            } else {
+                it.remove(PROJECT_DIR_URI)
+            }
+        }
     }
 
     suspend fun clearAll() {

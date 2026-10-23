@@ -38,4 +38,8 @@ object AppModule {
     @Provides
     @Named("github_client_id")
     fun provideGitHubClientId(): String = BuildConfig.GITHUB_CLIENT_ID
+
+    @Provides
+    @Named("google_client_id")
+    fun provideGoogleClientId(): String = BuildConfig.GOOGLE_CLIENT_ID
 }

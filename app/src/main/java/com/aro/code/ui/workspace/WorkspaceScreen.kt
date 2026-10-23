@@ -1,21 +1,24 @@
 package com.aro.code.ui.workspace
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import java.io.File
+import com.aro.code.filesystem.ProjectNode
+import com.aro.code.ui.auth.AntiGravityAccountDialog
+import com.aro.code.ui.auth.CodeInputDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,17 +30,53 @@ fun WorkspaceScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
 
+    // SAF directory picker launcher
+    val directoryPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.onProjectFolderSelected(it) }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Aro Code") },
-                actions = {
-                    IconButton(onClick = onChatOpen) {
-                        Icon(Icons.Default.Chat, contentDescription = "AI Chat")
+                title = {
+                    Column {
+                        Text("Aro Code", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = state.projectName ?: "Workspace",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
+                },
+                actions = {
+                    // Anti-Gravity Google Auth Icon
+                    IconButton(onClick = { viewModel.openAntiGravityDialog() }) {
+                        Icon(
+                            Icons.Default.Bolt,
+                            contentDescription = "Anti-Gravity Account",
+                            tint = if (state.isGoogleSignedIn) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Open SAF Folder
+                    IconButton(onClick = { directoryPickerLauncher.launch(null) }) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Open Project Folder")
+                    }
+
+                    // AI Chat
+                    IconButton(onClick = onChatOpen) {
+                        Icon(Icons.Default.Chat, contentDescription = "AI Agent Chat")
+                    }
+
+                    // Cloud Build
                     IconButton(onClick = { viewModel.triggerCloudBuild() }) {
                         Icon(Icons.Default.CloudUpload, contentDescription = "Cloud Build")
                     }
+
+                    // Settings
                     IconButton(onClick = onSettingsOpen) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -45,30 +84,138 @@ fun WorkspaceScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.clonePrompt() }) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "Clone Repo")
+            FloatingActionButton(
+                onClick = { directoryPickerLauncher.launch(null) },
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Icon(Icons.Default.CreateNewFolder, contentDescription = "Select Project Folder")
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (state.isLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-
-            state.statusMessage?.let {
-                Text(it, modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodySmall)
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            if (state.isLoading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(state.files) { file ->
-                    FileRow(file = file, onClick = { onFileOpen(file.absolutePath) })
-                    HorizontalDivider()
+            // Project header bar
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = if (state.projectUriString != null) Icons.Default.FolderSpecial else Icons.Default.Folder,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = state.projectName ?: "Internal Workspace",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+
+                    Row {
+                        if (state.projectUriString != null) {
+                            TextButton(onClick = { viewModel.resetToInternalStorage() }) {
+                                Text("Reset", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        TextButton(onClick = { viewModel.clonePrompt() }) {
+                            Text("Clone", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
 
+            state.statusMessage?.let {
+                Text(
+                    text = it,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // Hierarchical File Tree
+            if (state.projectNodes.isEmpty() && !state.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "No files found in workspace.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { directoryPickerLauncher.launch(null) }) {
+                            Text("Open Project Directory")
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(state.projectNodes) { node ->
+                        ProjectNodeRow(
+                            node = node,
+                            onToggle = { viewModel.toggleDirectory(node) },
+                            onFileClick = {
+                                val openPath = node.uri?.toString() ?: node.file?.absolutePath ?: node.path
+                                onFileOpen(openPath)
+                            }
+                        )
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
+
+            // Clone Dialog
             if (state.showCloneDialog) {
                 CloneDialog(
                     onConfirm = { url -> viewModel.cloneRepo(url) },
                     onDismiss = { viewModel.dismissCloneDialog() }
+                )
+            }
+
+            // Anti-Gravity Google Account Dialog
+            if (state.showAntiGravityDialog) {
+                AntiGravityAccountDialog(
+                    isSignedIn = state.isGoogleSignedIn,
+                    userTokenSnippet = state.googleTokenSnippet,
+                    onDismiss = { viewModel.dismissAntiGravityDialog() },
+                    onStartWebAuth = { url, verifier -> viewModel.onStartWebAuth(url, verifier) },
+                    onSignOut = { viewModel.signOutGoogle() }
+                )
+            }
+
+            // Google Auth Code Input Dialog
+            if (state.showCodeInputDialog) {
+                CodeInputDialog(
+                    onDismiss = { viewModel.dismissCodeInputDialog() },
+                    onSubmit = { code -> viewModel.submitGoogleAuthCode(code) }
                 )
             }
         }
@@ -76,20 +223,52 @@ fun WorkspaceScreen(
 }
 
 @Composable
-private fun FileRow(file: File, onClick: () -> Unit) {
+private fun ProjectNodeRow(
+    node: ProjectNode,
+    onToggle: () -> Unit,
+    onFileClick: () -> Unit
+) {
+    val indent = (node.level * 16).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .clickable(onClick = if (node.isDirectory) onToggle else onFileClick)
+            .padding(start = 16.dp + indent, end = 16.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(file.name,
-            style    = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f))
-        Text("${file.length() / 1024} KB",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (node.isDirectory) {
+            Icon(
+                imageVector = if (node.isExpanded) Icons.Default.FolderOpen else Icons.Default.Folder,
+                contentDescription = if (node.isExpanded) "Expanded" else "Collapsed",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Description,
+                contentDescription = "File",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(Modifier.width(10.dp))
+
+        Text(
+            text = node.name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (node.isDirectory) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.weight(1f)
+        )
+
+        if (!node.isDirectory && node.sizeBytes > 0) {
+            val kb = node.sizeBytes / 1024
+            Text(
+                text = "${if (kb > 0) kb else 1} KB",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -98,10 +277,14 @@ private fun CloneDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var url by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title   = { Text("Clone Repository") },
-        text    = {
-            OutlinedTextField(value = url, onValueChange = { url = it },
-                label = { Text("GitHub HTTPS URL") }, singleLine = true)
+        title = { Text("Clone Repository") },
+        text = {
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("GitHub HTTPS URL") },
+                singleLine = true
+            )
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(url) }, enabled = url.isNotBlank()) {

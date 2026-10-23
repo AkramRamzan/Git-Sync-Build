@@ -19,9 +19,11 @@ android {
         versionName     = "2.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Expose GitHub OAuth client ID for device flow
+        // Expose OAuth client IDs
         buildConfigField("String", "GITHUB_CLIENT_ID",
             "\"${project.findProperty("GITHUB_CLIENT_ID") ?: ""}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_ID",
+            "\"${project.findProperty("GOOGLE_CLIENT_ID") ?: ""}\"")
         buildConfigField("String", "GEMINI_MODEL_ID",
             "\"gemini-2.0-flash\"")
 
@@ -112,6 +114,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle)
+    implementation(libs.androidx.documentfile)
+    implementation(libs.androidx.browser)
     implementation("com.google.android.material:material:1.12.0")
 
     // Compose BOM
