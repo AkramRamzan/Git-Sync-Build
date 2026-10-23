@@ -48,15 +48,17 @@ class AntiGravityBridgeClient @Inject constructor(
     suspend fun isBridgeAlive(bridgeUrl: String): Boolean {
         return try {
             val cleanUrl = bridgeUrl.trimEnd('/')
-            val response = httpClient.get("$cleanUrl/v1/health") {
-                timeout {
-                    requestTimeoutMillis = 2500
-                    connectTimeoutMillis = 2000
-                }
-            }
+            val response = httpClient.get("$cleanUrl/v1/health")
             response.status.value in 200..299
         } catch (e: Exception) {
-            false
+            try {
+                // Secondary check against root /
+                val cleanUrl = bridgeUrl.trimEnd('/')
+                val fallbackResp = httpClient.get(cleanUrl)
+                fallbackResp.status.value in 200..299
+            } catch (e2: Exception) {
+                false
+            }
         }
     }
 
@@ -94,17 +96,17 @@ class AntiGravityBridgeClient @Inject constructor(
             val channel = response.bodyAsChannel()
             while (!channel.isClosedForRead) {
                 val line = channel.readUTF8Line() ?: break
-                val trimmed = line.trim()
-                if (trimmed.startsWith("data:")) {
-                    val payload = trimmed.removePrefix("data:").trim()
-                    if (payload == "[DONE]") {
+                if (line.startsWith("data:")) {
+                    val rawPayload = line.removePrefix("data:")
+                    val trimmed = rawPayload.trim()
+                    if (trimmed == "[DONE]") {
                         break
                     }
-                    if (payload.isNotEmpty()) {
-                        // Extract text if payload is JSON {"token": "..."} or emit raw text
+                    if (trimmed.isNotEmpty()) {
+                        // Extract text if payload is JSON {"token": "..."} or emit raw payload
                         val token = runCatching {
-                            json.parseToJsonElement(payload).jsonObject["token"]?.jsonPrimitive?.content
-                        }.getOrNull() ?: payload
+                            json.parseToJsonElement(trimmed).jsonObject["token"]?.jsonPrimitive?.content
+                        }.getOrNull() ?: rawPayload.removePrefix(" ")
                         send(token)
                     }
                 }

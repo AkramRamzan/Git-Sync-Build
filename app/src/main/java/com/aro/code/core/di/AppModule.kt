@@ -7,6 +7,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
@@ -27,6 +28,11 @@ object AppModule {
                 ignoreUnknownKeys = true
                 isLenient = true
             })
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 60_000
+            connectTimeoutMillis = 15_000
+            socketTimeoutMillis  = 60_000
         }
         install(Logging) { level = LogLevel.HEADERS }
         engine {

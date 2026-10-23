@@ -394,38 +394,15 @@ class ChatViewModel @Inject constructor(
                 val isBridgeRunning = bridgeClient.isBridgeAlive(bridgeUrl)
 
                 if (selectedAgModel.isExternalBridgeOnly) {
-                    if (!isBridgeRunning) {
-                        val promptMsg = "⚠️ Termux Bridge Offline ($bridgeUrl):\n\nModel '${selectedAgModel.displayName}' chalane ke liye Termux mein server run karein:\n1. termux-wake-lock\n2. python server.py\n\nYa chat switch karke Gemini 3.8 Flash use karein."
-                        appendMessage(ChatMessage(role = "model", text = promptMsg, isStreaming = false), isAntiGravity = true)
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                activeStep = null,
-                                error = "Termux Bridge offline ($bridgeUrl)"
-                            )
-                        }
-                        return@launch
-                    }
                     useBridge = true
                     authKey = ""
                 } else {
-                    if (isBridgeRunning) {
+                    if (isBridgeRunning || apiKey.isNullOrBlank()) {
                         useBridge = true
                         authKey = ""
-                    } else if (!apiKey.isNullOrBlank()) {
+                    } else {
                         useBridge = false
                         authKey = apiKey
-                    } else {
-                        val promptKeyMsg = "⚠️ Anti-Gravity Agent chalane ke liye ya toh Termux mein 'python server.py' run karein, ya Settings (⚙) mein apni free Gemini API Key enter karein."
-                        appendMessage(ChatMessage(role = "model", text = promptKeyMsg, isStreaming = false), isAntiGravity = true)
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                activeStep = null,
-                                error = "Termux Bridge offline aur Gemini API Key missing"
-                            )
-                        }
-                        return@launch
                     }
                 }
 

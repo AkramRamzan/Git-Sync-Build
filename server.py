@@ -17,6 +17,7 @@ Usage in Termux:
 
 import os
 import sys
+import json
 import shutil
 import asyncio
 from fastapi import FastAPI, HTTPException, Request
@@ -93,6 +94,8 @@ async def stream_agy_execution(model: str, full_prompt: str):
     agy_bin = find_agy_binary()
     cmd = [agy_bin, "--model", model, "--prompt", full_prompt]
 
+    print(f"\n[Termux Bridge] Executing prompt with model: {model} (binary: {agy_bin})")
+
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -100,7 +103,9 @@ async def stream_agy_execution(model: str, full_prompt: str):
             stderr=asyncio.subprocess.PIPE
         )
     except Exception as e:
-        yield f"data: ⚠️ Error launching '{agy_bin}': {str(e)}. Please ensure agy CLI is installed in Termux ('curl -fsSL https://antigravity.google/install.sh | bash').\n\n"
+        err_msg = f"⚠️ Error launching '{agy_bin}': {str(e)}. Please ensure agy CLI is installed in Termux ('curl -fsSL https://antigravity.google/install.sh | bash')."
+        print(f"[Termux Bridge Error] {err_msg}")
+        yield f"data: {json.dumps({'token': err_msg})}\n\n"
         yield "data: [DONE]\n\n"
         return
 
@@ -110,19 +115,21 @@ async def stream_agy_execution(model: str, full_prompt: str):
         if not line:
             break
         text = line.decode("utf-8", errors="replace")
-        yield f"data: {text}"
+        yield f"data: {json.dumps({'token': text})}\n\n"
 
     stderr_output = await process.stderr.read()
     if stderr_output and process.returncode != 0:
         err_text = stderr_output.decode("utf-8", errors="replace").strip()
         if err_text:
-            yield f"data: \n\n⚠️ Anti-Gravity CLI Notice: {err_text}\n\n"
+            print(f"[Termux Bridge Stderr] {err_text}")
+            yield f"data: {json.dumps({'token': f'\\n\\n⚠️ Notice: {err_text}\\n\\n'})}\n\n"
 
     await process.wait()
     yield "data: [DONE]\n\n"
 
 @app.post("/v1/chat/stream")
 async def chat_stream(req: ChatRequest):
+    print(f"[Termux Bridge] Received chat stream request for model: {req.model}")
     combined = f"{req.system_prompt}\n\n{req.prompt}".strip() if req.system_prompt else req.prompt
     return StreamingResponse(
         stream_agy_execution(req.model, combined),
@@ -138,7 +145,7 @@ if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*55)
     print("⚡ Anti-Gravity Termux Bridge Server Started!")
-    print("📍 Host: http://127.0.0.1:8000")
+    print("📍 Host: http://0.0.0.0:8000 (accessible via 127.0.0.1:8000)")
     print("📱 Aro Code app will automatically connect to this URL.")
     print("="*55 + "\n")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
