@@ -14,10 +14,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.*
@@ -42,6 +44,8 @@ fun AntiGravityAccountDialog(
     userTokenSnippet: String?,
     defaultClientId: String = "",
     onDismiss: () -> Unit,
+    onOpenChat: (() -> Unit)? = null,
+    onOpenFolder: (() -> Unit)? = null,
     onSubmitCode: (code: String, verifier: String, customClientId: String?, onResult: (Result<Unit>) -> Unit) -> Unit,
     onSignOut: () -> Unit
 ) {
@@ -143,6 +147,39 @@ fun AntiGravityAccountDialog(
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+
+                    // Direct Action Shortcuts after Login
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (onOpenChat != null) {
+                            Button(
+                                onClick = {
+                                    onDismiss()
+                                    onOpenChat()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Open Chat", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        if (onOpenFolder != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    onDismiss()
+                                    onOpenFolder()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Open Folder", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
                     }
                 } else {
                     // ── NOT LOGGED IN STATE (Termux-style Link + Code Input) ──
@@ -311,6 +348,7 @@ fun AntiGravityAccountDialog(
                             if (result.isSuccess) {
                                 Toast.makeText(context, "Anti-Gravity Login Successful! ✓", Toast.LENGTH_SHORT).show()
                                 onDismiss()
+                                onOpenChat?.invoke()
                             } else {
                                 val err = result.exceptionOrNull()?.message ?: "Invalid code"
                                 submitError = err

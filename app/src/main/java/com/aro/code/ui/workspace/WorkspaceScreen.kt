@@ -266,6 +266,8 @@ fun WorkspaceScreen(
                     isSignedIn = state.isGoogleSignedIn,
                     userTokenSnippet = state.googleTokenSnippet,
                     onDismiss = { viewModel.dismissAntiGravityDialog() },
+                    onOpenChat = onChatOpen,
+                    onOpenFolder = { directoryPickerLauncher.launch(null) },
                     onSubmitCode = { code, verifier, cid, onResult ->
                         viewModel.submitGoogleAuthCode(code, verifier, cid, onResult)
                     },

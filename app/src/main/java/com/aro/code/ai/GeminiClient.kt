@@ -110,8 +110,11 @@ class GeminiClient @Inject constructor(
         isLenient = true
     }
 
+    fun isOAuthToken(token: String): Boolean =
+        token.startsWith("ya29.") || token.startsWith("Bearer ")
+
     /**
-     * Instantly validate a Gemini API key with Google AI Studio.
+     * Instantly validate a Gemini API key or Google OAuth token.
      * Returns Result.success(Unit) if key is active, or Result.failure with error message.
      */
     suspend fun validateApiKey(apiKey: String): Result<Unit> = runCatching {
@@ -119,9 +122,14 @@ class GeminiClient @Inject constructor(
         if (cleanKey.isBlank()) {
             error("API key cannot be empty")
         }
-        val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
-        val response = httpClient.get("$baseUrl?key=$encodedKey") {
-            header("x-goog-api-key", cleanKey)
+        val isOAuth = isOAuthToken(cleanKey)
+        val url = if (isOAuth) baseUrl else "$baseUrl?key=${URLEncoder.encode(cleanKey, "UTF-8")}"
+        val response = httpClient.get(url) {
+            if (isOAuth) {
+                header("Authorization", "Bearer ${cleanKey.removePrefix("Bearer ").trim()}")
+            } else {
+                header("x-goog-api-key", cleanKey)
+            }
         }
         val rawText = response.bodyAsText()
         if (response.status.value !in 200..299) {
@@ -133,13 +141,18 @@ class GeminiClient @Inject constructor(
     }
 
     /**
-     * Module 3.2 — List available models for this user's API key.
+     * Module 3.2 — List available models for this user's API key or OAuth token.
      */
     suspend fun listModels(apiKey: String): Result<List<String>> = runCatching {
         val cleanKey = apiKey.filterNot { it.isWhitespace() }
-        val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
-        val response = httpClient.get("$baseUrl?key=$encodedKey") {
-            header("x-goog-api-key", cleanKey)
+        val isOAuth = isOAuthToken(cleanKey)
+        val url = if (isOAuth) baseUrl else "$baseUrl?key=${URLEncoder.encode(cleanKey, "UTF-8")}"
+        val response = httpClient.get(url) {
+            if (isOAuth) {
+                header("Authorization", "Bearer ${cleanKey.removePrefix("Bearer ").trim()}")
+            } else {
+                header("x-goog-api-key", cleanKey)
+            }
         }
         val rawText = response.bodyAsText()
         if (response.status.value !in 200..299) {
@@ -212,12 +225,20 @@ class GeminiClient @Inject constructor(
         model: String,
         body: GeminiRequest
     ): Result<String> {
-        val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
+        val isOAuth = isOAuthToken(cleanKey)
+        val url = if (isOAuth) {
+            "$baseUrl/$model:generateContent"
+        } else {
+            val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
+            "$baseUrl/$model:generateContent?key=$encodedKey"
+        }
         return retryWithBackoff {
-            val response = httpClient.post(
-                "$baseUrl/$model:generateContent?key=$encodedKey"
-            ) {
-                header("x-goog-api-key", cleanKey)
+            val response = httpClient.post(url) {
+                if (isOAuth) {
+                    header("Authorization", "Bearer ${cleanKey.removePrefix("Bearer ").trim()}")
+                } else {
+                    header("x-goog-api-key", cleanKey)
+                }
                 contentType(ContentType.Application.Json)
                 setBody(body)
             }
@@ -268,11 +289,19 @@ class GeminiClient @Inject constructor(
         var streamSucceeded = false
 
         try {
-            val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
-            val statement = httpClient.preparePost(
+            val isOAuth = isOAuthToken(cleanKey)
+            val url = if (isOAuth) {
+                "$baseUrl/$targetModel:streamGenerateContent?alt=sse"
+            } else {
+                val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
                 "$baseUrl/$targetModel:streamGenerateContent?alt=sse&key=$encodedKey"
-            ) {
-                header("x-goog-api-key", cleanKey)
+            }
+            val statement = httpClient.preparePost(url) {
+                if (isOAuth) {
+                    header("Authorization", "Bearer ${cleanKey.removePrefix("Bearer ").trim()}")
+                } else {
+                    header("x-goog-api-key", cleanKey)
+                }
                 contentType(ContentType.Application.Json)
                 setBody(requestBody)
             }

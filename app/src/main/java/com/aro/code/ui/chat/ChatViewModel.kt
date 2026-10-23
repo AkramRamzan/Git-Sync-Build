@@ -6,6 +6,7 @@ import com.aro.code.ai.DiffParser
 import com.aro.code.ai.DiffPreviewBlock
 import com.aro.code.ai.GeminiClient
 import com.aro.code.ai.GeminiModel
+import com.aro.code.auth.AuthRepository
 import com.aro.code.auth.CredentialStore
 import com.aro.code.db.ChatHistoryDatabase
 import com.aro.code.filesystem.SafProjectManager
@@ -45,7 +46,8 @@ class ChatViewModel @Inject constructor(
     private val geminiClient: GeminiClient,
     private val credentialStore: CredentialStore,
     private val projectManager: SafProjectManager,
-    private val chatDb: ChatHistoryDatabase
+    private val chatDb: ChatHistoryDatabase,
+    private val authRepo: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
@@ -235,11 +237,14 @@ class ChatViewModel @Inject constructor(
                 chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
             }
 
-            val key = credentialStore.geminiApiKey.firstOrNull() ?: run {
+            val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
+            val googleToken = credentialStore.googleAccessToken.firstOrNull()?.takeIf { it.isNotBlank() }
+
+            val key = apiKey ?: googleToken ?: run {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = "No Gemini API key set. Please set it in Settings."
+                        error = "No API key or Anti-Gravity account set. Please login with Anti-Gravity or set a Gemini API key in Settings."
                     )
                 }
                 return@launch
