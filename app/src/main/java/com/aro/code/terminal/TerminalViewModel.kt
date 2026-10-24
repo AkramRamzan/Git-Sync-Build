@@ -30,6 +30,9 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
     val pid: StateFlow<Int?> = TermuxBridgeService.state.pid
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Current working directory of the shell session */
+    val currentWorkingDirectory: String get() = BashShellSession.cwd
+
     // ──────────────────────────────────────────────────────────────
     // Bridge Controls
     // ──────────────────────────────────────────────────────────────

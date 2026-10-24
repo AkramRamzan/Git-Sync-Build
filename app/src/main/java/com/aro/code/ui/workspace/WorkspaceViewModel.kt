@@ -77,6 +77,9 @@ class WorkspaceViewModel @Inject constructor(
         viewModelScope.launch {
             credentialStore.projectDirUri.collect { uriStr ->
                 _uiState.update { it.copy(projectUriString = uriStr) }
+                safManager.getPhysicalPath(uriStr)?.let { path ->
+                    com.aro.code.terminal.BashShellSession.setWorkingDirectory(path)
+                }
                 refreshFileTree()
             }
         }
@@ -128,6 +131,9 @@ class WorkspaceViewModel @Inject constructor(
         viewModelScope.launch {
             safManager.takePersistableUriPermission(uri)
             credentialStore.saveProjectDirUri(uri.toString())
+            safManager.getPhysicalPath(uri.toString())?.let { physicalPath ->
+                com.aro.code.terminal.BashShellSession.setWorkingDirectory(physicalPath)
+            }
             _uiState.update {
                 it.copy(
                     projectUriString = uri.toString(),

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import java.io.File
 import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,7 +227,7 @@ private fun BridgeLogsTab(logs: List<String>) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bash Shell Tab
+// Bash Shell Tab (VS Code Mode)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -235,6 +236,9 @@ private fun BashShellTab(
     onSend: (String) -> Unit
 ) {
     var input by remember { mutableStateOf("") }
+    val history = remember { mutableStateListOf<String>() }
+    var historyIndex by remember { mutableIntStateOf(-1) }
+
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -244,6 +248,18 @@ private fun BashShellTab(
     LaunchedEffect(shellLogs.size) {
         if (shellLogs.isNotEmpty()) {
             coroutineScope.launch { listState.animateScrollToItem(shellLogs.lastIndex) }
+        }
+    }
+
+    val submitCommand: (String) -> Unit = { raw ->
+        val trimmed = raw.trim()
+        if (trimmed.isNotBlank()) {
+            if (history.isEmpty() || history.last() != trimmed) {
+                history.add(trimmed)
+            }
+            historyIndex = -1
+            onSend(trimmed)
+            input = ""
         }
     }
 
@@ -270,18 +286,67 @@ private fun BashShellTab(
             }
         }
 
+        // VS Code Quick Action Chips
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .background(Color(0xFF161B22))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val quickActions = listOf(
+                "▶ Run server.py" to "python /storage/emulated/0/Download/server.py",
+                "📦 pip install reqs" to "pip install fastapi uvicorn pydantic sse-starlette",
+                "📂 ls -la" to "ls -la",
+                "📍 pwd" to "pwd",
+                "🔍 git status" to "git status",
+                "🧹 clear" to "clear"
+            )
+            quickActions.forEach { (label, cmd) ->
+                Surface(
+                    onClick = { submitCommand(cmd) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF21262D)
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF58A6FF),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+
         // Mobile key shortcuts
         MobileKeyBar { key ->
             when (key) {
-                "CTRL+C" -> onSend("")   // Send empty to kill? Or handle specially
-                "↑", "↓" -> { /* command history — future */ }
+                "CTRL+C" -> {
+                    submitCommand("")
+                }
+                "↑" -> {
+                    if (history.isNotEmpty()) {
+                        historyIndex = (historyIndex + 1).coerceAtMost(history.lastIndex)
+                        input = history[history.lastIndex - historyIndex]
+                    }
+                }
+                "↓" -> {
+                    if (historyIndex > 0) {
+                        historyIndex--
+                        input = history[history.lastIndex - historyIndex]
+                    } else if (historyIndex == 0) {
+                        historyIndex = -1
+                        input = ""
+                    }
+                }
                 else -> input += key
             }
         }
 
         Divider(color = Color(0xFF333333))
 
-        // Command input row
+        // Command input row (VS Code prompt)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -289,11 +354,12 @@ private fun BashShellTab(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val currentDirName = File(BashShellSession.cwd).name.ifEmpty { "root" }
             Text(
-                "❯ ",
+                "$currentDirName ❯ ",
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     color = Color(0xFF4CAF50),
                     fontWeight = FontWeight.Bold
                 )
@@ -314,15 +380,13 @@ private fun BashShellTab(
                 ),
                 textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
                 placeholder = {
-                    Text("Enter command…", color = Color(0xFF555555), fontSize = 12.sp)
+                    Text("command (e.g. ls, python, pip)", color = Color(0xFF555555), fontSize = 11.sp)
                 },
                 keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = {
-                    if (input.isNotBlank()) { onSend(input); input = "" }
-                })
+                keyboardActions = KeyboardActions(onSend = { submitCommand(input) })
             )
             IconButton(
-                onClick = { if (input.isNotBlank()) { onSend(input); input = "" } }
+                onClick = { submitCommand(input) }
             ) {
                 Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF4CAF50))
             }
