@@ -49,13 +49,25 @@ class AntiGravityBridgeClient @Inject constructor(
     suspend fun isBridgeAlive(bridgeUrl: String): Boolean {
         return try {
             val cleanUrl = bridgeUrl.trimEnd('/')
-            val response = httpClient.get("$cleanUrl/v1/health")
+            val response = httpClient.get("$cleanUrl/v1/health") {
+                timeout {
+                    requestTimeoutMillis = 5_000
+                    socketTimeoutMillis  = 5_000
+                    connectTimeoutMillis = 3_000
+                }
+            }
             response.status.value in 200..299
         } catch (e: Exception) {
             try {
                 // Secondary check against root /
                 val cleanUrl = bridgeUrl.trimEnd('/')
-                val fallbackResp = httpClient.get(cleanUrl)
+                val fallbackResp = httpClient.get(cleanUrl) {
+                    timeout {
+                        requestTimeoutMillis = 5_000
+                        socketTimeoutMillis  = 5_000
+                        connectTimeoutMillis = 3_000
+                    }
+                }
                 fallbackResp.status.value in 200..299
             } catch (e2: Exception) {
                 false
@@ -84,6 +96,11 @@ class AntiGravityBridgeClient @Inject constructor(
 
         val statement = httpClient.preparePost("$cleanUrl/v1/chat/stream") {
             contentType(ContentType.Application.Json)
+            timeout {
+                requestTimeoutMillis = 600_000 // 10 minutes total
+                socketTimeoutMillis  = 300_000 // 5 minutes inactivity
+                connectTimeoutMillis = 30_000  // 30 seconds connect
+            }
             if (!bridgeToken.isNullOrBlank()) {
                 header("Authorization", "Bearer $bridgeToken")
             }
@@ -110,7 +127,9 @@ class AntiGravityBridgeClient @Inject constructor(
                         val token = runCatching {
                             json.parseToJsonElement(trimmed).jsonObject["token"]?.jsonPrimitive?.content
                         }.getOrNull() ?: rawPayload.removePrefix(" ")
-                        send(token)
+                        if (!token.isNullOrEmpty()) {
+                            send(token)
+                        }
                     }
                 }
             }

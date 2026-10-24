@@ -591,6 +591,8 @@ class ChatViewModel @Inject constructor(
                         "⚠️ Quota Exceeded (429): Rate limit reached. Quota resets in ~30 seconds, or you can enter a new free API key in Settings (⚙)."
                     rawMsg.contains("Connection refused", ignoreCase = true) || rawMsg.contains("Failed to connect", ignoreCase = true) ->
                         "⚠️ Termux Bridge Offline: Connection refused at $bridgeUrl. Please run 'python server.py' in Termux."
+                    rawMsg.contains("timeout", ignoreCase = true) ->
+                        "⚠️ Anti-Gravity Timeout: The task took longer than expected. Make sure to run 'termux-wake-lock' in Termux so Android does not sleep the bridge."
                     else -> {
                         val prefix = if (isAntiGravity) "⚡ Anti-Gravity Agent Error" else "⚠️ Gemini Error"
                         "$prefix: ${e.message ?: "Failed to generate response"}"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Anti-Gravity Termux Bridge Server (v2.2) - Autonomous Workspace Edition
+Anti-Gravity Termux Bridge Server (v2.3) - Zero-Timeout Heartbeat Edition
 Allows Aro Code (Android App) to execute Anti-Gravity models:
 - Gemini 3.8 Flash (High)
 - Claude Sonnet 4.6 (Thinking)
@@ -10,10 +10,11 @@ Allows Aro Code (Android App) to execute Anti-Gravity models:
 
 Now featuring:
 - Autonomous Physical Workspace Mounting (--add-dir + cwd)
+- Single-Flight Concurrency Lock (Automatically cleans up previous process on new query)
+- Active 2-second SSE TCP Heartbeat (Never times out during long file reasoning)
 - Zero Permission Prompts (--dangerously-skip-permissions)
 - Stdin Piping (No ARG_MAX Linux limits)
 - Clean ANSI Terminal Stripping for Native UI Markdown
-- Immediate SSE Connection Heartbeat
 
 Usage in Termux:
     pkg update && pkg install python -y
@@ -34,10 +35,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.2")
+app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.3")
 
 # Regex to strip ANSI terminal escape color codes for clean Android markdown
 ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+# Concurrency tracker: ensures phone CPU isn't overwhelmed by multiple running agy instances
+active_process: Optional[asyncio.subprocess.Process] = None
 
 # Enable CORS for local network and webview
 app.add_middleware(
@@ -77,7 +81,7 @@ async def health_check():
     agy_bin = find_agy_binary()
     return {
         "status": "ok",
-        "engine": "Anti-Gravity Termux Bridge v2.2 (Autonomous Workspace Edition)",
+        "engine": "Anti-Gravity Termux Bridge v2.3 (Zero-Timeout Heartbeat Edition)",
         "agy_binary": agy_bin,
         "available_models": [
             "gemini-3.8-flash",
@@ -103,9 +107,19 @@ async def list_models():
 async def stream_agy_execution(model: str, full_prompt: str, project_path: Optional[str] = None):
     """
     Spawns the local agy CLI process in Termux and streams output lines via SSE.
-    Mounts physical project directory if provided to enable full autonomous file editing.
+    Uses async queue with 2-second keep-alive pulse so mobile sockets NEVER time out.
     """
+    global active_process
     agy_bin = find_agy_binary()
+
+    # Cancel previous running process to free CPU and prevent concurrent collisions
+    if active_process and active_process.returncode is None:
+        try:
+            print("[Termux Bridge] Cancelling previous running agy process...")
+            active_process.terminate()
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            print(f"[Termux Bridge] Warning: failed to terminate previous process: {e}")
 
     # Exact agy internal CLI model identifiers
     model_id_map = {
@@ -141,7 +155,7 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
 
     print(f"\n[Termux Bridge] Executing model: '{agy_model_name}' (cwd: {exec_cwd or 'default'}, stdin: {len(full_prompt)} chars)")
 
-    # Immediate heartbeat token to establish SSE stream without client timeout
+    # Send instant initial heartbeat token so HTTP SSE connection is established immediately
     yield f"data: {json.dumps({'token': ''})}\n\n"
 
     try:
@@ -152,8 +166,9 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+        active_process = process
 
-        # Feed stdin concurrently in background to prevent buffer deadlocks
+        # Feed stdin concurrently in background to prevent pipe deadlocks
         async def feed_stdin():
             try:
                 process.stdin.write(full_prompt.encode("utf-8"))
@@ -170,26 +185,61 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
         yield "data: [DONE]\n\n"
         return
 
+    # Background async queue reader for process.stdout
+    queue = asyncio.Queue()
+
+    async def read_stdout():
+        try:
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                await queue.put(("stdout", line))
+        except Exception:
+            pass
+        finally:
+            await queue.put(("done", None))
+
+    stdout_reader_task = asyncio.create_task(read_stdout())
+
     token_count = 0
-    # Stream stdout tokens in real-time
-    while True:
-        line = await process.stdout.readline()
-        if not line:
-            break
-        text = line.decode("utf-8", errors="replace")
-        clean_text = ANSI_ESCAPE.sub('', text)
-        token_count += 1
-        yield f"data: {json.dumps({'token': clean_text})}\n\n"
+    try:
+        while True:
+            try:
+                # 2.0s timeout: If no new output line, send an SSE keepalive comment
+                kind, data = await asyncio.wait_for(queue.get(), timeout=2.0)
+                if kind == "done":
+                    break
+                if data:
+                    text = data.decode("utf-8", errors="replace")
+                    clean_text = ANSI_ESCAPE.sub('', text)
+                    if clean_text:
+                        token_count += 1
+                        yield f"data: {json.dumps({'token': clean_text})}\n\n"
+            except asyncio.TimeoutError:
+                # Process finished and queue emptied?
+                if process.returncode is not None and queue.empty():
+                    break
+                # Pulse TCP keep-alive comment so mobile socket / Ktor NEVER times out!
+                yield ": keepalive\n\n"
 
-    stderr_output = await process.stderr.read()
-    if stderr_output and (token_count == 0 or process.returncode != 0):
-        err_text = stderr_output.decode("utf-8", errors="replace").strip()
-        clean_err = ANSI_ESCAPE.sub('', err_text)
-        if clean_err:
-            print(f"[Termux Bridge Stderr] {clean_err}")
-            yield f"data: {json.dumps({'token': f'\\n\\n⚠️ Notice: {clean_err}\\n\\n'})}\n\n"
+        stderr_output = await process.stderr.read()
+        if stderr_output and (token_count == 0 or process.returncode != 0):
+            err_text = stderr_output.decode("utf-8", errors="replace").strip()
+            clean_err = ANSI_ESCAPE.sub('', err_text)
+            if clean_err:
+                print(f"[Termux Bridge Stderr] {clean_err}")
+                yield f"data: {json.dumps({'token': f'\\n\\n⚠️ Notice: {clean_err}\\n\\n'})}\n\n"
 
-    await process.wait()
+        await process.wait()
+    finally:
+        active_process = None
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+
     yield "data: [DONE]\n\n"
 
 @app.post("/v1/chat/stream")
@@ -209,9 +259,10 @@ async def chat_stream(req: ChatRequest):
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*55)
-    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.2)!")
+    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.3)!")
     print("📍 Host: http://0.0.0.0:8000 (accessible via 127.0.0.1:8000)")
     print("📁 Autonomous Workspace Mode Enabled!")
+    print("💓 2-Second TCP Keep-Alive Heartbeat Enabled (Zero Timeouts)!")
     print("🚀 Stdin stream mode enabled: No file or prompt size limits!")
     print("📱 Aro Code app will automatically connect to this URL.")
     print("="*55 + "\n")
