@@ -233,7 +233,9 @@ private fun BridgeLogsTab(logs: List<String>) {
 @Composable
 private fun BashShellTab(
     logs: List<String>,
-    onSend: (String) -> Unit
+    onSend: (String) -> Unit,
+    onSetupLinux: () -> Unit,
+    isLinuxInstalled: Boolean
 ) {
     var input by remember { mutableStateOf("") }
     val history = remember { mutableStateListOf<String>() }
@@ -295,8 +297,36 @@ private fun BashShellTab(
                 .padding(horizontal = 6.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            if (!isLinuxInstalled) {
+                Surface(
+                    onClick = onSetupLinux,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF6E40C9)
+                ) {
+                    Text(
+                        text = "📦 Setup In-App Linux (3.9MB)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            } else {
+                Surface(
+                    onClick = { submitCommand("apk add python3 py3-pip gcompat bash") },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF238636)
+                ) {
+                    Text(
+                        text = "🐍 Install Python/Pip (apk)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
             val quickActions = listOf(
-                "▶ Run server.py" to "python /storage/emulated/0/Download/server.py",
+                "▶ Run server.py" to "python /storage/Download/server.py",
                 "📦 pip install reqs" to "pip install fastapi uvicorn pydantic sse-starlette",
                 "📂 ls -la" to "ls -la",
                 "📍 pwd" to "pwd",
@@ -354,13 +384,17 @@ private fun BashShellTab(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val currentDirName = File(BashShellSession.cwd).name.ifEmpty { "root" }
+            val promptText = if (BashShellSession.isLinuxContainerActive) {
+                "root@arocode ❯ "
+            } else {
+                "${File(BashShellSession.cwd).name.ifEmpty { "root" }} ❯ "
+            }
             Text(
-                "$currentDirName ❯ ",
+                promptText,
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    color = Color(0xFF4CAF50),
+                    color = if (BashShellSession.isLinuxContainerActive) Color(0xFF58A6FF) else Color(0xFF4CAF50),
                     fontWeight = FontWeight.Bold
                 )
             )
@@ -413,6 +447,10 @@ fun TerminalBottomSheet(
     val tabs = listOf("⚡ Bridge Logs", "❯_ Bash Shell")
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    LaunchedEffect(Unit) {
+        viewModel.startShell(context)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -503,7 +541,9 @@ fun TerminalBottomSheet(
                     0 -> BridgeLogsTab(logs)
                     1 -> BashShellTab(
                         logs = logs,
-                        onSend = { viewModel.sendBashCommand(it) }
+                        onSend = { viewModel.sendBashCommand(it) },
+                        onSetupLinux = { viewModel.installMiniLinux(context) },
+                        isLinuxInstalled = viewModel.isLinuxInstalled(context)
                     )
                 }
             }

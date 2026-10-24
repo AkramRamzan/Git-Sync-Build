@@ -79,9 +79,15 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
         }
     }
 
-    fun startShell() {
-        viewModelScope.launch { BashShellSession.start() }
+    fun startShell(context: Context? = null) {
+        viewModelScope.launch { BashShellSession.start(context) }
     }
+
+    fun installMiniLinux(context: Context) {
+        viewModelScope.launch { BashShellSession.installMiniLinux(context) }
+    }
+
+    fun isLinuxInstalled(context: Context): Boolean = LinuxSubsystem.isInstalled(context)
 
     fun stopShell() {
         viewModelScope.launch { BashShellSession.stop() }

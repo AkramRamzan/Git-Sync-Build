@@ -1,5 +1,6 @@
 package com.aro.code.terminal
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,12 +15,9 @@ import java.io.OutputStreamWriter
 
 /**
  * Singleton in-app Bash shell session (VS Code Integrated Terminal Engine).
- * Runs `sh` in a persistent working directory with Termux/Python environment variables.
- * Supports:
- * - Dynamic directory navigation (`cd`, `pwd`)
- * - Python 3 & Pip execution
- * - Output streaming to BridgeServiceState logs
- * - `clear` command handling
+ * Supports two execution modes:
+ * 1. Self-contained Mini Linux Container (Alpine ARM64 via PRoot) when installed.
+ * 2. Host shell with injected Termux/Android PATH and persistent cwd as fallback.
  */
 object BashShellSession {
 
@@ -33,7 +31,13 @@ object BashShellSession {
     @Volatile var isRunning: Boolean = false
         private set
 
-    /** Current working directory (defaults to Download or project folder) */
+    @Volatile var isLinuxContainerActive: Boolean = false
+        private set
+
+    @Volatile var isInstallingLinux: Boolean = false
+        private set
+
+    /** Current working directory */
     @Volatile var cwd: String = resolveInitialWorkingDir()
         private set
 
@@ -67,47 +71,55 @@ object BashShellSession {
         }
     }
 
-    fun start() {
+    fun start(context: Context? = null) {
         if (isRunning) return
         try {
-            val workingDirFile = File(cwd).let {
-                if (it.exists() && it.isDirectory) it else File("/storage/emulated/0/Download")
-            }
-            if (!workingDirFile.exists()) {
-                workingDirFile.mkdirs()
-            }
-            cwd = workingDirFile.absolutePath
+            val proc: Process
+            if (context != null && LinuxSubsystem.isInstalled(context)) {
+                // Mode 1: Pure In-App Mini Linux Container (PRoot)
+                proc = LinuxSubsystem.spawnProotProcess(context)
+                isLinuxContainerActive = true
 
-            val pb = ProcessBuilder("sh").apply {
-                directory(workingDirFile)
-                redirectErrorStream(true)
+                TermuxBridgeService.state.addLog("$SHELL_PREFIX 🐧 In-App Mini Linux (Alpine ARM64) Activated!")
+                TermuxBridgeService.state.addLog("$SHELL_PREFIX 📦 PRoot sandbox running (fake root ID=0)")
+                TermuxBridgeService.state.addLog("$SHELL_PREFIX 📁 Storage mapped at /storage and /root/Download")
+                TermuxBridgeService.state.addLog("─".repeat(44))
+            } else {
+                // Mode 2: Host Android shell
+                isLinuxContainerActive = false
+                val workingDirFile = File(cwd).let {
+                    if (it.exists() && it.isDirectory) it else File("/storage/emulated/0/Download")
+                }
+                if (!workingDirFile.exists()) workingDirFile.mkdirs()
+                cwd = workingDirFile.absolutePath
 
-                // Inject Termux Python/Pip & System bin paths
-                val pathList = listOf(
-                    "/data/data/com.termux/files/usr/bin",
-                    "/data/data/com.termux/files/usr/bin/applets",
-                    "/data/user/0/com.termux/files/usr/bin",
-                    "/system/bin",
-                    "/system/xbin"
-                )
-                environment()["PATH"] = pathList.joinToString(":")
-                environment()["LD_LIBRARY_PATH"] = "/data/data/com.termux/files/usr/lib"
-                environment()["PREFIX"] = "/data/data/com.termux/files/usr"
-                environment()["HOME"] = cwd
-                environment()["TERM"] = "xterm-256color"
-                environment()["PYTHONUNBUFFERED"] = "1"
+                val pb = ProcessBuilder("sh").apply {
+                    directory(workingDirFile)
+                    redirectErrorStream(true)
+                    val pathList = listOf(
+                        "/data/data/com.termux/files/usr/bin",
+                        "/data/data/com.termux/files/usr/bin/applets",
+                        "/system/bin",
+                        "/system/xbin"
+                    )
+                    environment()["PATH"] = pathList.joinToString(":")
+                    environment()["LD_LIBRARY_PATH"] = "/data/data/com.termux/files/usr/lib"
+                    environment()["HOME"] = cwd
+                    environment()["TERM"] = "xterm-256color"
+                }
+                proc = pb.start()
+
+                TermuxBridgeService.state.addLog("$SHELL_PREFIX ⚡ Aro Code Terminal (Host Mode)")
+                TermuxBridgeService.state.addLog("$SHELL_PREFIX 📁 Working Dir: $cwd")
+                if (context != null) {
+                    TermuxBridgeService.state.addLog("$SHELL_PREFIX 💡 Tip: Tap [📦 Setup Mini Linux] for 100% In-App Python!")
+                }
+                TermuxBridgeService.state.addLog("─".repeat(44))
             }
 
-            val proc = pb.start()
             process = proc
             isRunning = true
             writer = BufferedWriter(OutputStreamWriter(proc.outputStream))
-
-            // Initial banner
-            TermuxBridgeService.state.addLog("$SHELL_PREFIX ⚡ Aro Code Integrated Terminal (VS Code Mode)")
-            TermuxBridgeService.state.addLog("$SHELL_PREFIX 📁 Working Dir: $cwd")
-            TermuxBridgeService.state.addLog("$SHELL_PREFIX 🐍 Python & Pip paths mapped")
-            TermuxBridgeService.state.addLog("─".repeat(44))
 
             // Stream stdout & stderr
             scope.launch {
@@ -123,6 +135,7 @@ object BashShellSession {
                 } catch (_: Exception) {
                 } finally {
                     isRunning = false
+                    isLinuxContainerActive = false
                     TermuxBridgeService.state.addLog("$SHELL_PREFIX [Terminal session ended]")
                 }
             }
@@ -132,21 +145,44 @@ object BashShellSession {
         }
     }
 
+    /** Installs In-App Mini Linux and restarts shell inside container */
+    fun installMiniLinux(context: Context) {
+        if (isInstallingLinux) return
+        isInstallingLinux = true
+
+        scope.launch {
+            try {
+                TermuxBridgeService.state.addLog("$SHELL_PREFIX 🚀 Initializing Mini Linux Installer...")
+                val success = LinuxSubsystem.install(
+                    context = context,
+                    onLog = { TermuxBridgeService.state.addLog("$SHELL_PREFIX $it") },
+                    onProgress = { /* progress */ }
+                )
+                if (success) {
+                    stop()
+                    start(context)
+                }
+            } finally {
+                isInstallingLinux = false
+            }
+        }
+    }
+
     fun sendCommand(rawCmd: String) {
         val cmd = rawCmd.trim()
         if (cmd.isEmpty()) return
 
         if (!isRunning) start()
 
-        // 1. Clear screen command
+        // 1. Clear screen
         if (cmd == "clear" || cmd == "cls") {
             TermuxBridgeService.state.clearLogs()
-            TermuxBridgeService.state.addLog("$SHELL_PREFIX ⚡ Aro Code Terminal — Screen Cleared")
+            TermuxBridgeService.state.addLog("$SHELL_PREFIX ⚡ Screen Cleared")
             return
         }
 
-        // 2. cd command tracking
-        if (cmd.startsWith("cd ") || cmd == "cd") {
+        // 2. cd command tracking in host mode
+        if (!isLinuxContainerActive && (cmd.startsWith("cd ") || cmd == "cd")) {
             val target = cmd.removePrefix("cd").trim()
             val newDir = when {
                 target.isEmpty() || target == "~" -> File("/storage/emulated/0/Download")
@@ -169,9 +205,10 @@ object BashShellSession {
             return
         }
 
-        // 3. Regular command execution
+        // 3. Command execution
         try {
-            TermuxBridgeService.state.addLog("$SHELL_PREFIX aro@code:${File(cwd).name}$ $cmd")
+            val promptTag = if (isLinuxContainerActive) "root@arocode:~#" else "aro@code:${File(cwd).name}$"
+            TermuxBridgeService.state.addLog("$SHELL_PREFIX $promptTag $cmd")
             writer?.write(cmd)
             writer?.newLine()
             writer?.flush()
@@ -189,6 +226,7 @@ object BashShellSession {
         isRunning = false
         process = null
         writer = null
+        isLinuxContainerActive = false
         TermuxBridgeService.state.addLog("$SHELL_PREFIX [Terminal stopped]")
     }
 }
