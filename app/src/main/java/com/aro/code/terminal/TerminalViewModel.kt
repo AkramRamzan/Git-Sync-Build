@@ -85,6 +85,28 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
         }
     }
 
+    fun sendCtrlC() {
+        viewModelScope.launch {
+            BashShellSession.sendCtrlC()
+        }
+    }
+
+    fun createSession(context: Context, title: String? = null) {
+        viewModelScope.launch {
+            BashShellSession.createSession(context, title)
+        }
+    }
+
+    fun closeSession(index: Int) {
+        viewModelScope.launch {
+            BashShellSession.closeSession(index)
+        }
+    }
+
+    fun switchSession(index: Int) {
+        BashShellSession.switchSession(index)
+    }
+
     fun startShell(context: Context? = null) {
         if (context != null) {
             _isLinuxInstalled.value = LinuxSubsystem.isInstalled(context)

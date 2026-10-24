@@ -3,6 +3,7 @@ package com.aro.code.terminal
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -245,12 +246,18 @@ private fun BashShellTab(
     val coroutineScope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Filter logs to shell lines only
-    val shellLogs = remember(logs) { logs.filter { it.startsWith("💻") } }
+    val activeSession = BashShellSession.activeSession
+    val shellLogs = activeSession?.logs ?: remember(logs) { logs.filter { it.startsWith("💻") } }
 
     LaunchedEffect(shellLogs.size) {
         if (shellLogs.isNotEmpty()) {
             coroutineScope.launch { listState.animateScrollToItem(shellLogs.lastIndex) }
+        }
+    }
+
+    LaunchedEffect(input) {
+        if (input.isNotEmpty() && shellLogs.isNotEmpty()) {
+            listState.animateScrollToItem(shellLogs.lastIndex)
         }
     }
 
@@ -267,6 +274,74 @@ private fun BashShellTab(
     }
 
     Column(Modifier.fillMaxSize()) {
+
+        // ── Multi-Session Tabs Bar (VS Code / Termux Style) ─────────────────
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .background(Color(0xFF0D1117))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val sessions = BashShellSession.sessions
+            val activeIdx = BashShellSession.activeSessionIndex
+
+            sessions.forEachIndexed { idx, session ->
+                val isSelected = idx == activeIdx
+                Surface(
+                    onClick = { BashShellSession.switchSession(idx) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF21262D),
+                    tonalElevation = if (isSelected) 4.dp else 0.dp
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = session.title,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isSelected) Color.White else Color(0xFF8B949E),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                        if (sessions.size > 1) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Tab",
+                                tint = if (isSelected) Color.White else Color(0xFF8B949E),
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable { BashShellSession.closeSession(idx) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // [+] New Session Button
+            Surface(
+                onClick = { BashShellSession.createSession(context) },
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF238636)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "New Session",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text("+ New Session", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                }
+            }
+        }
         // Output area
         LazyColumn(
             state = listState,
@@ -416,7 +491,7 @@ private fun BashShellTab(
         MobileKeyBar { key ->
             when (key) {
                 "CTRL+C" -> {
-                    submitCommand("")
+                    BashShellSession.sendCtrlC()
                 }
                 "↑" -> {
                     if (history.isNotEmpty()) {
@@ -447,17 +522,18 @@ private fun BashShellTab(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val promptText = if (BashShellSession.isLinuxContainerActive) {
+            val active = BashShellSession.activeSession
+            val promptText = if (active?.isLinuxContainerActive == true) {
                 "root@arocode ❯ "
             } else {
-                "${File(BashShellSession.cwd).name.ifEmpty { "root" }} ❯ "
+                "${File(active?.cwd ?: "/storage/emulated/0/Download").name.ifEmpty { "root" }} ❯ "
             }
             Text(
                 promptText,
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    color = if (BashShellSession.isLinuxContainerActive) Color(0xFF58A6FF) else Color(0xFF4CAF50),
+                    color = if (active?.isLinuxContainerActive == true) Color(0xFF58A6FF) else Color(0xFF4CAF50),
                     fontWeight = FontWeight.Bold
                 )
             )
@@ -521,9 +597,13 @@ fun TerminalBottomSheet(
         sheetState = sheetState,
         containerColor = Color(0xFF161B22),
         dragHandle = { BottomSheetDefaults.DragHandle(color = Color(0xFF555555)) },
-        modifier = Modifier.fillMaxHeight(0.88f)
+        modifier = Modifier.fillMaxHeight(0.92f)
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .imePadding()
+        ) {
 
             // ── Header: Status + Controls ──────────────────────────────────
             Row(
@@ -538,7 +618,10 @@ fun TerminalBottomSheet(
                 ControlButtons(
                     status = status,
                     onStart      = { viewModel.startBridge(context) },
-                    onStop       = { viewModel.stopBridge(context) },
+                    onStop       = {
+                        viewModel.stopBridge(context)
+                        viewModel.sendCtrlC()
+                    },
                     onRestart    = { viewModel.restartBridge(context) },
                     onClear      = { viewModel.clearLogs() },
                     onOpenTermux = { viewModel.openTermux(context) }

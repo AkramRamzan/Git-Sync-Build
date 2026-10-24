@@ -161,6 +161,18 @@ async def health_check():
 async def get_logs():
     return {"logs": list(server_logs)}
 
+@app.post("/v1/shutdown")
+async def shutdown_server():
+    print("\n🛑 Shutdown requested from Aro Code app...", flush=True)
+    import signal
+    def _exit():
+        try:
+            os.kill(os.getpid(), signal.SIGINT)
+        except Exception:
+            os._exit(0)
+    asyncio.get_event_loop().call_later(0.3, _exit)
+    return {"status": "shutting_down"}
+
 @app.get("/v1/models")
 async def list_models():
     return {

@@ -121,9 +121,24 @@ class TermuxBridgeService : Service() {
                 }
             }
             ACTION_STOP -> {
-                state._status.value = BridgeStatus.STOPPED
-                updateNotification("🔴 Bridge Stopped")
-                appendLog("🛑 Bridge stopped.")
+                serviceScope.launch {
+                    appendLog("🛑 Stopping Bridge Server...")
+                    try {
+                        val url = URL("${state._activeUrl.value}/v1/shutdown")
+                        val conn = (url.openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 800
+                            readTimeout = 800
+                            requestMethod = "POST"
+                        }
+                        conn.responseCode
+                    } catch (_: Exception) {}
+
+                    BashShellSession.sendCtrlC()
+
+                    state._status.value = BridgeStatus.STOPPED
+                    updateNotification("🔴 Bridge Stopped")
+                    appendLog("🛑 Bridge stopped successfully.")
+                }
             }
         }
         return START_STICKY
