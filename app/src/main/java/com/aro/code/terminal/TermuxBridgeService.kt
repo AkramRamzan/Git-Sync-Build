@@ -74,7 +74,7 @@ class TermuxBridgeService : Service() {
         /** Helper to configure Termux allow-external-apps=true property */
         fun openTermuxSetup(context: Context) {
             try {
-                val cmd = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties"
+                val cmd = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties && termux-reload-settings"
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = ClipData.newPlainText("Termux Config", cmd)
                 clipboard.setPrimaryClip(clip)

@@ -312,12 +312,24 @@ private fun BashShellTab(
                 }
             } else {
                 Surface(
-                    onClick = { submitCommand("apk add python3 py3-pip gcompat bash && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip") },
+                    onClick = { submitCommand("python3 /storage/Download/server.py") },
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFF238636)
                 ) {
                     Text(
-                        text = "🐍 Install Python/Pip (apk)",
+                        text = "🚀 Run server.py",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                Surface(
+                    onClick = onSetupLinux,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF6E40C9)
+                ) {
+                    Text(
+                        text = "🔄 Reinstall Linux",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

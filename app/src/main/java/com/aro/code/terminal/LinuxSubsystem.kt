@@ -50,27 +50,31 @@ object LinuxSubsystem {
             return internalCandidate
         }
 
-        // 3. Robust fallback: Extract libproot.so directly from the installed APK file
+        // 3. Robust fallback: Extract libproot.so + dependencies directly from the installed APK file
         try {
             val apkPath = context.applicationInfo.sourceDir
             if (apkPath != null && File(apkPath).exists()) {
                 java.util.zip.ZipFile(apkPath).use { zip ->
-                    val candidateEntries = listOf(
-                        "lib/arm64-v8a/libproot.so",
-                        "lib/armeabi-v7a/libproot.so",
-                        "lib/x86_64/libproot.so"
-                    )
-                    val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
-                    if (entry != null) {
-                        zip.getInputStream(entry).use { input ->
-                            FileOutputStream(internalCandidate).use { output ->
-                                input.copyTo(output)
+                    val libsToExtract = listOf("libproot.so", "libtalloc.so", "libandroid-shmem.so")
+                    for (libName in libsToExtract) {
+                        val candidateEntries = listOf(
+                            "lib/arm64-v8a/$libName",
+                            "lib/armeabi-v7a/$libName",
+                            "lib/x86_64/$libName"
+                        )
+                        val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
+                        if (entry != null) {
+                            val targetFile = File(binDir, libName)
+                            zip.getInputStream(entry).use { input ->
+                                FileOutputStream(targetFile).use { output ->
+                                    input.copyTo(output)
+                                }
                             }
+                            targetFile.setExecutable(true, false)
+                            targetFile.setReadable(true, false)
                         }
-                        internalCandidate.setExecutable(true, false)
-                        internalCandidate.setReadable(true, false)
-                        if (internalCandidate.exists()) return internalCandidate
                     }
+                    if (internalCandidate.exists()) return internalCandidate
                 }
             }
         } catch (e: Exception) {
@@ -331,6 +335,9 @@ object LinuxSubsystem {
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
+            val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+            val binDir = File(context.filesDir, "bin")
+            environment()["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["PROOT_NO_SECCOMP"] = "1"
             environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
@@ -366,7 +373,9 @@ object LinuxSubsystem {
             // gcompat (glibc compatibility — needed by pip/fastapi native modules)
             mainBase  to "musl-obstack-1.2.3-r2.apk",
             mainBase  to "libucontext-1.2-r3.apk",
-            commBase  to "gcompat-1.1.0-r4.apk",
+            mainBase  to "gcompat-1.1.0-r4.apk",
+            mainBase  to "libgcc-13.2.1_git20240309-r1.apk",
+            mainBase  to "libstdc++-13.2.1_git20240309-r1.apk",
             // python3 dependencies
             mainBase  to "libbz2-1.0.8-r6.apk",
             mainBase  to "libexpat-2.8.1-r0.apk",
@@ -384,7 +393,18 @@ object LinuxSubsystem {
             mainBase  to "zlib-1.3.2-r0.apk",
             mainBase  to "python3-3.12.13-r0.apk",
             // pip
-            commBase  to "py3-pip-24.0-r2.apk"
+            commBase  to "py3-pip-24.0-r2.apk",
+            // FastAPI & Pydantic stack natively packaged by Alpine
+            mainBase  to "py3-idna-3.7-r0.apk",
+            commBase  to "py3-sniffio-1.3.1-r1.apk",
+            commBase  to "py3-annotated-types-0.6.0-r1.apk",
+            commBase  to "py3-anyio-4.3.0-r2.apk",
+            commBase  to "py3-click-8.1.7-r2.apk",
+            commBase  to "py3-h11-0.14.0-r4.apk",
+            commBase  to "py3-typing-extensions-4.11.0-r1.apk",
+            commBase  to "py3-pydantic-core-2.16.3-r1.apk",
+            commBase  to "py3-pydantic-2.6.4-r1.apk",
+            commBase  to "py3-starlette-0.37.2-r2.apk"
         )
 
         val tmpDir = File(context.cacheDir, "apk_pkgs").apply { mkdirs() }
@@ -425,6 +445,17 @@ object LinuxSubsystem {
                 } finally {
                     pkgFile.delete()
                 }
+            }
+
+            // Extract pure-python wheels for FastAPI + Uvicorn + SSE-Starlette directly into site-packages
+            val sitePackagesDir = File(destDir, "usr/lib/python3.12/site-packages").apply { mkdirs() }
+            val wheels = listOf(
+                "https://files.pythonhosted.org/packages/e6/33/de41e554e5a187d583906e10d53bfae5fd6c07e98cbf4fe5262bd37e739a/fastapi-0.111.0-py3-none-any.whl",
+                "https://files.pythonhosted.org/packages/b2/f9/e6f30ba6094733e4f9794fd098ca0543a19b07ac1fa3075d595bf0f1fb60/uvicorn-0.30.1-py3-none-any.whl",
+                "https://files.pythonhosted.org/packages/61/98/658d1681bc6dc0b0f7f695aee4337de79decd0ccaec6d000a76b5cbdca6d/sse_starlette-3.5.1-py3-none-any.whl"
+            )
+            wheels.forEach { wheelUrl ->
+                extractWheel(wheelUrl, sitePackagesDir, onLog)
             }
 
             // Create convenience symlinks only if they don't already exist
@@ -607,6 +638,52 @@ object LinuxSubsystem {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Downloads and extracts a pure-python wheel (.whl is a ZIP file) directly into site-packages.
+     */
+    private fun extractWheel(wheelUrl: String, sitePackagesDir: File, onLog: (String) -> Unit) {
+        val fname = wheelUrl.substringAfterLast("/")
+        onLog("📦 [wheel] $fname")
+        try {
+            val conn = (URL(wheelUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 20000
+                readTimeout = 60000
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Mozilla/5.0")
+            }
+            if (conn.responseCode != 200) {
+                onLog("   ⚠️ HTTP ${conn.responseCode} — skipping $fname")
+                return
+            }
+            sitePackagesDir.mkdirs()
+            java.util.zip.ZipInputStream(conn.inputStream).use { zipIn ->
+                var entry = zipIn.nextEntry
+                val buffer = ByteArray(8192)
+                while (entry != null) {
+                    val outFile = File(sitePackagesDir, entry.name)
+                    if (entry.isDirectory) {
+                        outFile.mkdirs()
+                    } else {
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { fos ->
+                            var r: Int
+                            while (zipIn.read(buffer).also { r = it } != -1) {
+                                fos.write(buffer, 0, r)
+                            }
+                        }
+                        outFile.setReadable(true, false)
+                        outFile.setWritable(true, false)
+                    }
+                    zipIn.closeEntry()
+                    entry = zipIn.nextEntry
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "extractWheel failed for $fname", e)
+            onLog("   ⚠️ Wheel extract error: ${e.message}")
         }
     }
 }
