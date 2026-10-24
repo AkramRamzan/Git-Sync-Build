@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -156,40 +157,114 @@ private fun ControlButtons(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Keyboard Shortcuts Bar
+// Mobile Keyboard Shortcuts Bar  (Termux-style)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun MobileKeyBar(onKey: (String) -> Unit) {
-    val keys = listOf("ESC", "TAB", "CTRL+C", "↑", "↓", "-", "/", "~", "|", "&&", "clear", "ls -la")
-    Row(
+private fun MobileKeyBar(
+    onKey: (String) -> Unit,
+    onPaste: () -> Unit
+) {
+    // Row 1 — Navigation & Control (Termux style with Arrow keys & Enter)
+    val navKeys = listOf("ESC", "TAB", "CTRL+C", "↑", "↓", "ENTER", "PASTE")
+    // Row 2 — Shell & symbols
+    val shellKeys = listOf("clear", "-", "/", "~", "|", "&&", "\"", "ls -la")
+
+    Column(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFF161B22))
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 6.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .background(Color(0xFF0D1117))
+            .padding(vertical = 2.dp)
     ) {
-        keys.forEach { key ->
-            val isAccent = key == "CTRL+C" || key == "ESC" || key == "TAB"
-            Surface(
-                onClick = { onKey(key) },
-                shape = RoundedCornerShape(6.dp),
-                color = if (key == "CTRL+C") Color(0xFF4E1010) else if (isAccent) Color(0xFF21262D) else Color(0xFF1B2028),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
-                modifier = Modifier.height(30.dp)
-            ) {
-                Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = key,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = if (isAccent) FontWeight.Bold else FontWeight.Medium
-                        ),
-                        color = if (key == "CTRL+C") Color(0xFFFF7B72) else if (isAccent) Color(0xFF58A6FF) else Color(0xFFC9D1D9)
-                    )
+        // ── Row 1: Termux Navigation Keys ────────────────────────────────────
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            navKeys.forEach { key ->
+                val isEnter = key == "ENTER"
+                val isArrow = key == "↑" || key == "↓"
+                val isCtrlC = key == "CTRL+C"
+                val isPaste = key == "PASTE"
+                val isAccent = key == "ESC" || key == "TAB"
+
+                Surface(
+                    onClick = {
+                        if (isPaste) onPaste() else onKey(key)
+                    },
+                    shape = RoundedCornerShape(6.dp),
+                    color = when {
+                        isEnter -> Color(0xFF238636)   // GitHub green
+                        isArrow -> Color(0xFF1F6FEB)   // Termux / VS Code blue
+                        isCtrlC -> Color(0xFF4E1010)   // Red
+                        isPaste -> Color(0xFF382554)   // Purple
+                        isAccent -> Color(0xFF21262D)  // Dark slate
+                        else -> Color(0xFF21262D)
+                    },
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        when {
+                            isEnter -> Color(0xFF2EA043)
+                            isArrow -> Color(0xFF388BFD)
+                            isPaste -> Color(0xFF8957E5)
+                            else -> Color(0xFF30363D)
+                        }
+                    ),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Box(
+                        Modifier.padding(horizontal = if (isEnter || isArrow) 14.dp else 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isEnter) "⏎ ENTER" else key,
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = if (isEnter || isArrow) 13.sp else 12.sp,
+                                fontWeight = if (isEnter || isArrow || isPaste) FontWeight.Bold else FontWeight.Medium
+                            ),
+                            color = when {
+                                isEnter -> Color.White
+                                isArrow -> Color.White
+                                isCtrlC -> Color(0xFFFF7B72)
+                                isPaste -> Color(0xFFD2A8FF)
+                                isAccent -> Color(0xFF58A6FF)
+                                else -> Color(0xFFC9D1D9)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Row 2: Shell Shortcuts & Symbols ─────────────────────────────────
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            shellKeys.forEach { key ->
+                Surface(
+                    onClick = { onKey(key) },
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF161B22),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = key,
+                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            color = Color(0xFF8B949E)
+                        )
+                    }
                 }
             }
         }
@@ -330,12 +405,29 @@ private fun BashShellTab(
     val submitCommand: (String) -> Unit = { raw ->
         val trimmed = raw.trim()
         if (trimmed.isNotBlank()) {
-            if (history.isEmpty() || history.last() != trimmed) {
-                history.add(trimmed)
+            val recent = shellLogs.takeLast(10).joinToString("\n")
+            val isAgyMenu = recent.contains("Select login method", ignoreCase = true) ||
+                            (recent.contains("Antigravity CLI", ignoreCase = true) && recent.contains("Google OAuth"))
+
+            if (isAgyMenu && (trimmed == "1" || trimmed.equals("Google OAuth", ignoreCase = true))) {
+                // User typed 1 or Google OAuth on agy menu -> select Google OAuth!
+                BashShellSession.sendRaw("\r")
+                input = ""
+            } else if (isAgyMenu && (trimmed == "2" || trimmed.contains("Cloud", ignoreCase = true))) {
+                // User typed 2 on agy menu -> move down + enter
+                BashShellSession.sendRaw("\u001B[B\r")
+                input = ""
+            } else {
+                if (history.isEmpty() || history.last() != trimmed) {
+                    history.add(trimmed)
+                }
+                historyIndex = -1
+                onSend(trimmed)
+                input = ""
             }
-            historyIndex = -1
-            onSend(trimmed)
-            input = ""
+        } else {
+            // Empty input: user pressed Send or Enter on blank field -> send raw \r
+            BashShellSession.sendRaw("\r")
         }
     }
 
@@ -416,6 +508,58 @@ private fun BashShellTab(
                 line.substring(start).substringBefore(" ").substringBefore("\n").substringBefore("\r")
             }
         }
+
+        // ── 1-Tap Google OAuth Login Method Selector (Agy TUI Helper) ─────────
+        val isAgyMenu = remember(shellLogs.size) {
+            val recent = shellLogs.takeLast(12).joinToString("\n")
+            recent.contains("Select login method", ignoreCase = true) ||
+            (recent.contains("Antigravity CLI", ignoreCase = true) && recent.contains("Google OAuth"))
+        }
+
+        if (isAgyMenu && oauthUrl == null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = Color(0xFF161B22),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF238636))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "👇 Agy Menu Select:",
+                        color = Color(0xFF58A6FF),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("1. 🔑 Google OAuth (Enter)", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Text("2. GCP", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+
         if (oauthUrl != null) {
             Surface(
                 modifier = Modifier
@@ -445,6 +589,56 @@ private fun BashShellTab(
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                }
+            }
+        }
+
+        // ── 1-Tap Auth Code Paste Helper ────────────────────────────────────
+        val isWaitingAuthCode = remember(shellLogs.size) {
+            val recent = shellLogs.takeLast(10).joinToString("\n")
+            recent.contains("authorization code", ignoreCase = true) ||
+            (recent.contains("paste", ignoreCase = true) && recent.contains("code", ignoreCase = true))
+        }
+
+        if (isWaitingAuthCode) {
+            val clipboardManager = LocalClipboardManager.current
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = Color(0xFF261C38),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF8957E5))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "📋 Code Copy Kar Liya?",
+                        color = Color(0xFFD2A8FF),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Button(
+                        onClick = {
+                            val clip = clipboardManager.getText()?.text?.trim()
+                            if (!clip.isNullOrBlank()) {
+                                BashShellSession.sendRaw(clip + "\r")
+                                Toast.makeText(context, "Code paste ho gaya! 🚀", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Pehle Chrome se code copy karein!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8957E5)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("📋 1-Tap Paste & Connect", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -585,46 +779,58 @@ private fun BashShellTab(
             }
         }
 
-        // Mobile key shortcuts
-        MobileKeyBar { key ->
-            when (key) {
-                "CTRL+C" -> {
-                    BashShellSession.sendCtrlC()
-                }
-                "ESC" -> {
-                    input = ""
-                }
-                "TAB" -> {
-                    if (input.isNotBlank()) {
-                        submitCommand(input)
-                    } else {
-                        submitCommand("ls")
+        val clipboardManager = LocalClipboardManager.current
+
+        // Mobile key shortcuts (Termux-style)
+        MobileKeyBar(
+            onKey = { key ->
+                when (key) {
+                    "CTRL+C" -> BashShellSession.sendCtrlC()
+                    "ESC"    -> BashShellSession.sendRaw("\u001B")
+                    "TAB"    -> {
+                        if (input.isNotBlank()) {
+                            // Send current input + TAB for shell autocomplete
+                            BashShellSession.sendRaw(input + "\t")
+                            input = ""
+                        } else {
+                            BashShellSession.sendRaw("\t")
+                        }
                     }
-                }
-                "clear" -> {
-                    submitCommand("clear")
-                }
-                "ls -la" -> {
-                    submitCommand("ls -la")
-                }
-                "↑" -> {
-                    if (history.isNotEmpty()) {
-                        historyIndex = (historyIndex + 1).coerceAtMost(history.lastIndex)
-                        input = history[history.lastIndex - historyIndex]
+                    "↑" -> {
+                        // Send ANSI up-arrow — works for both TUI (agy menu navigation) and shell history
+                        BashShellSession.sendRaw("\u001B[A")
+                        // Also update history index for text input field
+                        if (history.isNotEmpty()) {
+                            historyIndex = (historyIndex + 1).coerceAtMost(history.lastIndex)
+                            input = history[history.lastIndex - historyIndex]
+                        }
                     }
-                }
-                "↓" -> {
-                    if (historyIndex > 0) {
-                        historyIndex--
-                        input = history[history.lastIndex - historyIndex]
-                    } else if (historyIndex == 0) {
-                        historyIndex = -1
-                        input = ""
+                    "↓" -> {
+                        // Send ANSI down-arrow — works for both TUI (agy menu navigation) and shell history
+                        BashShellSession.sendRaw("\u001B[B")
+                        if (historyIndex > 0) {
+                            historyIndex--
+                            input = history[history.lastIndex - historyIndex]
+                        } else if (historyIndex == 0) {
+                            historyIndex = -1
+                            input = ""
+                        }
                     }
+                    "ENTER"  -> submitCommand(input)
+                    "clear"  -> submitCommand("clear")
+                    "ls -la" -> submitCommand("ls -la")
+                    else     -> input += key
                 }
-                else -> input += key
+            },
+            onPaste = {
+                val clip = clipboardManager.getText()?.text
+                if (!clip.isNullOrBlank()) {
+                    input += clip
+                } else {
+                    Toast.makeText(context, "Clipboard empty!", Toast.LENGTH_SHORT).show()
+                }
             }
-        }
+        )
 
         Divider(color = Color(0xFF333333))
 

@@ -148,7 +148,7 @@ class ShellSession(
         val promptTag = if (isLinuxContainerActive) "root@arocode:~#" else "aro@code$"
         if (logs.isNotEmpty() && logs.last().trim() == "💻 $promptTag".trim()) {
             logs[logs.lastIndex] = "💻 $promptTag $cmd"
-        } else {
+        } else if (!isLinuxContainerActive) {
             addLog("💻 $promptTag $cmd")
         }
         try {
@@ -165,6 +165,17 @@ class ShellSession(
             writer?.write("\u0003")
             writer?.flush()
             addLog("💻 ^C")
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Send raw bytes directly to stdin without adding newline or echo.
+     * Used for TUI navigation: arrow keys, Enter, ESC, etc.
+     */
+    fun sendRaw(seq: String) {
+        try {
+            writer?.write(seq)
+            writer?.flush()
         } catch (_: Exception) {}
     }
 
@@ -189,12 +200,13 @@ class ShellSession(
         }
     }
 
-    /** Strip ANSI/VT100 escape sequences so URLs and text are readable in shellLogs. */
+    /** Strip ANSI/VT100 escape sequences and query artifacts so text and URLs are clean. */
     private fun stripAnsi(text: String): String {
-        return text.replace(Regex("\u001B\\[[0-9;?]*[A-Za-z]"), "")   // CSI sequences
-                   .replace(Regex("\u001B[()][AB012]"), "")             // Charset designators
-                   .replace(Regex("\u001B[78DEZHMNO]"), "")             // Single-char ESC sequences
-                   .replace(Regex("\u001B\\][^\u0007]*(\u0007|\\\\)"), "") // OSC sequences
+        return text.replace(Regex("\u001B\\[[0-9;?><= !\"#\\$%&'()*+,-./]*[A-Za-z~@]"), "")   // CSI sequences
+                   .replace(Regex("\\[[?>][0-9;]*\\\$?[a-zA-Z0-9;]*"), "")                     // Stray query artifacts like [>q, [?2026$p
+                   .replace(Regex("\u001B[()][AB012]"), "")                                     // Charset designators
+                   .replace(Regex("\u001B[78DEZHMNO]"), "")                                     // Single-char ESC sequences
+                   .replace(Regex("\u001B\\][^\u0007]*(\u0007|\\\\)"), "")                         // OSC sequences
     }
 
     private fun addLog(line: String) {
@@ -292,6 +304,11 @@ object BashShellSession {
 
     fun sendCtrlC() {
         activeSession?.sendCtrlC()
+    }
+
+    /** Send raw escape sequence to active session's stdin (for TUI navigation). */
+    fun sendRaw(seq: String) {
+        activeSession?.sendRaw(seq)
     }
 
     fun installMiniLinux(context: Context) {
