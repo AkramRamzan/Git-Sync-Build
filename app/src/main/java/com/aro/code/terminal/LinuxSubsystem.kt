@@ -171,6 +171,12 @@ object LinuxSubsystem {
             File(etcDir, "hosts").writeText("127.0.0.1 localhost arocode\n::1 localhost ip6-localhost ip6-loopback\n")
             File(etcDir, "environment").writeText("PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\nLANG=\"C.UTF-8\"\n")
 
+            // Unset Android variables in profile & bashrc so python pip / packages run as standard Linux
+            val unsetAndroidVars = "\nunset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT\n"
+            File(etcDir, "profile").appendText(unsetAndroidVars)
+            val rootDir = File(targetDir, "root").apply { mkdirs() }
+            File(rootDir, ".bashrc").appendText(unsetAndroidVars)
+
             // 6. Create mountpoints and temp directory
             File(targetDir, "storage").mkdirs()
             File(targetDir, "root/Download").mkdirs()
@@ -498,6 +504,14 @@ object LinuxSubsystem {
             environment()["TERM"] = "xterm-256color"
             environment()["HOME"] = "/root"
             environment()["USER"] = "root"
+            // Crucial: remove Android host environment variables so Python platformdirs/pip treats environment as Linux
+            environment().remove("ANDROID_DATA")
+            environment().remove("ANDROID_ROOT")
+            environment().remove("ANDROID_STORAGE")
+            environment().remove("ANDROID_ART_ROOT")
+            environment().remove("ANDROID_I18N_ROOT")
+            environment().remove("ANDROID_TZDATA_ROOT")
+
             // /usr/local/bin is FIRST so our agy wrapper is always found before the real binary
             environment()["PATH"] = "/usr/local/bin:/usr/bin:/root/.local/bin:/bin:/sbin:/usr/sbin"
             environment()["LANG"] = "C.UTF-8"
