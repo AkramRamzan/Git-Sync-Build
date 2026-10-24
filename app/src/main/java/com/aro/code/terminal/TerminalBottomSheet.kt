@@ -158,23 +158,35 @@ private fun ControlButtons(
 
 @Composable
 private fun MobileKeyBar(onKey: (String) -> Unit) {
-    val keys = listOf("ESC", "TAB", "CTRL+C", "↑", "↓", "/", "~", "|", "&&", "ls", "cd ..")
+    val keys = listOf("ESC", "TAB", "CTRL+C", "↑", "↓", "-", "/", "~", "|", "&&", "clear", "ls -la")
     Row(
         Modifier
             .fillMaxWidth()
+            .background(Color(0xFF161B22))
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         keys.forEach { key ->
+            val isAccent = key == "CTRL+C" || key == "ESC" || key == "TAB"
             Surface(
                 onClick = { onKey(key) },
-                shape = RoundedCornerShape(4.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.height(28.dp)
+                shape = RoundedCornerShape(6.dp),
+                color = if (key == "CTRL+C") Color(0xFF4E1010) else if (isAccent) Color(0xFF21262D) else Color(0xFF1B2028),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
+                modifier = Modifier.height(30.dp)
             ) {
-                Box(Modifier.padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
-                    Text(key, style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = key,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = if (isAccent) FontWeight.Bold else FontWeight.Medium
+                        ),
+                        color = if (key == "CTRL+C") Color(0xFFFF7B72) else if (isAccent) Color(0xFF58A6FF) else Color(0xFFC9D1D9)
+                    )
                 }
             }
         }
@@ -241,10 +253,61 @@ private fun BashShellTab(
     var input by remember { mutableStateOf("") }
     val history = remember { mutableStateListOf<String>() }
     var historyIndex by remember { mutableIntStateOf(-1) }
+    var showAgyDialog by remember { mutableStateOf(false) }
+    var agyPromptInput by remember { mutableStateOf("") }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (showAgyDialog) {
+        AlertDialog(
+            onDismissRequest = { showAgyDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🤖", fontSize = 22.sp)
+                    Text("Antigravity CLI Agent", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Task / Prompt darj karein jo agy execute karega:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF8B949E)
+                    )
+                    OutlinedTextField(
+                        value = agyPromptInput,
+                        onValueChange = { agyPromptInput = it },
+                        placeholder = { Text("e.g. build a fastapi server in server.py", color = Color.Gray, fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4,
+                        textStyle = TextStyle(color = Color.White, fontSize = 13.sp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (agyPromptInput.isNotBlank()) {
+                            onSend("agy -p \"${agyPromptInput.trim()}\" --dangerously-skip-permissions")
+                            agyPromptInput = ""
+                        }
+                        showAgyDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636))
+                ) {
+                    Text("Run agy 🚀", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAgyDialog = false }) {
+                    Text("Cancel", color = Color(0xFF8B949E))
+                }
+            },
+            containerColor = Color(0xFF161B22)
+        )
+    }
 
     val activeSession = BashShellSession.activeSession
     val shellLogs = activeSession?.logs ?: remember(logs) { logs.filter { it.startsWith("💻") } }
@@ -373,6 +436,29 @@ private fun BashShellTab(
                 .padding(horizontal = 6.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            if (isLinuxInstalled) {
+                // 🤖 1-Tap agy AI Prompt runner
+                Surface(
+                    onClick = { showAgyDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1F6FEB)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("🤖", fontSize = 12.sp)
+                        Text(
+                            text = "agy Prompt",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
             if (!isLinuxInstalled) {
                 Surface(
                     onClick = onSetupLinux,
@@ -492,6 +578,22 @@ private fun BashShellTab(
             when (key) {
                 "CTRL+C" -> {
                     BashShellSession.sendCtrlC()
+                }
+                "ESC" -> {
+                    input = ""
+                }
+                "TAB" -> {
+                    if (input.isNotBlank()) {
+                        submitCommand(input)
+                    } else {
+                        submitCommand("ls")
+                    }
+                }
+                "clear" -> {
+                    submitCommand("clear")
+                }
+                "ls -la" -> {
+                    submitCommand("ls -la")
                 }
                 "↑" -> {
                     if (history.isNotEmpty()) {

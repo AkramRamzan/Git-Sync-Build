@@ -347,6 +347,10 @@ object LinuxSubsystem {
         // Ensure container directories exist
         File(rootfsDir, "tmp").mkdirs()
         File(rootfsDir, "root").mkdirs()
+        File(rootfsDir, "root/.local/bin").mkdirs()
+
+        // Deploy smart agy wrapper so typing 'agy' never hangs without a PTY
+        setupAgyWrapper(rootfsDir)
 
         // Host temporary directory for PRoot internal sockets & memory files
         val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
@@ -403,12 +407,52 @@ object LinuxSubsystem {
             environment()["TMP"] = prootTmp.absolutePath
             environment()["TERM"] = "xterm-256color"
             environment()["HOME"] = "/root"
-            environment()["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
+            environment()["PATH"] = "/root/.local/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin"
             environment()["LANG"] = "C.UTF-8"
             environment()["PYTHONUNBUFFERED"] = "1"
             environment()["PYTHONIOENCODING"] = "utf-8"
         }
         return pb.start()
+    }
+
+    /**
+     * Creates a smart wrapper at /usr/bin/agy inside rootfs.
+     * When agy is invoked without arguments, standard pipes hang without a PTY.
+     * This wrapper prompts for a task and executes agy -p "..." smoothly.
+     */
+    private fun setupAgyWrapper(rootfsDir: File) {
+        try {
+            val binDir = File(rootfsDir, "usr/bin").apply { mkdirs() }
+            val agyWrapper = File(binDir, "agy")
+            val script = """
+                #!/bin/sh
+                AGY_ORIG="/root/.local/bin/agy"
+                if [ ! -f "${'$'}AGY_ORIG" ]; then
+                    echo "❌ Antigravity CLI not installed at /root/.local/bin/agy"
+                    echo "💡 Run to install: curl -fsSL https://antigravity.google/cli/install.sh | bash"
+                    exit 1
+                fi
+                if [ ${'$'}# -eq 0 ]; then
+                    echo "=========================================="
+                    echo "🤖 Google Antigravity CLI (v1.4.7)"
+                    echo "=========================================="
+                    printf "Task / Prompt darj karein: "
+                    read -r user_prompt
+                    if [ -n "${'$'}user_prompt" ]; then
+                        echo "⚡ Running: agy -p \"${'$'}user_prompt\"..."
+                        exec "${'$'}AGY_ORIG" -p "${'$'}user_prompt" --dangerously-skip-permissions
+                    else
+                        echo "Cancelled."
+                    fi
+                else
+                    exec "${'$'}AGY_ORIG" "${'$'}@"
+                fi
+            """.trimIndent()
+            agyWrapper.writeText(script)
+            agyWrapper.setExecutable(true, false)
+        } catch (e: Exception) {
+            Log.w(TAG, "setupAgyWrapper failed: ${e.message}")
+        }
     }
 
     /**
