@@ -40,7 +40,7 @@ class ShellSession(
             if (LinuxSubsystem.isInstalled(context)) {
                 proc = LinuxSubsystem.spawnProotProcess(context)
                 isLinuxContainerActive = true
-                addLog("💻 🐧 [Session $id] In-App Mini Linux Container Started")
+                addLog("💻 🐧 [Session $id] In-App Ubuntu Linux (ARM64 GLIBC) Container Started")
             } else {
                 isLinuxContainerActive = false
                 val workingDirFile = File(cwd).let {
@@ -236,7 +236,7 @@ object BashShellSession {
 
         scope.launch {
             try {
-                TermuxBridgeService.state.addLog("💻 🚀 Initializing Mini Linux Installer...")
+                TermuxBridgeService.state.addLog("💻 🚀 Initializing Ubuntu Linux Installer...")
                 val success = LinuxSubsystem.install(
                     context = context,
                     onLog = { TermuxBridgeService.state.addLog("💻 $it") },

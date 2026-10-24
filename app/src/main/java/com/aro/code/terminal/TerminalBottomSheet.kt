@@ -466,7 +466,7 @@ private fun BashShellTab(
                     color = Color(0xFF6E40C9)
                 ) {
                     Text(
-                        text = "📦 Setup In-App Linux (3.9MB)",
+                        text = "📦 Setup Ubuntu Linux (Full)",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -495,7 +495,7 @@ private fun BashShellTab(
                     color = Color(0xFF6E40C9)
                 ) {
                     Text(
-                        text = "🔄 Reinstall Linux",
+                        text = "🔄 Reinstall Ubuntu",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
