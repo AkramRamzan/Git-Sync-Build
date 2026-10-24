@@ -146,9 +146,10 @@ object LinuxSubsystem {
             resolvConf.writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
             onLog("🌐 DNS configured (Google & Cloudflare).")
 
-            // 4. Create mountpoints
+            // 4. Create mountpoints and temp directory
             File(targetDir, "storage").mkdirs()
             File(targetDir, "root/Download").mkdirs()
+            File(targetDir, "tmp").mkdirs()
 
             // 5. Cleanup archive
             archiveFile.delete()
@@ -291,6 +292,13 @@ object LinuxSubsystem {
         val rootfsDir = getRootfsDir(context)
         val rootfsPath = rootfsDir.absolutePath
 
+        // Ensure container directories exist
+        File(rootfsDir, "tmp").mkdirs()
+        File(rootfsDir, "root").mkdirs()
+
+        // Host temporary directory for PRoot internal sockets & memory files
+        val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
+
         // Prefer bash if installed, fallback to sh
         val shell = if (File(rootfsDir, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
 
@@ -313,13 +321,21 @@ object LinuxSubsystem {
         val cmd = mutableListOf(
             proot.absolutePath,
             "-r", rootfsPath,
-            "-0" // Fake root ID
+            "-0", // Fake root ID
+            "--link2symlink",
+            "--kill-on-exit"
         )
         cmd.addAll(bindings)
         cmd.addAll(listOf("-w", "/root", shell))
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
+            environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+            environment()["PROOT_NO_SECCOMP"] = "1"
+            environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
+            environment()["TMPDIR"] = prootTmp.absolutePath
+            environment()["TEMP"] = prootTmp.absolutePath
+            environment()["TMP"] = prootTmp.absolutePath
             environment()["TERM"] = "xterm-256color"
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
@@ -332,7 +348,15 @@ object LinuxSubsystem {
     fun runBootstrap(context: Context, onLog: (String) -> Unit): Boolean {
         return try {
             val proot = getProotBinary(context) ?: return false
-            val rootfsPath = getRootfsDir(context).absolutePath
+            val rootfsDir = getRootfsDir(context)
+            val rootfsPath = rootfsDir.absolutePath
+
+            // Ensure container directories exist
+            File(rootfsDir, "tmp").mkdirs()
+            File(rootfsDir, "root").mkdirs()
+
+            // Host temporary directory for PRoot internal sockets & memory files
+            val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
 
             val bindings = mutableListOf(
                 "-b", "/dev",
@@ -353,7 +377,9 @@ object LinuxSubsystem {
             val cmd = mutableListOf(
                 proot.absolutePath,
                 "-r", rootfsPath,
-                "-0"
+                "-0",
+                "--link2symlink",
+                "--kill-on-exit"
             )
             cmd.addAll(bindings)
             cmd.addAll(listOf(
@@ -365,6 +391,12 @@ object LinuxSubsystem {
 
             val pb = ProcessBuilder(cmd).apply {
                 redirectErrorStream(true)
+                environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
+                environment()["PROOT_NO_SECCOMP"] = "1"
+                environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
+                environment()["TMPDIR"] = prootTmp.absolutePath
+                environment()["TEMP"] = prootTmp.absolutePath
+                environment()["TMP"] = prootTmp.absolutePath
                 environment()["TERM"] = "xterm-256color"
                 environment()["HOME"] = "/root"
                 environment()["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"

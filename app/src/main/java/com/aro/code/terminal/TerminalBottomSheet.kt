@@ -325,6 +325,52 @@ private fun BashShellTab(
                 }
             }
 
+            // Storage permission quick shortcut
+            val context = LocalContext.current
+            Surface(
+                onClick = {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        try {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = android.net.Uri.parse("package:${context.packageName}")
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }
+                    } else {
+                        android.widget.Toast.makeText(context, "Storage permission active", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFD29922)
+            ) {
+                Text(
+                    text = "📁 Storage Access",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Black,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
+            // Termux allow-external-apps config shortcut
+            Surface(
+                onClick = { TermuxBridgeService.openTermuxSetup(context) },
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF1F6FEB)
+            ) {
+                Text(
+                    text = "⚙️ Fix Termux Config",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+
             val quickActions = listOf(
                 "▶ Run server.py" to "python3 /storage/Download/server.py",
                 "📦 pip install reqs" to "pip install fastapi uvicorn pydantic sse-starlette",

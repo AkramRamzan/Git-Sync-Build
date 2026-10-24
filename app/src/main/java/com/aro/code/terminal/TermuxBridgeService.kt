@@ -70,6 +70,27 @@ class TermuxBridgeService : Service() {
                 Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
+
+        /** Helper to configure Termux allow-external-apps=true property */
+        fun openTermuxSetup(context: Context) {
+            try {
+                val cmd = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties"
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Termux Config", cmd)
+                clipboard.setPrimaryClip(clip)
+
+                val launchIntent = context.packageManager.getLaunchIntentForPackage("com.termux")
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                    Toast.makeText(context, "Config command copied! Termux mein paste karke Enter dabayein.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Termux installed nahi hai!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     inner class LocalBinder : Binder() {
