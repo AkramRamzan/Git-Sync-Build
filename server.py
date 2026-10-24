@@ -314,12 +314,40 @@ async def chat_stream(req: ChatRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    import urllib.request
+
+    # Check if Bridge is ALREADY running (e.g. in background or Termux)
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8000/v1/health", timeout=1.5) as res:
+            if res.status == 200:
+                print("\n" + "="*55)
+                print("🟢 Anti-Gravity Bridge is ALREADY RUNNING at http://127.0.0.1:8000!")
+                print("📱 Aro Code app is already connected and ready.")
+                print("💡 Agar server restart karna hai to pehle purana process band karein:")
+                print("   fuser -k 8000/tcp  (ya Termux app band karein)")
+                print("="*55 + "\n")
+                sys.exit(0)
+    except Exception:
+        pass
+
     print("\n" + "="*55)
-    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.4)!")
-    print("📍 Host: http://0.0.0.0:8000 (accessible via 127.0.0.1:8000)")
+    print("⚡ Anti-Gravity Termux Bridge Server Starting (v2.4)!")
+    print("📍 Host: http://127.0.0.1:8000")
     print("📁 Hardened Workspace Security & Path Traversal Protection Active")
     print("💓 2-Second TCP Keep-Alive Heartbeat Enabled (Zero Timeouts)!")
     print("🚀 Stdin stream mode enabled: No file or prompt size limits!")
     print("📱 Aro Code app will automatically connect to this URL.")
     print("="*55 + "\n")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except OSError as e:
+        if e.errno == 98 or "address in use" in str(e).lower():
+            print("\n⚠️ Port 8000 is occupied. Trying 127.0.0.1:8000...")
+            try:
+                uvicorn.run(app, host="127.0.0.1", port=8000)
+            except Exception as e2:
+                print(f"\n❌ Could not bind to port 8000: {e2}")
+                print("💡 Solution: Termux app me ja kar 'pkill -f python' karein, ya run: 'fuser -k 8000/tcp'")
+        else:
+            raise
