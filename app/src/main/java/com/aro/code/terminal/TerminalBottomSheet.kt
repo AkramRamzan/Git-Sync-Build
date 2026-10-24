@@ -555,7 +555,7 @@ fun TerminalBottomSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "📍 http://127.0.0.1:8000",
+                    "📍 ${TermuxBridgeService.state.activeUrl.value}",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF29B6F6)
                 )
@@ -625,8 +625,13 @@ fun BridgeStatusPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val currentUrl by TermuxBridgeService.state.activeUrl.collectAsState()
+    val currentPort = remember(currentUrl) {
+        runCatching { java.net.URL(currentUrl).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
+    }
+
     val (bgColor, label) = when (status) {
-        BridgeStatus.RUNNING  -> Color(0xFF1B5E20) to "🟢 Bridge :8000"
+        BridgeStatus.RUNNING  -> Color(0xFF1B5E20) to "🟢 Bridge :$currentPort"
         BridgeStatus.STARTING -> Color(0xFF4E342E) to "🟡 Starting…"
         BridgeStatus.STOPPING -> Color(0xFF4E342E) to "🟠 Stopping…"
         BridgeStatus.STOPPED  -> Color(0xFF4E1010) to "🔴 Bridge Offline"

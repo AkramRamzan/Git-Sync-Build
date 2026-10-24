@@ -135,10 +135,11 @@ class TermuxBridgeService : Service() {
             while (isActive) {
                 val isAlive = pingHealth()
                 if (isAlive) {
+                    val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
                     if (state._status.value != BridgeStatus.RUNNING) {
                         state._status.value = BridgeStatus.RUNNING
-                        updateNotification("🟢 Bridge Running on :8000")
-                        appendLog("✅ Connected to Anti-Gravity Bridge on 127.0.0.1:8000!")
+                        updateNotification("🟢 Bridge Running on :$port")
+                        appendLog("✅ Connected to Anti-Gravity Bridge on ${state._activeUrl.value}!")
                     }
 
                     // Sync remote logs from server.py /v1/logs
@@ -157,7 +158,7 @@ class TermuxBridgeService : Service() {
                     if (state._status.value == BridgeStatus.RUNNING) {
                         state._status.value = BridgeStatus.STOPPED
                         updateNotification("🔴 Bridge Offline")
-                        appendLog("⚠️ Bridge connection lost (127.0.0.1:8000 unreachable).")
+                        appendLog("⚠️ Bridge connection lost (${state._activeUrl.value} unreachable).")
                     }
                 }
                 delay(2000)
@@ -172,9 +173,10 @@ class TermuxBridgeService : Service() {
 
             // 1. Check if already running
             if (pingHealth()) {
+                val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
                 state._status.value = BridgeStatus.RUNNING
-                updateNotification("🟢 Bridge Running on :8000")
-                appendLog("✅ Bridge is already running at http://127.0.0.1:8000!")
+                updateNotification("🟢 Bridge Running on :$port")
+                appendLog("✅ Bridge is already running at ${state._activeUrl.value}!")
                 return@launch
             }
 
@@ -193,9 +195,10 @@ class TermuxBridgeService : Service() {
             }
 
             if (connected) {
+                val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
                 state._status.value = BridgeStatus.RUNNING
-                updateNotification("🟢 Bridge Running on :8000")
-                appendLog("✅ Bridge successfully connected on :8000!")
+                updateNotification("🟢 Bridge Running on :$port")
+                appendLog("✅ Bridge successfully connected on :$port!")
             } else {
                 state._status.value = BridgeStatus.STOPPED
                 updateNotification("🔴 Bridge Offline — Tap to start")
@@ -239,13 +242,30 @@ class TermuxBridgeService : Service() {
         }
     }
 
-    /** Fast 1.5s health ping */
-    private fun pingHealth(): Boolean {
+    private fun resolveBridgeUrl(): String {
+        val candidates = listOf(
+            File("/storage/emulated/0/Download/.bridge_url"),
+            File("/sdcard/Download/.bridge_url")
+        )
+        for (f in candidates) {
+            try {
+                if (f.exists()) {
+                    val content = f.readText().trim()
+                    if (content.startsWith("http://127.0.0.1:") || content.startsWith("http://localhost:")) {
+                        return content
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return state._activeUrl.value
+    }
+
+    private fun checkHealthUrl(baseUrl: String): Boolean {
         return try {
-            val url = URL("http://127.0.0.1:8000/v1/health")
+            val url = URL("$baseUrl/v1/health")
             val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 1500
-                readTimeout = 1500
+                connectTimeout = 800
+                readTimeout = 800
                 requestMethod = "GET"
             }
             conn.responseCode == 200
@@ -254,10 +274,27 @@ class TermuxBridgeService : Service() {
         }
     }
 
+    /** Fast health ping with dynamic port discovery */
+    private fun pingHealth(): Boolean {
+        val candidate = resolveBridgeUrl()
+        if (checkHealthUrl(candidate)) {
+            state._activeUrl.value = candidate
+            return true
+        }
+        for (port in listOf(8000, 8080, 8888, 8765, 9000)) {
+            val probe = "http://127.0.0.1:$port"
+            if (probe != candidate && checkHealthUrl(probe)) {
+                state._activeUrl.value = probe
+                return true
+            }
+        }
+        return false
+    }
+
     /** Fetch server.py log lines via /v1/logs */
     private fun fetchServerLogs(): List<String> {
         return try {
-            val url = URL("http://127.0.0.1:8000/v1/logs")
+            val url = URL("${state._activeUrl.value}/v1/logs")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 1500
                 readTimeout = 1500
@@ -323,6 +360,9 @@ enum class BridgeStatus { STOPPED, STARTING, RUNNING, STOPPING, ERROR }
 
 class BridgeServiceState {
     private companion object { const val MAX_LOG_LINES = 500 }
+
+    val _activeUrl = MutableStateFlow("http://127.0.0.1:8000")
+    val activeUrl: StateFlow<String> = _activeUrl.asStateFlow()
 
     val _status = MutableStateFlow(BridgeStatus.STOPPED)
     val status: StateFlow<BridgeStatus> = _status.asStateFlow()

@@ -502,7 +502,9 @@ class ChatViewModel @Inject constructor(
             }
 
             val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
-            val bridgeUrl = credentialStore.antigravityBridgeUrl.firstOrNull()?.takeIf { it.isNotBlank() } ?: "http://127.0.0.1:8000"
+            val bridgeUrl = com.aro.code.terminal.TermuxBridgeService.state.activeUrl.value.takeIf { it.isNotBlank() }
+                ?: credentialStore.antigravityBridgeUrl.firstOrNull()?.takeIf { it.isNotBlank() }
+                ?: "http://127.0.0.1:8000"
             val bridgeToken = credentialStore.antigravityBridgeToken.firstOrNull()?.takeIf { it.isNotBlank() }
 
             val useBridge: Boolean

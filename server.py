@@ -1,6 +1,25 @@
 #!/usr/bin/env python3
+import sys
+
+# Immediate unbuffered output so the terminal displays progress immediately
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+print("\n" + "="*55, flush=True)
+print("⚡ Anti-Gravity Bridge Server Starting (v2.5)...", flush=True)
+print("⏳ Initializing modules (FastAPI, Uvicorn, Pydantic)...", flush=True)
+print("="*55, flush=True)
+
 """
-Anti-Gravity Termux Bridge Server (v2.4) - Hardened Production Edition
+Anti-Gravity Termux Bridge Server (v2.5) - Hardened Production Edition
 Allows Aro Code (Android App) to execute Anti-Gravity models:
 - Gemini 3.8 Flash (High)
 - Claude Sonnet 4.6 (Thinking)
@@ -312,61 +331,49 @@ async def chat_stream(req: ChatRequest):
         }
     )
 
+def find_available_port(preferred: int = 8000) -> int:
+    import socket
+    candidates = [preferred, 8080, 8888, 8765, 9000, 9090]
+    for port in candidates:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("0.0.0.0", port))
+            s.close()
+            return port
+        except OSError:
+            s.close()
+    return preferred
+
+def save_bridge_url(port: int):
+    url = f"http://127.0.0.1:{port}"
+    locations = [
+        "/storage/emulated/0/Download/.bridge_url",
+        "/storage/Download/.bridge_url",
+        "/root/Download/.bridge_url",
+        "/sdcard/Download/.bridge_url",
+        os.path.expanduser("~/.bridge_url")
+    ]
+    for loc in locations:
+        try:
+            with open(loc, "w") as f:
+                f.write(url)
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     import uvicorn
-    import urllib.request
 
-    # Check if Bridge is ALREADY running (e.g. in background or Termux)
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:8000/v1/health", timeout=1.5) as res:
-            if res.status == 200:
-                print("\n" + "="*55)
-                print("🟢 Anti-Gravity Bridge is ALREADY RUNNING at http://127.0.0.1:8000!")
-                print("📱 Aro Code app is already connected and ready.")
-                print("💡 Agar server restart karna hai to pehle purana process band karein:")
-                print("   fuser -k 8000/tcp  (ya Termux app band karein)")
-                print("="*55 + "\n")
-                sys.exit(0)
-    except Exception:
-        pass
+    active_port = find_available_port(8000)
+    save_bridge_url(active_port)
 
-    print("\n" + "="*55)
-    print("⚡ Anti-Gravity Termux Bridge Server Starting (v2.4)!")
-    print("📍 Host: http://127.0.0.1:8000")
-    print("📁 Hardened Workspace Security & Path Traversal Protection Active")
-    print("💓 2-Second TCP Keep-Alive Heartbeat Enabled (Zero Timeouts)!")
-    print("🚀 Stdin stream mode enabled: No file or prompt size limits!")
-    print("📱 Aro Code app will automatically connect to this URL.")
-    print("="*55 + "\n")
+    print("\n" + "="*55, flush=True)
+    print(f"⚡ Anti-Gravity Termux Bridge Server Active (v2.5)!", flush=True)
+    print(f"📍 Host: http://127.0.0.1:{active_port}", flush=True)
+    print("📁 Hardened Workspace Security & Path Traversal Protection Active", flush=True)
+    print("💓 2-Second TCP Keep-Alive Heartbeat Enabled (Zero Timeouts)!", flush=True)
+    print("🚀 Stdin stream mode enabled: No file or prompt size limits!", flush=True)
+    print(f"📱 Aro Code app will automatically connect to port {active_port}.", flush=True)
+    print("="*55 + "\n", flush=True)
 
-    # SO_REUSEPORT: TIME_WAIT zombie sockets ko bypass karta hai
-    # SO_REUSEADDR: crashed process ke baad turant rebind allow karta hai
-    import socket
-
-    def _run_with_reuse(host: str, port: int):
-        """Create a socket with SO_REUSEADDR + SO_REUSEPORT, then hand it to uvicorn."""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except (AttributeError, OSError):
-            pass  # SO_REUSEPORT not available on all kernels — graceful fallback
-        sock.bind((host, port))
-        uvicorn.run(app, fd=sock.fileno())
-        sock.close()
-
-    try:
-        _run_with_reuse("0.0.0.0", 8000)
-    except OSError as e:
-        if e.errno == 98 or "address in use" in str(e).lower():
-            print("\n⚠️ Port 8000 abhi bhi busy hai. Auto port-select kar rahe hain...")
-            for fallback_port in [8080, 8888, 9000]:
-                try:
-                    _run_with_reuse("0.0.0.0", fallback_port)
-                    break
-                except OSError:
-                    print(f"   Port {fallback_port} bhi busy — agle try kar rahe hain...")
-            else:
-                print("\n❌ Koi bhi port available nahi. 'pkill -f python' kar ke dobara try karein.")
-        else:
-            raise
+    uvicorn.run(app, host="0.0.0.0", port=active_port)

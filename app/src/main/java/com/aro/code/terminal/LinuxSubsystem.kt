@@ -405,6 +405,8 @@ object LinuxSubsystem {
             environment()["HOME"] = "/root"
             environment()["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
             environment()["LANG"] = "C.UTF-8"
+            environment()["PYTHONUNBUFFERED"] = "1"
+            environment()["PYTHONIOENCODING"] = "utf-8"
         }
         return pb.start()
     }
