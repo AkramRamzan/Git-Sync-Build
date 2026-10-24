@@ -41,12 +41,43 @@ object LinuxSubsystem {
         // 1. Check native library directory (extracted by Android package manager)
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val candidate = File(nativeDir, "libproot.so")
-        if (candidate.exists()) return candidate
+        if (candidate.exists() && candidate.canExecute()) return candidate
 
         // 2. Check internal files directory fallback
-        val internalCandidate = File(context.filesDir, "bin/proot")
-        if (internalCandidate.exists()) return internalCandidate
+        val binDir = File(context.filesDir, "bin").apply { mkdirs() }
+        val internalCandidate = File(binDir, "libproot.so")
+        if (internalCandidate.exists() && internalCandidate.canExecute()) {
+            return internalCandidate
+        }
 
+        // 3. Robust fallback: Extract libproot.so directly from the installed APK file
+        try {
+            val apkPath = context.applicationInfo.sourceDir
+            if (apkPath != null && File(apkPath).exists()) {
+                java.util.zip.ZipFile(apkPath).use { zip ->
+                    val candidateEntries = listOf(
+                        "lib/arm64-v8a/libproot.so",
+                        "lib/armeabi-v7a/libproot.so",
+                        "lib/x86_64/libproot.so"
+                    )
+                    val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
+                    if (entry != null) {
+                        zip.getInputStream(entry).use { input ->
+                            FileOutputStream(internalCandidate).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        internalCandidate.setExecutable(true, false)
+                        internalCandidate.setReadable(true, false)
+                        if (internalCandidate.exists()) return internalCandidate
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract libproot.so from APK", e)
+        }
+
+        if (candidate.exists()) return candidate
         return null
     }
 
