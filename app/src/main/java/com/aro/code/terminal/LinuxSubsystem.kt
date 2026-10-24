@@ -625,17 +625,16 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                     echo ""
                     echo "⚠️  Google account se login nahi hai!"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "💡 SUB SE AASAAN TAREEQA (Termux Shortcut):"
-                    echo "   Agar aap Termux use karte hain, Termux me ye command chalayein:"
-                    echo ""
-                    echo "   cp ~/.gemini/antigravity-cli/antigravity-oauth-token /sdcard/Download/"
-                    echo ""
-                    echo "   Aro Code token khud detect karke foran connect ho jayega!"
+                    echo "💡 AASAAN TAREEQA (Termux Shortcut):"
+                    echo "   Termux me: cp ~/.gemini/antigravity-cli/antigravity-oauth-token /sdcard/Download/"
+                    echo "   Aro Code apne aap token detect karke connect ho jayega!"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "🔗 In-App Login Link generate ho raha hai..."
+                    echo "🔗 Google OAuth shuru ho raha hai..."
+                    echo "   URL neeche aayega → '1-Tap Google Login' button dabayein"
+                    echo "   Login karne ke baad authorization code yahan paste karein"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    python3 /usr/local/bin/agy_login.py
-                    exit 0
+                    echo ""
+                    exec "${'$'}AGY_REAL"
                 fi
 
                 echo ""

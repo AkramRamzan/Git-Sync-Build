@@ -181,11 +181,20 @@ class ShellSession(
     }
 
     private fun updateOrAddLog(line: String, replaceLast: Boolean) {
+        val stripped = stripAnsi(line)
         if (replaceLast && logs.isNotEmpty() && logs.last().startsWith("💻")) {
-            logs[logs.lastIndex] = line
+            logs[logs.lastIndex] = stripped
         } else {
-            addLog(line)
+            addLog(stripped)
         }
+    }
+
+    /** Strip ANSI/VT100 escape sequences so URLs and text are readable in shellLogs. */
+    private fun stripAnsi(text: String): String {
+        return text.replace(Regex("\u001B\\[[0-9;?]*[A-Za-z]"), "")   // CSI sequences
+                   .replace(Regex("\u001B[()][AB012]"), "")             // Charset designators
+                   .replace(Regex("\u001B[78DEZHMNO]"), "")             // Single-char ESC sequences
+                   .replace(Regex("\u001B\\][^\u0007]*(\u0007|\\\\)"), "") // OSC sequences
     }
 
     private fun addLog(line: String) {
