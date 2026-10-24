@@ -243,6 +243,7 @@ private fun BashShellTab(
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // Filter logs to shell lines only
     val shellLogs = remember(logs) { logs.filter { it.startsWith("💻") } }
@@ -314,8 +315,7 @@ private fun BashShellTab(
                 Surface(
                     onClick = {
                         // Always deploy latest bundled server.py before running
-                        val ctx = context
-                        LinuxSubsystem.deployServerPy(ctx)
+                        LinuxSubsystem.deployServerPy(context)
                         submitCommand("python3 /storage/Download/server.py")
                     },
                     shape = RoundedCornerShape(12.dp),
