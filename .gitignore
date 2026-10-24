@@ -17,4 +17,6 @@ release.keystore
 # Secrets – never commit
 gradle.properties.local
 **/secrets.properties
+.git_token
+*.token
 !gradle/wrapper/gradle-wrapper.jar

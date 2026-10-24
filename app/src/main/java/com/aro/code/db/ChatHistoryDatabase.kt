@@ -77,9 +77,18 @@ class ChatHistoryDatabase @Inject constructor(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MESSAGES")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_META")
-        onCreate(db)
+        // Safe non-destructive schema migration: preserve all conversation history
+        if (oldVersion < 2) {
+            // Ensure meta table exists without dropping message data
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_META (
+                    $COL_META_KEY TEXT PRIMARY KEY,
+                    $COL_META_VAL TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
     }
 
     // ── DAO Operations with Coroutines ───────────────────────────────────────

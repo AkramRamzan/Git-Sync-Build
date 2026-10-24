@@ -61,9 +61,11 @@ class SafProjectManager @Inject constructor(
         dir: DocumentFile,
         level: Int,
         currentPath: String,
-        maxDepth: Int
+        maxDepth: Int,
+        nodeCount: java.util.concurrent.atomic.AtomicInteger = java.util.concurrent.atomic.AtomicInteger(0),
+        maxNodes: Int = 5_000
     ): List<ProjectNode> {
-        if (level > maxDepth) return emptyList()
+        if (level > maxDepth || nodeCount.get() >= maxNodes) return emptyList()
         val ignored = setOf(".git", ".gradle", "build", ".idea", ".DS_Store", "node_modules")
         val files = dir.listFiles()
         val nodes = mutableListOf<ProjectNode>()
@@ -71,12 +73,13 @@ class SafProjectManager @Inject constructor(
         val sorted = files.sortedWith(compareBy({ !it.isDirectory }, { it.name?.lowercase() ?: "" }))
 
         for (item in sorted) {
+            if (nodeCount.incrementAndGet() > maxNodes) break
             val name = item.name ?: continue
             if (name in ignored) continue
 
             val itemPath = "$currentPath/$name"
             if (item.isDirectory) {
-                val childNodes = scanDocumentDirectory(item, level + 1, itemPath, maxDepth)
+                val childNodes = scanDocumentDirectory(item, level + 1, itemPath, maxDepth, nodeCount, maxNodes)
                 nodes.add(
                     ProjectNode(
                         name = name,

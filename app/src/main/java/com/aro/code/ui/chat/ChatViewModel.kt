@@ -76,6 +76,20 @@ class ChatViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
+    private var lastBridgeCheckTime = 0L
+    private var cachedBridgeAlive = false
+
+    private suspend fun isBridgeAliveCached(bridgeUrl: String): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastBridgeCheckTime < 30_000L) {
+            return cachedBridgeAlive
+        }
+        val alive = bridgeClient.isBridgeAlive(bridgeUrl)
+        cachedBridgeAlive = alive
+        lastBridgeCheckTime = now
+        return alive
+    }
+
     private val antiGravitySystemPrompt = """
         You are Google Anti-Gravity Agent (Termux CLI agy v2.0), an autonomous software engineering agent.
         You have direct access to inspect workspace files and generate production code modifications.
@@ -114,10 +128,13 @@ class ChatViewModel @Inject constructor(
         // Monitor Anti-Gravity OAuth sign-in state
         viewModelScope.launch {
             credentialStore.googleAccessToken.collect { token ->
+                val snippet = token?.takeIf { it.isNotBlank() }?.let { t ->
+                    if (t.length > 12) "${t.take(6)}...${t.takeLast(4)}" else t
+                }
                 _uiState.update {
                     it.copy(
                         isAntiGravitySignedIn = !token.isNullOrBlank(),
-                        antiGravityTokenSnippet = token
+                        antiGravityTokenSnippet = snippet
                     )
                 }
             }
@@ -500,7 +517,7 @@ class ChatViewModel @Inject constructor(
                 targetModelId = selectedAgModel.id
                 activeSystemPrompt = antiGravitySystemPrompt
 
-                val isBridgeRunning = bridgeClient.isBridgeAlive(bridgeUrl)
+                val isBridgeRunning = isBridgeAliveCached(bridgeUrl)
 
                 if (selectedAgModel.isExternalBridgeOnly) {
                     useBridge = true

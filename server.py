@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Anti-Gravity Termux Bridge Server (v2.3) - Zero-Timeout Heartbeat Edition
+Anti-Gravity Termux Bridge Server (v2.4) - Hardened Production Edition
 Allows Aro Code (Android App) to execute Anti-Gravity models:
 - Gemini 3.8 Flash (High)
 - Claude Sonnet 4.6 (Thinking)
@@ -8,9 +8,10 @@ Allows Aro Code (Android App) to execute Anti-Gravity models:
 - GPT-OSS 120B (Medium)
 - Gemini 4 Argon
 
-Now featuring:
-- Autonomous Physical Workspace Mounting (--add-dir + cwd)
-- Single-Flight Concurrency Lock (Automatically cleans up previous process on new query)
+Security & Concurrency Enhancements:
+- Async Lock Protected Process Management (Zero Race Conditions)
+- Path Traversal Protected Project Mounting (Enforces Safe Allowed Bases)
+- Localhost Restricted CORS (Safe API Surface)
 - Active 2-second SSE TCP Heartbeat (Never times out during long file reasoning)
 - Zero Permission Prompts (--dangerously-skip-permissions)
 - Stdin Piping (No ARG_MAX Linux limits)
@@ -35,18 +36,31 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.3")
+app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.4")
 
 # Regex to strip ANSI terminal escape color codes for clean Android markdown
 ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
-# Concurrency tracker: ensures phone CPU isn't overwhelmed by multiple running agy instances
+# Concurrency tracker protected by asyncio.Lock to prevent race conditions
 active_process: Optional[asyncio.subprocess.Process] = None
+process_lock = asyncio.Lock()
 
-# Enable CORS for local network and webview
+# Safe base paths allowed for project workspace mounting
+ALLOWED_BASES = [
+    "/storage/emulated/0",
+    "/sdcard",
+    os.path.expanduser("~")
+]
+
+# Restrict CORS to local device loopback for enhanced security
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1",
+        "http://127.0.0.1:8000",
+        "http://localhost",
+        "http://localhost:8000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,7 +95,7 @@ async def health_check():
     agy_bin = find_agy_binary()
     return {
         "status": "ok",
-        "engine": "Anti-Gravity Termux Bridge v2.3 (Zero-Timeout Heartbeat Edition)",
+        "engine": "Anti-Gravity Termux Bridge v2.4 (Hardened Production Edition)",
         "agy_binary": agy_bin,
         "available_models": [
             "gemini-3.8-flash",
@@ -112,15 +126,6 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
     global active_process
     agy_bin = find_agy_binary()
 
-    # Cancel previous running process to free CPU and prevent concurrent collisions
-    if active_process and active_process.returncode is None:
-        try:
-            print("[Termux Bridge] Cancelling previous running agy process...")
-            active_process.terminate()
-            await asyncio.sleep(0.1)
-        except Exception as e:
-            print(f"[Termux Bridge] Warning: failed to terminate previous process: {e}")
-
     # Exact agy internal CLI model identifiers
     model_id_map = {
         "gemini-3.8-flash":  "gemini-3.8-flash-high",
@@ -131,7 +136,7 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
     }
     agy_model_name = model_id_map.get(model, model)
 
-    # Determine execution working directory & add-dir if project_path is valid
+    # Determine execution working directory & validate against path traversal
     exec_cwd = None
     cmd = [
         agy_bin,
@@ -148,8 +153,11 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
             f"/sdcard/{project_path.lstrip('/')}"
         ]
         for c in candidates:
-            if os.path.exists(c) and os.path.isdir(c):
-                exec_cwd = os.path.abspath(c)
+            abs_cand = os.path.abspath(c)
+            # Enforce path safety within allowed roots
+            is_safe = any(abs_cand.startswith(os.path.abspath(base)) for base in ALLOWED_BASES)
+            if is_safe and os.path.exists(abs_cand) and os.path.isdir(abs_cand):
+                exec_cwd = abs_cand
                 cmd.extend(["--add-dir", exec_cwd])
                 break
 
@@ -158,32 +166,42 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
     # Send instant initial heartbeat token so HTTP SSE connection is established immediately
     yield f"data: {json.dumps({'token': ''})}\n\n"
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=exec_cwd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        active_process = process
-
-        # Feed stdin concurrently in background to prevent pipe deadlocks
-        async def feed_stdin():
+    # Use lock to safely cancel previous process and assign new active_process
+    async with process_lock:
+        if active_process and active_process.returncode is None:
             try:
-                process.stdin.write(full_prompt.encode("utf-8"))
-                await process.stdin.drain()
-                process.stdin.close()
+                print("[Termux Bridge] Cancelling previous running agy process...")
+                active_process.terminate()
+                await asyncio.sleep(0.05)
             except Exception as e:
-                print(f"[Termux Bridge Stdin Error] {e}")
+                print(f"[Termux Bridge] Warning: failed to terminate previous process: {e}")
 
-        asyncio.create_task(feed_stdin())
-    except Exception as e:
-        err_msg = f"⚠️ Error launching '{agy_bin}': {str(e)}."
-        print(f"[Termux Bridge Error] {err_msg}")
-        yield f"data: {json.dumps({'token': err_msg})}\n\n"
-        yield "data: [DONE]\n\n"
-        return
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=exec_cwd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            active_process = process
+        except Exception as e:
+            err_msg = f"⚠️ Error launching '{agy_bin}': {str(e)}."
+            print(f"[Termux Bridge Error] {err_msg}")
+            yield f"data: {json.dumps({'token': err_msg})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+    # Feed stdin concurrently in background to prevent pipe deadlocks
+    async def feed_stdin():
+        try:
+            process.stdin.write(full_prompt.encode("utf-8"))
+            await process.stdin.drain()
+            process.stdin.close()
+        except Exception as e:
+            print(f"[Termux Bridge Stdin Error] {e}")
+
+    asyncio.create_task(feed_stdin())
 
     # Background async queue reader for process.stdout
     queue = asyncio.Queue()
@@ -233,7 +251,9 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
 
         await process.wait()
     finally:
-        active_process = None
+        async with process_lock:
+            if active_process is process:
+                active_process = None
         if process.returncode is None:
             try:
                 process.terminate()
@@ -259,9 +279,9 @@ async def chat_stream(req: ChatRequest):
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*55)
-    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.3)!")
+    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.4)!")
     print("📍 Host: http://0.0.0.0:8000 (accessible via 127.0.0.1:8000)")
-    print("📁 Autonomous Workspace Mode Enabled!")
+    print("📁 Hardened Workspace Security & Path Traversal Protection Active")
     print("💓 2-Second TCP Keep-Alive Heartbeat Enabled (Zero Timeouts)!")
     print("🚀 Stdin stream mode enabled: No file or prompt size limits!")
     print("📱 Aro Code app will automatically connect to this URL.")

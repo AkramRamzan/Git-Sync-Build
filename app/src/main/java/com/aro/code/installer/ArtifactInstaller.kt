@@ -34,60 +34,64 @@ class ArtifactInstaller @Inject constructor(
         artifactDownloadUrl: String,
         token: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
+        val apkFile = File(context.cacheDir, "update.apk")
         runCatching {
-            // 1. Verify sideload permission
-            require(context.packageManager.canRequestPackageInstalls()) {
-                "REQUEST_INSTALL_PACKAGES permission not granted"
-            }
+            try {
+                // 1. Verify sideload permission
+                require(context.packageManager.canRequestPackageInstalls()) {
+                    "REQUEST_INSTALL_PACKAGES permission not granted"
+                }
 
-            // 2. Download ZIP stream (follows HTTP 302 redirects automatically)
-            val responseChannel = httpClient.get(artifactDownloadUrl) {
-                header("Authorization", "Bearer $token")
-                header("Accept", "application/vnd.github+json")
-            }.bodyAsChannel()
+                // 2. Download ZIP stream (follows HTTP 302 redirects automatically)
+                val responseChannel = httpClient.get(artifactDownloadUrl) {
+                    header("Authorization", "Bearer $token")
+                    header("Accept", "application/vnd.github+json")
+                }.bodyAsChannel()
 
-            // 3. Extract APK from ZIP into cache
-            val apkFile = File(context.cacheDir, "update.apk")
-            ZipInputStream(responseChannel.toInputStream()).use { zip ->
-                var entry = zip.nextEntry
-                while (entry != null) {
-                    if (entry.name.endsWith(".apk")) {
-                        apkFile.outputStream().use { out -> zip.copyTo(out) }
-                        break
+                // 3. Extract APK from ZIP into cache
+                ZipInputStream(responseChannel.toInputStream()).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        if (entry.name.endsWith(".apk")) {
+                            apkFile.outputStream().use { out -> zip.copyTo(out) }
+                            break
+                        }
+                        entry = zip.nextEntry
                     }
-                    entry = zip.nextEntry
+                }
+
+                require(apkFile.exists() && apkFile.length() > 0) { "APK not found in artifact ZIP" }
+
+                // 4. PackageInstaller session
+                val installer = context.packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(
+                    PackageInstaller.SessionParams.MODE_FULL_INSTALL
+                ).apply {
+                    setAppPackageName(context.packageName)
+                    setSize(apkFile.length())
+                }
+
+                val sessionId = installer.createSession(params)
+                installer.openSession(sessionId).use { session ->
+                    session.openWrite("update.apk", 0, apkFile.length()).use { output ->
+                        apkFile.inputStream().copyTo(output)
+                        session.fsync(output)
+                    }
+                    val intent = Intent(context, InstallReceiver::class.java)
+                    val pi = android.app.PendingIntent.getBroadcast(
+                        context, sessionId, intent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                        android.app.PendingIntent.FLAG_MUTABLE
+                    )
+                    session.commit(pi.intentSender)
+                }
+                Unit
+            } finally {
+                // Always clean up cached APK file even on failure
+                if (apkFile.exists()) {
+                    apkFile.delete()
                 }
             }
-
-            require(apkFile.exists() && apkFile.length() > 0) { "APK not found in artifact ZIP" }
-
-            // 4. PackageInstaller session
-            val installer = context.packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(
-                PackageInstaller.SessionParams.MODE_FULL_INSTALL
-            ).apply {
-                setAppPackageName(context.packageName)
-                setSize(apkFile.length())
-            }
-
-            val sessionId = installer.createSession(params)
-            installer.openSession(sessionId).use { session ->
-                session.openWrite("update.apk", 0, apkFile.length()).use { output ->
-                    apkFile.inputStream().copyTo(output)
-                    session.fsync(output)
-                }
-                val intent = Intent(context, InstallReceiver::class.java)
-                val pi = android.app.PendingIntent.getBroadcast(
-                    context, sessionId, intent,
-                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                    android.app.PendingIntent.FLAG_MUTABLE
-                )
-                session.commit(pi.intentSender)
-            }
-
-            // 5. Clean up cached APK
-            apkFile.delete()
-            Unit
         }
     }
 }

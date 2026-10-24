@@ -21,12 +21,16 @@ class TokenBucketRateLimiter(private val minRemaining: Int = 10) {
     }
 
     suspend fun acquirePermit() {
-        mutex.withLock {
+        val waitMs = mutex.withLock {
             if (remaining <= minRemaining) {
                 val now = System.currentTimeMillis() / 1_000
-                val waitMs = ((resetEpochSeconds - now) * 1_000).coerceAtLeast(1_000)
-                kotlinx.coroutines.delay(waitMs)
+                ((resetEpochSeconds - now) * 1_000).coerceAtLeast(1_000)
+            } else {
+                0L
             }
+        }
+        if (waitMs > 0L) {
+            kotlinx.coroutines.delay(waitMs)
         }
     }
 }

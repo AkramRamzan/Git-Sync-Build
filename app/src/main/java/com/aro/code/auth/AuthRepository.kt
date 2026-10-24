@@ -3,6 +3,7 @@ package com.aro.code.auth
 import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
+import com.aro.code.BuildConfig
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -115,12 +116,7 @@ class AuthRepository @Inject constructor(
             ?: googleClientId.takeIf { it.isNotBlank() }
             ?: ANTIGRAVITY_CLIENT_ID
 
-        val clientSecret = when {
-            cid.startsWith("1071006060591") -> "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"
-            cid.startsWith("884354919052")  -> "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"
-            cid.startsWith("1098991175725") -> "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"
-            else -> ""
-        }
+        val clientSecret = BuildConfig.GOOGLE_CLIENT_SECRET.takeIf { it.isNotBlank() } ?: ""
 
         val response: GoogleTokenResponse = httpClient.submitForm(
             url = "https://oauth2.googleapis.com/token",
@@ -158,12 +154,7 @@ class AuthRepository @Inject constructor(
             ?: error("No refresh token stored")
 
         val cid = googleClientId.takeIf { it.isNotBlank() } ?: ANTIGRAVITY_CLIENT_ID
-        val clientSecret = when {
-            cid.startsWith("1071006060591") -> "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"
-            cid.startsWith("884354919052")  -> "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"
-            cid.startsWith("1098991175725") -> "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"
-            else -> ""
-        }
+        val clientSecret = BuildConfig.GOOGLE_CLIENT_SECRET.takeIf { it.isNotBlank() } ?: ""
 
         val response: GoogleTokenResponse = httpClient.submitForm(
             url = "https://oauth2.googleapis.com/token",

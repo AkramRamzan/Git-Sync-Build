@@ -24,6 +24,8 @@ android {
             "\"${project.findProperty("GITHUB_CLIENT_ID") ?: ""}\"")
         buildConfigField("String", "GOOGLE_CLIENT_ID",
             "\"${project.findProperty("GOOGLE_CLIENT_ID") ?: ""}\"")
+        buildConfigField("String", "GOOGLE_CLIENT_SECRET",
+            "\"${project.findProperty("GOOGLE_CLIENT_SECRET") ?: ""}\"")
         buildConfigField("String", "GEMINI_MODEL_ID",
             "\"gemini-3.8-flash\"")
 

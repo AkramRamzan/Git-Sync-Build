@@ -339,17 +339,16 @@ class GeminiClient @Inject constructor(
             }
         } catch (e: Exception) {
             val msg = e.message.orEmpty()
-            // If model was not found and we haven't sent tokens, fallback to 2026 default gemini-3.8-flash
-            if (tokenCount == 0 && targetModel != "gemini-3.8-flash" &&
-                (msg.contains("not found", ignoreCase = true) || msg.contains("HTTP 404") || msg.contains("no longer available", ignoreCase = true))) {
-                generate(cleanKey, "gemini-3.8-flash", systemPrompt, userPrompt)
-                    .onSuccess { send(it); return@channelFlow }
-                    .onFailure { throw it }
-            }
-            // If already sent tokens, rethrow; otherwise attempt one-shot fallback
             if (tokenCount == 0) {
-                generate(cleanKey, targetModel, systemPrompt, userPrompt)
-                    .onSuccess { send(it) }
+                // If model was not found, fallback to 2026 default gemini-3.8-flash; otherwise retry with targetModel
+                val fallbackModel = if (targetModel != "gemini-3.8-flash" &&
+                    (msg.contains("not found", ignoreCase = true) || msg.contains("HTTP 404") || msg.contains("no longer available", ignoreCase = true))) {
+                    "gemini-3.8-flash"
+                } else {
+                    targetModel
+                }
+                generate(cleanKey, fallbackModel, systemPrompt, userPrompt)
+                    .onSuccess { send(it); return@channelFlow }
                     .onFailure { throw it }
             } else {
                 throw e
