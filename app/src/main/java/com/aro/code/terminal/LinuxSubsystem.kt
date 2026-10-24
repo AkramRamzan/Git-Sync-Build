@@ -490,6 +490,12 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         setupAgyWrapper(rootfsDir)
         setupAptWrapper(rootfsDir)
 
+        // Ensure .bashrc has 2000 column terminal width so URLs never line-wrap
+        val bashrc = File(rootfsDir, "root/.bashrc")
+        if (bashrc.exists() && !bashrc.readText().contains("stty cols 2000")) {
+            bashrc.appendText("\nstty cols 2000 rows 50 2>/dev/null\nexport COLUMNS=2000\nexport LINES=50\n")
+        }
+
         // Host temporary directory for PRoot internal sockets & memory files
         val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
 
@@ -520,20 +526,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
-        // Termux-style Real PTY: use Python POSIX PTY with 2000 cols so long URLs never line-wrap or fragment
+        // Termux-style Real PTY: use Python POSIX PTY so bash runs with real isatty=true, /dev/pts, and full terminal control
         val hasPython = File(rootfsDir, "usr/bin/python3").exists()
         if (hasPython) {
-            val pyPtyInit = "import pty,os,fcntl,termios,struct,sys;" +
-                            "m,s=pty.openpty();" +
-                            "fcntl.ioctl(m,termios.TIOCSWINSZ,struct.pack('HHHH',50,2000,0,0));" +
-                            "pid=os.fork();" +
-                            "os.close(m) if pid==0 else None;" +
-                            "os.login_tty(s) if pid==0 else None;" +
-                            "os.execv('/bin/bash',['/bin/bash','-i']) if pid==0 else None;" +
-                            "os.close(s);" +
-                            "pty._copy(m);" +
-                            "os.waitpid(pid,0)"
-            cmd.addAll(listOf("-w", "/root", "/usr/bin/python3", "-c", pyPtyInit))
+            cmd.addAll(listOf("-w", "/root", "/usr/bin/python3", "-c", "import pty; pty.spawn(['/bin/bash', '-i'])"))
         } else {
             cmd.addAll(listOf("-w", "/root", shell, "-i"))
         }
@@ -591,6 +587,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             val script = """
                 #!/bin/sh
                 # Smart agy wrapper — handles auth + avoids PTY hang in Android terminal
+                stty cols 2000 rows 50 2>/dev/null
+                export COLUMNS=2000
+                export LINES=50
                 AGY_REAL="/root/.local/bin/agy"
 
                 if [ ! -f "${'$'}AGY_REAL" ]; then
