@@ -215,6 +215,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             File(etcDir, "profile").appendText(unsetAndroidVars)
             val rootDir = File(targetDir, "root").apply { mkdirs() }
             File(rootDir, ".bashrc").appendText(unsetAndroidVars)
+            File(rootDir, ".bashrc").appendText("\nexport PS1='root@arocode:~# '\n")
 
             // 6. Create mountpoints and temp directory
             File(targetDir, "storage").mkdirs()
@@ -231,8 +232,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             deployServerPy(context)
             onLog("✅ server.py deployed → /storage/Download/server.py")
 
-            // 9. Setup agy wrapper
+            // 9. Setup agy & apt wrappers
             setupAgyWrapper(targetDir)
+            setupAptWrapper(targetDir)
 
             onLog("─".repeat(44))
             onLog("🎉 In-App Ubuntu Linux (ARM64 GLIBC) is READY!")
@@ -484,8 +486,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         File(rootfsDir, "root").mkdirs()
         File(rootfsDir, "root/.local/bin").mkdirs()
 
-        // Deploy smart agy wrapper so typing 'agy' never hangs without a PTY
+        // Deploy smart agy & apt wrappers so commands give clear feedback
         setupAgyWrapper(rootfsDir)
+        setupAptWrapper(rootfsDir)
 
         // Host temporary directory for PRoot internal sockets & memory files
         val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
@@ -517,7 +520,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
-        cmd.addAll(listOf("-w", "/root", shell))
+        cmd.addAll(listOf("-w", "/root", shell, "-i"))
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
@@ -629,6 +632,56 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             wrapper.setExecutable(true, false)
         } catch (e: Exception) {
             Log.w(TAG, "setupAgyWrapper failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Creates smart apt / apt-get wrappers at /usr/local/bin/ inside rootfs
+     * so that 'apt-get update' explicitly prints a completion confirmation
+     * instead of silently stopping after 'Reading package lists...'.
+     */
+    private fun setupAptWrapper(rootfsDir: File) {
+        try {
+            val wrapperDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }
+            val aptGetWrapper = File(wrapperDir, "apt-get")
+            val aptWrapper = File(wrapperDir, "apt")
+
+            val scriptAptGet = """
+                #!/bin/sh
+                REAL_BIN="/usr/bin/apt-get"
+                if [ "${'$'}1" = "update" ]; then
+                    "${'$'}REAL_BIN" "${'$'}@"
+                    RET=${'$'}?
+                    if [ ${'$'}RET -eq 0 ]; then
+                        echo "✅ Reading package lists... Done! (All package indexes up to date)"
+                    fi
+                    exit ${'$'}RET
+                else
+                    exec "${'$'}REAL_BIN" "${'$'}@"
+                fi
+            """.trimIndent()
+
+            val scriptApt = """
+                #!/bin/sh
+                REAL_BIN="/usr/bin/apt"
+                if [ "${'$'}1" = "update" ]; then
+                    "${'$'}REAL_BIN" "${'$'}@"
+                    RET=${'$'}?
+                    if [ ${'$'}RET -eq 0 ]; then
+                        echo "✅ Reading package lists... Done! (All package indexes up to date)"
+                    fi
+                    exit ${'$'}RET
+                else
+                    exec "${'$'}REAL_BIN" "${'$'}@"
+                fi
+            """.trimIndent()
+
+            aptGetWrapper.writeText(scriptAptGet)
+            aptGetWrapper.setExecutable(true, false)
+            aptWrapper.writeText(scriptApt)
+            aptWrapper.setExecutable(true, false)
+        } catch (e: Exception) {
+            Log.w(TAG, "setupAptWrapper failed: ${e.message}")
         }
     }
 }

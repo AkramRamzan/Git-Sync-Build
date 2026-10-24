@@ -65,12 +65,56 @@ class ShellSession(
             writer = BufferedWriter(OutputStreamWriter(proc.outputStream))
 
             scope.launch {
-                val reader = BufferedReader(InputStreamReader(proc.inputStream))
+                val stream = proc.inputStream
+                val reader = InputStreamReader(stream, Charsets.UTF_8)
+                val buffer = CharArray(1024)
+                val lineBuffer = StringBuilder()
+                var lastWasCr = false
+
                 try {
-                    var line = reader.readLine()
-                    while (isActive && line != null) {
-                        addLog("💻 $line")
-                        line = reader.readLine()
+                    while (isActive) {
+                        val count = reader.read(buffer)
+                        if (count == -1) break
+                        for (i in 0 until count) {
+                            val ch = buffer[i]
+                            if (ch == '\r') {
+                                if (lineBuffer.isNotEmpty()) {
+                                    val text = lineBuffer.toString().trimEnd()
+                                    if (text.isNotBlank()) {
+                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                                    }
+                                    lineBuffer.clear()
+                                }
+                                lastWasCr = true
+                            } else if (ch == '\n') {
+                                if (lineBuffer.isNotEmpty()) {
+                                    val text = lineBuffer.toString().trimEnd()
+                                    if (text.isNotBlank()) {
+                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                                    }
+                                    lineBuffer.clear()
+                                }
+                                lastWasCr = false
+                            } else {
+                                lineBuffer.append(ch)
+                            }
+                        }
+
+                        // Flush trailing prompt (e.g., "root@arocode:~# ") when no more immediate bytes are available
+                        if (lineBuffer.isNotEmpty() && !reader.ready()) {
+                            val text = lineBuffer.toString().trimEnd()
+                            if (text.isNotBlank()) {
+                                updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                                lineBuffer.clear()
+                                lastWasCr = false
+                            }
+                        }
+                    }
+                    if (lineBuffer.isNotEmpty()) {
+                        val text = lineBuffer.toString().trimEnd()
+                        if (text.isNotBlank()) {
+                            updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                        }
                     }
                 } catch (_: Exception) {
                 } finally {
@@ -102,7 +146,11 @@ class ShellSession(
         }
 
         val promptTag = if (isLinuxContainerActive) "root@arocode:~#" else "aro@code$"
-        addLog("💻 $promptTag $cmd")
+        if (logs.isNotEmpty() && logs.last().trim() == "💻 $promptTag".trim()) {
+            logs[logs.lastIndex] = "💻 $promptTag $cmd"
+        } else {
+            addLog("💻 $promptTag $cmd")
+        }
         try {
             writer?.write(cmd)
             writer?.newLine()
@@ -130,6 +178,14 @@ class ShellSession(
         isRunning = false
         process = null
         writer = null
+    }
+
+    private fun updateOrAddLog(line: String, replaceLast: Boolean) {
+        if (replaceLast && logs.isNotEmpty() && logs.last().startsWith("💻")) {
+            logs[logs.lastIndex] = line
+        } else {
+            addLog(line)
+        }
     }
 
     private fun addLog(line: String) {
