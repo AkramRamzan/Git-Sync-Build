@@ -196,6 +196,16 @@ object LinuxSubsystem {
                 "Dpkg::Progress-Fancy \"1\";\nAPT::Color \"1\";\n"
             )
 
+            // PERFORMANCE FIX: Replace full sources.list with minimal repos only
+            // Full Ubuntu sources = 50MB package lists (universe+multiverse+backports) → slow in PRoot
+            // Minimal sources = ~10MB (main+universe from jammy + jammy-security only) → 5x faster!
+            File(etcDir, "apt/sources.list").writeText("""
+deb http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe
+deb http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe
+deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
+""".trimIndent()
+            )
+
             // 5. Configure Hosts & Environment
             File(etcDir, "hosts").writeText("127.0.0.1 localhost arocode\n::1 localhost ip6-localhost ip6-loopback\n")
             File(etcDir, "environment").writeText("PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\nLANG=\"C.UTF-8\"\n")
