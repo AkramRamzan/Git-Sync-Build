@@ -243,7 +243,37 @@ class SafProjectManager @Inject constructor(
             }
         }
 
-    private fun resolvePhysicalFileFromUri(uriString: String): File? {
+    fun getPhysicalPath(uriStringOrPath: String?): String? {
+        if (uriStringOrPath.isNullOrBlank()) return null
+        if (uriStringOrPath.startsWith("/")) {
+            val f = File(uriStringOrPath)
+            return if (f.exists()) f.absolutePath else uriStringOrPath
+        }
+        val file = resolvePhysicalFileFromUri(uriStringOrPath)
+        if (file != null && file.exists()) {
+            return file.absolutePath
+        }
+
+        val decoded = Uri.decode(uriStringOrPath)
+        val docPattern = "/document/primary:"
+        val treePattern = "/tree/primary:"
+        val relative = when {
+            decoded.contains(docPattern) -> decoded.substringAfter(docPattern)
+            decoded.contains(treePattern) -> decoded.substringAfter(treePattern)
+            else -> null
+        }
+        return if (relative != null) {
+            File("/storage/emulated/0", relative).absolutePath
+        } else {
+            null
+        }
+    }
+
+    fun resolvePhysicalFileFromUri(uriString: String): File? {
+        if (uriString.startsWith("/")) {
+            val f = File(uriString)
+            return if (f.exists()) f else null
+        }
         val decoded = Uri.decode(uriString)
         val docPattern = "/document/primary:"
         val treePattern = "/tree/primary:"

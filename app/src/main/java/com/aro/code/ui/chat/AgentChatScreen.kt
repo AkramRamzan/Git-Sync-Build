@@ -98,6 +98,7 @@ fun AgentChatScreen(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { treeUri: Uri? ->
         treeUri?.let { uri ->
+            viewModel.selectActiveProject(uri)
             val files = readFolderFiles(context, uri)
             if (files.isNotEmpty()) {
                 viewModel.attachMultipleFiles(files)
@@ -401,16 +402,17 @@ fun AgentChatScreen(
                 }
             }
 
-            // ── Active Project Context Badge & Pro Summary Mode ──
+            // ── Active Project Context Badge ──
             Surface(
                 color = if (state.activeProjectName != null) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 2.dp)
+                    .clickable { folderPickerLauncher.launch(null) }
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -426,22 +428,131 @@ fun AgentChatScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = if (state.activeProjectName != null) "📁 Project: ${state.activeProjectName}" else "📁 No Project Selected",
+                            text = if (state.activeProjectName != null) "📁 Project: ${state.activeProjectName} (Autonomous Mode)" else "📁 No Project Selected · Tap to open folder",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1
                         )
                     }
 
-                    if (state.activeProjectName != null) {
-                        TextButton(
-                            onClick = { viewModel.generateProjectSummary() },
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                            enabled = !state.isLoading
+                    Text(
+                        text = if (state.activeProjectName != null) "Change" else "Browse",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // ── Quick Autonomous Action Chips ──
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                item {
+                    Surface(
+                        onClick = {
+                            viewModel.send("Explain the overall architecture, directory structure, and main flow of this project.")
+                        },
+                        enabled = !state.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(13.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Summary Mode (Pro)", style = MaterialTheme.typography.labelSmall)
+                            Text("⚡ Architecture", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+                item {
+                    Surface(
+                        onClick = {
+                            viewModel.send("Analyze the active project workspace for potential bugs, memory leaks, performance bottlenecks, and code smells.")
+                        },
+                        enabled = !state.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("🔍 Find Bugs", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+                item {
+                    Surface(
+                        onClick = {
+                            viewModel.send("Check git status and summarize recent changes and modified files in this repository.")
+                        },
+                        enabled = !state.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("🛠️ Git Status", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+                item {
+                    Surface(
+                        onClick = {
+                            viewModel.send("Suggest high-impact performance optimizations and clean architecture refactoring for this project.")
+                        },
+                        enabled = !state.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("🚀 Optimize", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+                if (state.activeProjectName != null) {
+                    item {
+                        Surface(
+                            onClick = { viewModel.generateProjectSummary() },
+                            enabled = !state.isLoading,
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(end = 6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("📋 Summary Mode (Pro)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

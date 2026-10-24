@@ -370,6 +370,13 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    fun selectActiveProject(uri: Uri) {
+        viewModelScope.launch {
+            projectManager.takePersistableUriPermission(uri)
+            credentialStore.saveProjectDirUri(uri.toString())
+        }
+    }
+
     fun send(userText: String) {
         val trimmed = userText.trim()
         val isUnderstandCmd = trimmed.equals("understand project", ignoreCase = true) ||
@@ -486,6 +493,8 @@ class ChatViewModel @Inject constructor(
             val activeSystemPrompt: String
             val targetModelId: String
 
+            val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+
             if (isAntiGravity) {
                 val selectedAgModel = _uiState.value.selectedAntiGravityModel
                 targetModelId = selectedAgModel.id
@@ -506,8 +515,9 @@ class ChatViewModel @Inject constructor(
                     }
                 }
 
+                val targetPathDisplay = projectPhysicalPath?.substringAfterLast('/') ?: _uiState.value.activeProjectName ?: "Workspace"
                 _uiState.update {
-                    it.copy(activeStep = "🧠 [2/3] agy: Reasoning (${selectedAgModel.displayName.take(15)})...")
+                    it.copy(activeStep = "🧠 [2/3] agy: Autonomous Agent on $targetPathDisplay (${selectedAgModel.displayName.take(15)})...")
                 }
             } else {
                 useBridge = false
@@ -527,8 +537,13 @@ class ChatViewModel @Inject constructor(
                 targetModelId = _uiState.value.selectedModel.id
             }
 
-            // Construct prompt with attached file contexts
+            // Construct prompt with active project workspace info and attached file contexts
             val promptBuilder = StringBuilder()
+            if (projectPhysicalPath != null) {
+                promptBuilder.appendLine("=== ACTIVE PROJECT WORKSPACE ===")
+                promptBuilder.appendLine("Path: $projectPhysicalPath")
+                promptBuilder.appendLine("You have direct access to inspect, create, and modify files in this directory.\n")
+            }
             if (currentAttachments.isNotEmpty()) {
                 promptBuilder.appendLine("=== ATTACHED PROJECT FILES ===")
                 currentAttachments.forEach { file ->
@@ -555,7 +570,8 @@ class ChatViewModel @Inject constructor(
                     bridgeToken = bridgeToken,
                     modelId = targetModelId,
                     systemPrompt = activeSystemPrompt,
-                    userPrompt = fullUserPrompt
+                    userPrompt = fullUserPrompt,
+                    projectPath = projectPhysicalPath
                 )
             } else {
                 geminiClient.streamGenerate(

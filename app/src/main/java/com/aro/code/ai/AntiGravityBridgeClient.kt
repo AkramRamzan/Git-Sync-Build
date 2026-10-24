@@ -25,7 +25,8 @@ import javax.inject.Singleton
 data class BridgeChatRequest(
     val model: String,
     val prompt: String,
-    @SerialName("system_prompt") val systemPrompt: String = ""
+    @SerialName("system_prompt") val systemPrompt: String = "",
+    @SerialName("project_path") val projectPath: String? = null
 )
 
 /**
@@ -70,13 +71,15 @@ class AntiGravityBridgeClient @Inject constructor(
         bridgeToken: String?,
         modelId: String,
         systemPrompt: String,
-        userPrompt: String
+        userPrompt: String,
+        projectPath: String? = null
     ): Flow<String> = channelFlow {
         val cleanUrl = bridgeUrl.trimEnd('/')
         val requestBody = BridgeChatRequest(
             model = modelId,
             prompt = userPrompt,
-            systemPrompt = systemPrompt
+            systemPrompt = systemPrompt,
+            projectPath = projectPath
         )
 
         val statement = httpClient.preparePost("$cleanUrl/v1/chat/stream") {

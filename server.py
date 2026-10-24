@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-Anti-Gravity Termux Bridge Server (v2.1)
+Anti-Gravity Termux Bridge Server (v2.2) - Autonomous Workspace Edition
 Allows Aro Code (Android App) to execute Anti-Gravity models:
 - Gemini 3.8 Flash (High)
 - Claude Sonnet 4.6 (Thinking)
 - Claude Opus 4.6 (Thinking)
 - GPT-OSS 120B (Medium)
 - Gemini 4 Argon
+
+Now featuring:
+- Autonomous Physical Workspace Mounting (--add-dir + cwd)
+- Zero Permission Prompts (--dangerously-skip-permissions)
+- Stdin Piping (No ARG_MAX Linux limits)
+- Clean ANSI Terminal Stripping for Native UI Markdown
+- Immediate SSE Connection Heartbeat
 
 Usage in Termux:
     pkg update && pkg install python -y
@@ -17,15 +24,20 @@ Usage in Termux:
 
 import os
 import sys
+import re
 import json
 import shutil
 import asyncio
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.1")
+app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.2")
+
+# Regex to strip ANSI terminal escape color codes for clean Android markdown
+ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 # Enable CORS for local network and webview
 app.add_middleware(
@@ -40,6 +52,7 @@ class ChatRequest(BaseModel):
     model: str = "gemini-3.8-flash"
     prompt: str
     system_prompt: str = ""
+    project_path: Optional[str] = None
 
 def find_agy_binary():
     """Locate the official agy or antigravity binary in Termux/Linux environment."""
@@ -64,7 +77,7 @@ async def health_check():
     agy_bin = find_agy_binary()
     return {
         "status": "ok",
-        "engine": "Anti-Gravity Termux Bridge v2.1",
+        "engine": "Anti-Gravity Termux Bridge v2.2 (Autonomous Workspace Edition)",
         "agy_binary": agy_bin,
         "available_models": [
             "gemini-3.8-flash",
@@ -87,10 +100,10 @@ async def list_models():
         ]
     }
 
-async def stream_agy_execution(model: str, full_prompt: str):
+async def stream_agy_execution(model: str, full_prompt: str, project_path: Optional[str] = None):
     """
     Spawns the local agy CLI process in Termux and streams output lines via SSE.
-    Uses stdin piping to completely bypass Linux command-line ARG_MAX limits.
+    Mounts physical project directory if provided to enable full autonomous file editing.
     """
     agy_bin = find_agy_binary()
 
@@ -104,7 +117,8 @@ async def stream_agy_execution(model: str, full_prompt: str):
     }
     agy_model_name = model_id_map.get(model, model)
 
-    # Use stdin piping with --input-format text to bypass ARG_MAX
+    # Determine execution working directory & add-dir if project_path is valid
+    exec_cwd = None
     cmd = [
         agy_bin,
         "--model", agy_model_name,
@@ -112,11 +126,28 @@ async def stream_agy_execution(model: str, full_prompt: str):
         "--input-format", "text"
     ]
 
-    print(f"\n[Termux Bridge] Executing model: '{agy_model_name}' (stdin prompt length: {len(full_prompt)} chars)")
+    if project_path:
+        candidates = [
+            project_path,
+            os.path.join("/storage/emulated/0", project_path.lstrip("/")),
+            os.path.join(os.path.expanduser("~"), project_path.lstrip("/")),
+            f"/sdcard/{project_path.lstrip('/')}"
+        ]
+        for c in candidates:
+            if os.path.exists(c) and os.path.isdir(c):
+                exec_cwd = os.path.abspath(c)
+                cmd.extend(["--add-dir", exec_cwd])
+                break
+
+    print(f"\n[Termux Bridge] Executing model: '{agy_model_name}' (cwd: {exec_cwd or 'default'}, stdin: {len(full_prompt)} chars)")
+
+    # Immediate heartbeat token to establish SSE stream without client timeout
+    yield f"data: {json.dumps({'token': ''})}\n\n"
 
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
+            cwd=exec_cwd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
@@ -146,25 +177,27 @@ async def stream_agy_execution(model: str, full_prompt: str):
         if not line:
             break
         text = line.decode("utf-8", errors="replace")
+        clean_text = ANSI_ESCAPE.sub('', text)
         token_count += 1
-        yield f"data: {json.dumps({'token': text})}\n\n"
+        yield f"data: {json.dumps({'token': clean_text})}\n\n"
 
     stderr_output = await process.stderr.read()
     if stderr_output and (token_count == 0 or process.returncode != 0):
         err_text = stderr_output.decode("utf-8", errors="replace").strip()
-        if err_text:
-            print(f"[Termux Bridge Stderr] {err_text}")
-            yield f"data: {json.dumps({'token': f'\\n\\n⚠️ Notice: {err_text}\\n\\n'})}\n\n"
+        clean_err = ANSI_ESCAPE.sub('', err_text)
+        if clean_err:
+            print(f"[Termux Bridge Stderr] {clean_err}")
+            yield f"data: {json.dumps({'token': f'\\n\\n⚠️ Notice: {clean_err}\\n\\n'})}\n\n"
 
     await process.wait()
     yield "data: [DONE]\n\n"
 
 @app.post("/v1/chat/stream")
 async def chat_stream(req: ChatRequest):
-    print(f"[Termux Bridge] Received chat stream request for model: {req.model}")
+    print(f"[Termux Bridge] Received chat stream request for model: {req.model} (project_path: {req.project_path})")
     combined = f"{req.system_prompt}\n\n{req.prompt}".strip() if req.system_prompt else req.prompt
     return StreamingResponse(
-        stream_agy_execution(req.model, combined),
+        stream_agy_execution(req.model, combined, req.project_path),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -176,8 +209,9 @@ async def chat_stream(req: ChatRequest):
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*55)
-    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.1)!")
+    print("⚡ Anti-Gravity Termux Bridge Server Started (v2.2)!")
     print("📍 Host: http://0.0.0.0:8000 (accessible via 127.0.0.1:8000)")
+    print("📁 Autonomous Workspace Mode Enabled!")
     print("🚀 Stdin stream mode enabled: No file or prompt size limits!")
     print("📱 Aro Code app will automatically connect to this URL.")
     print("="*55 + "\n")
