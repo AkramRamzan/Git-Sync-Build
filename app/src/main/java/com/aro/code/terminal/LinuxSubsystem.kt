@@ -416,20 +416,30 @@ object LinuxSubsystem {
     }
 
     /**
-     * Creates a smart wrapper at /usr/bin/agy inside rootfs.
-     * When agy is invoked without arguments, standard pipes hang without a PTY.
-     * This wrapper prompts for a task and executes agy -p "..." smoothly.
+     * Creates a smart agy wrapper at /root/.local/bin/agy inside rootfs.
+     * This overwrites the real binary path: real binary is renamed to agy.real,
+     * and the wrapper calls agy.real so it always takes priority over PATH order.
+     * When invoked without args: prompts user for task, runs non-interactively.
      */
     private fun setupAgyWrapper(rootfsDir: File) {
         try {
-            val binDir = File(rootfsDir, "usr/bin").apply { mkdirs() }
-            val agyWrapper = File(binDir, "agy")
+            val localBinDir = File(rootfsDir, "root/.local/bin").apply { mkdirs() }
+            val realAgy = File(localBinDir, "agy")
+            val realAgyBackup = File(localBinDir, "agy.real")
+
+            // If real binary exists and backup doesn't, rename it
+            if (realAgy.exists() && !realAgyBackup.exists()) {
+                realAgy.renameTo(realAgyBackup)
+            }
+
+            // Write wrapper as /root/.local/bin/agy (takes priority in PATH)
+            val wrapper = File(localBinDir, "agy")
             val script = """
                 #!/bin/sh
-                AGY_ORIG="/root/.local/bin/agy"
+                AGY_ORIG="/root/.local/bin/agy.real"
                 if [ ! -f "${'$'}AGY_ORIG" ]; then
-                    echo "❌ Antigravity CLI not installed at /root/.local/bin/agy"
-                    echo "💡 Run to install: curl -fsSL https://antigravity.google/cli/install.sh | bash"
+                    echo "❌ Antigravity CLI not installed."
+                    echo "💡 Run: curl -fsSL https://antigravity.google/cli/install.sh | bash"
                     exit 1
                 fi
                 if [ ${'$'}# -eq 0 ]; then
@@ -448,8 +458,8 @@ object LinuxSubsystem {
                     exec "${'$'}AGY_ORIG" "${'$'}@"
                 fi
             """.trimIndent()
-            agyWrapper.writeText(script)
-            agyWrapper.setExecutable(true, false)
+            wrapper.writeText(script)
+            wrapper.setExecutable(true, false)
         } catch (e: Exception) {
             Log.w(TAG, "setupAgyWrapper failed: ${e.message}")
         }
