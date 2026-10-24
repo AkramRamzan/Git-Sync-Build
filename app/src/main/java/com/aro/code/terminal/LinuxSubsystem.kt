@@ -586,13 +586,11 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                     exec "${'$'}AGY_REAL" "${'$'}@"
                 fi
 
-                # Check if authenticated (config file exists with token)
-                AGY_CONFIG="${'$'}{HOME}/.config/antigravity/config.json"
+                # Check if authenticated (token file exists and is not empty)
+                AGY_TOKEN="${'$'}{HOME}/.gemini/antigravity-cli/antigravity-oauth-token"
                 IS_AUTHED=false
-                if [ -f "${'$'}AGY_CONFIG" ]; then
-                    if grep -q "access_token\|refresh_token\|id_token" "${'$'}AGY_CONFIG" 2>/dev/null; then
-                        IS_AUTHED=true
-                    fi
+                if [ -s "${'$'}AGY_TOKEN" ]; then
+                    IS_AUTHED=true
                 fi
 
                 # Show menu
@@ -606,12 +604,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                     echo "⚠️  Google account se login nahi hai!"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo "🔗 Login karne ke liye Google OAuth URL generate ho raha hai..."
+                    echo "👉 Link par click karein → Login karein → Authorization code yahan paste karein:"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
-                    "${'$'}AGY_REAL" auth login --dangerously-skip-permissions
-                    echo ""
-                    echo "✅ Upar wala link Chrome mein kholo → Login karo → Wapas ao"
-                    echo "   Phir dobara 'agy' type karo task ke liye."
-                    exit 0
+                    exec "${'$'}AGY_REAL" -p "hello" --dangerously-skip-permissions
                 fi
 
                 echo ""
