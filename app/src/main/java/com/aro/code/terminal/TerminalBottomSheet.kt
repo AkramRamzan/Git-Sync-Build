@@ -1,5 +1,8 @@
 package com.aro.code.terminal
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -405,6 +408,47 @@ private fun BashShellTab(
                 }
             }
         }
+
+        // ── 1-Tap Google OAuth Login Button (Direct Chrome Launch) ─────────
+        val oauthUrl = remember(shellLogs.size) {
+            shellLogs.asReversed().firstOrNull { it.contains("https://accounts.google.com/o/oauth2/auth") }?.let { line ->
+                val start = line.indexOf("https://accounts.google.com/o/oauth2/auth")
+                line.substring(start).substringBefore(" ").substringBefore("\n").substringBefore("\r")
+            }
+        }
+        if (oauthUrl != null) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                color = Color(0xFF1A73E8),
+                shape = RoundedCornerShape(8.dp),
+                onClick = {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(oauthUrl)).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        "🔑 1-Tap Google Login (Open in Chrome)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+
         // Output area
         LazyColumn(
             state = listState,

@@ -520,7 +520,13 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
-        cmd.addAll(listOf("-w", "/root", shell, "-i"))
+        // Termux-style Real PTY: use Python POSIX PTY so bash runs with real isatty=true, /dev/pts, and full terminal control
+        val hasPython = File(rootfsDir, "usr/bin/python3").exists()
+        if (hasPython) {
+            cmd.addAll(listOf("-w", "/root", "/usr/bin/python3", "-c", "import pty; pty.spawn(['/bin/bash', '-i'])"))
+        } else {
+            cmd.addAll(listOf("-w", "/root", shell, "-i"))
+        }
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
@@ -700,7 +706,13 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                             print("║ 🔗 GOOGLE LOGIN URL:                                         ║")
                             print("╚══════════════════════════════════════════════════════════════╝\n")
                             print(url)
-                            print("\n👉 Upar wala link Chrome me khol kar login karein.")
+                            try:
+                                with open('/storage/Download/google_login.html', 'w') as f:
+                                    f.write(f'<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url=\'{url}\'\"></head><body><h2>Google Login</h2><p><a href=\"{url}\">Click here to login</a></p></body></html>')
+                                print("\n💾 Direct 1-tap file: /storage/Download/google_login.html")
+                            except:
+                                pass
+                            print("\n👉 Upar '1-Tap Google Login' button dabayein ya Chrome me open karein.")
                         else:
                             print("❌ Login link generate nahi ho saka. Termux se token copy karein:")
                             print("   cp ~/.gemini/antigravity-cli/antigravity-oauth-token /sdcard/Download/")
