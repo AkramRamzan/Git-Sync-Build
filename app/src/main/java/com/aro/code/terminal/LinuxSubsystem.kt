@@ -649,18 +649,16 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 fi
 
                 echo ""
-                echo "✅ Google account se connected hai"
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                printf "📝 Task darj karein: "
-                read -r user_prompt
-                if [ -n "${'$'}user_prompt" ]; then
-                    echo ""
-                    echo "⚡ Chal raha hai..."
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    exec "${'$'}AGY_REAL" -p "${'$'}user_prompt" --dangerously-skip-permissions
-                else
-                    echo "❌ Koi task nahi diya — cancelled."
-                fi
+                echo "╔══════════════════════════════════════════╗"
+                echo "║  🤖 Antigravity CLI — Ready!             ║"
+                echo "║  ✅ Google Account Connected             ║"
+                echo "╚══════════════════════════════════════════╝"
+                echo ""
+                echo "  Naya task: agy -p \"tumhara kaam\""
+                echo "  Interactive: agy"
+                echo "  Resume: agy --continue"
+                echo ""
+                exec "${'$'}AGY_REAL"
             """.trimIndent()
             wrapper.writeText(script)
             wrapper.setExecutable(true, false)

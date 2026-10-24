@@ -76,6 +76,15 @@ class ShellSession(
                     while (isActive) {
                         val count = reader.read(buffer)
                         if (count == -1) break
+
+                        // Full-screen TUI clear detection (\u001B[2J or \u001B[3J) — prevents overlapping frames
+                        val chunkStr = String(buffer, 0, count)
+                        if (chunkStr.contains("\u001B[2J") || chunkStr.contains("\u001B[3J")) {
+                            logs.clear()
+                            lineBuffer.clear()
+                            isPartialFlush = false
+                        }
+
                         for (i in 0 until count) {
                             val ch = buffer[i]
                             if (ch == '\r') {

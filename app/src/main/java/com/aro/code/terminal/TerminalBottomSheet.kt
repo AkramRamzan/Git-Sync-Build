@@ -676,6 +676,199 @@ private fun BashShellTab(
             }
         }
 
+        // ── Agy Color Scheme Picker Smart Buttons ───────────────────────────
+        val isAgyColorPicker = remember(shellLogs.size) {
+            val recent = shellLogs.takeLast(15).joinToString("\n")
+            recent.contains("color scheme", ignoreCase = true) ||
+            recent.contains("solarized", ignoreCase = true) ||
+            recent.contains("tokyo night", ignoreCase = true)
+        }
+
+        if (isAgyColorPicker && !isAgyMenu) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                color = Color(0xFF161B22),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF58A6FF))
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text("🎨 Color Scheme Chunein:", color = Color(0xFF58A6FF),
+                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("⬛ Terminal", color = Color.White, style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\u001B[B\u001B[B\u001B[B\u001B[B\u001B[B\u001B[B\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("🌙 Tokyo Night", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\u001B[B\u001B[B\u001B[B\u001B[B\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("🌑 Dark", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            }
+        }
+
+        // ── Agy Model Selection Smart Buttons ───────────────────────────────
+        val isAgyModelSelect = remember(shellLogs.size) {
+            val recent = shellLogs.takeLast(12).joinToString("\n")
+            !isAgyColorPicker && (
+                (recent.contains("model", ignoreCase = true) && recent.contains("Flash", ignoreCase = true)) ||
+                (recent.contains("gemini", ignoreCase = true) && recent.contains("Select", ignoreCase = true))
+            )
+        }
+
+        if (isAgyModelSelect && !isAgyMenu && !isAgyColorPicker) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                color = Color(0xFF161B22),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD29922))
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text("🤖 Model Chunein:", color = Color(0xFFD29922),
+                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("✅ Pehla (Enter)", color = Color.White, style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("⬇ Agla", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            }
+        }
+
+        // ── Agy Conversation List Smart Buttons ─────────────────────────────
+        val isAgyConversationList = remember(shellLogs.size) {
+            val recent = shellLogs.takeLast(10).joinToString("\n")
+            !isAgyColorPicker && !isAgyModelSelect && (
+                recent.contains("conversation", ignoreCase = true) ||
+                (recent.contains("resume", ignoreCase = true) && recent.contains("new", ignoreCase = true)) ||
+                recent.contains("new project", ignoreCase = true)
+            )
+        }
+
+        if (isAgyConversationList && !isAgyMenu && !isAgyColorPicker && !isAgyModelSelect) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                color = Color(0xFF161B22),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3FB950))
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text("💬 Conversation:", color = Color(0xFF3FB950),
+                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("▶ Resume (Enter)", color = Color.White, style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("➕ New Chat", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            }
+        }
+
+        // ── Agy Interactive Mode Quick Actions ──────────────────────────────
+        val isAgyInteractive = remember(shellLogs.size) {
+            val recent = shellLogs.takeLast(8).joinToString("\n")
+            recent.contains("you:", ignoreCase = true) ||
+            recent.contains("Thought Process", ignoreCase = true) ||
+            (recent.contains("Navigate", ignoreCase = true) && recent.contains("Confirm", ignoreCase = true)) ||
+            recent.contains("tool:", ignoreCase = true)
+        }
+
+        if (isAgyInteractive) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                color = Color(0xFF0D2137),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1F6FEB))
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                    Text("⚡ Agy Controls:", color = Color(0xFF58A6FF),
+                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("⏎ Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("[Next]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("s\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("[Skip]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { BashShellSession.sendRaw("continue\r") },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F6FEB)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Continue→", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                    }
+                }
+            }
+        }
+
         // Output area
         LazyColumn(
             state = listState,
