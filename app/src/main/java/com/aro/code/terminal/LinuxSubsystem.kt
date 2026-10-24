@@ -23,7 +23,7 @@ object LinuxSubsystem {
 
     // High-speed CDN releases asset with pre-installed Git, Zip, Unzip, Curl, Python3, Pip
     private const val UBUNTU_FULL_ROOTFS_URL =
-        "https://github.com/AkramRamzan/Git-Sync-Build/releases/download/latest/ubuntu-22.04-arm64-full.tar.gz"
+        "https://github.com/AkramRamzan/Git-Sync-Build/releases/download/ubuntu-rootfs/ubuntu-22.04-arm64-full.tar.gz"
 
     // Canonical official base image fallback
     private const val UBUNTU_BASE_FALLBACK_URL =
