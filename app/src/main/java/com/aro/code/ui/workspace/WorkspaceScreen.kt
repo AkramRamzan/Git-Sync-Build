@@ -17,6 +17,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aro.code.filesystem.ProjectNode
+import com.aro.code.terminal.BridgeStatusPill
+import com.aro.code.terminal.TerminalBottomSheet
+import com.aro.code.terminal.TerminalViewModel
+import com.aro.code.terminal.TermuxBridgeService
 import com.aro.code.ui.auth.AntiGravityAccountDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -25,9 +29,14 @@ fun WorkspaceScreen(
     onFileOpen: (String) -> Unit,
     onChatOpen: (engine: String) -> Unit,
     onSettingsOpen: () -> Unit,
-    viewModel: WorkspaceViewModel = hiltViewModel()
+    viewModel: WorkspaceViewModel = hiltViewModel(),
+    terminalViewModel: TerminalViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+
+    // Terminal bottom sheet state
+    var showTerminal by remember { mutableStateOf(false) }
+    val bridgeStatus by TermuxBridgeService.state.status.collectAsState()
 
     // SAF directory picker launcher
     val directoryPickerLauncher = rememberLauncherForActivityResult(
@@ -154,11 +163,21 @@ fun WorkspaceScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { directoryPickerLauncher.launch(null) },
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.CreateNewFolder, contentDescription = "Select Project Folder")
+                // 🟢/🔴 Bridge Status Pill — tap to open Terminal
+                BridgeStatusPill(
+                    status = bridgeStatus,
+                    onClick = { showTerminal = true }
+                )
+                FloatingActionButton(
+                    onClick = { directoryPickerLauncher.launch(null) },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Icon(Icons.Default.CreateNewFolder, contentDescription = "Select Project Folder")
+                }
             }
         }
     ) { padding ->
@@ -285,6 +304,11 @@ fun WorkspaceScreen(
                 )
             }
         }
+    }
+
+    // ── In-App Bridge Terminal Bottom Sheet ───────────────────────────────────
+    if (showTerminal) {
+        TerminalBottomSheet(onDismiss = { showTerminal = false })
     }
 }
 

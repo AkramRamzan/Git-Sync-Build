@@ -1,0 +1,467 @@
+package com.aro.code.terminal
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Color helpers for log lines
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun logLineColor(line: String): Color = when {
+    line.contains("✅") || line.contains("RUNNING") || line.contains("started") ->
+        Color(0xFF4CAF50)
+    line.contains("❌") || line.contains("ERROR") || line.contains("error", true) ->
+        Color(0xFFEF5350)
+    line.contains("[Termux Bridge]") || line.contains("INFO") ->
+        Color(0xFF29B6F6)
+    line.contains("⚠") || line.contains("WARN") ->
+        Color(0xFFFFA726)
+    line.contains("💻") || line.contains("\$") ->
+        Color(0xFFCE93D8)
+    else -> Color(0xFFE0E0E0)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status Badge
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun StatusBadge(status: BridgeStatus, pid: Int?) {
+    val (dotColor, label) = when (status) {
+        BridgeStatus.RUNNING  -> Color(0xFF4CAF50) to "🟢 Running${if (pid != null) " (PID: $pid)" else ""}"
+        BridgeStatus.STARTING -> Color(0xFFFFA726) to "🟡 Starting…"
+        BridgeStatus.STOPPING -> Color(0xFFFFA726) to "🟠 Stopping…"
+        BridgeStatus.STOPPED  -> Color(0xFFEF5350) to "🔴 Stopped"
+        BridgeStatus.ERROR    -> Color(0xFFEF5350) to "❌ Error"
+    }
+    val animColor by animateColorAsState(dotColor, animationSpec = tween(400), label = "dot")
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(animColor)
+        )
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Control Buttons
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ControlButtons(
+    status: BridgeStatus,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onRestart: () -> Unit,
+    onClear: () -> Unit
+) {
+    val isRunning = status == BridgeStatus.RUNNING || status == BridgeStatus.STARTING
+
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Start
+        IconButton(onClick = onStart, enabled = !isRunning) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "Start Bridge",
+                tint = if (!isRunning) Color(0xFF4CAF50) else Color.Gray
+            )
+        }
+        // Restart
+        IconButton(onClick = onRestart) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = "Restart Bridge",
+                tint = Color(0xFF29B6F6)
+            )
+        }
+        // Stop
+        IconButton(onClick = onStop, enabled = isRunning) {
+            Icon(
+                Icons.Default.Stop,
+                contentDescription = "Stop Bridge",
+                tint = if (isRunning) Color(0xFFEF5350) else Color.Gray
+            )
+        }
+        // Clear logs
+        IconButton(onClick = onClear) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Clear Logs",
+                tint = Color(0xFF9E9E9E)
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile Keyboard Shortcuts Bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun MobileKeyBar(onKey: (String) -> Unit) {
+    val keys = listOf("ESC", "TAB", "CTRL+C", "↑", "↓", "/", "~", "|", "&&", "ls", "cd ..")
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        keys.forEach { key ->
+            Surface(
+                onClick = { onKey(key) },
+                shape = RoundedCornerShape(4.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.height(28.dp)
+            ) {
+                Box(Modifier.padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+                    Text(key, style = MaterialTheme.typography.labelSmall, color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Log View Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun BridgeLogsTab(logs: List<String>) {
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    // Auto-scroll to bottom whenever logs change
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(logs.lastIndex)
+            }
+        }
+    }
+
+    if (logs.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No logs yet…", color = Color(0xFF9E9E9E), style = MaterialTheme.typography.bodySmall)
+        }
+    } else {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0D1117))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            items(logs) { line ->
+                Text(
+                    text = line,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = logLineColor(line)
+                    ),
+                    maxLines = 6
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bash Shell Tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun BashShellTab(
+    logs: List<String>,
+    onSend: (String) -> Unit
+) {
+    var input by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    // Filter logs to shell lines only
+    val shellLogs = remember(logs) { logs.filter { it.startsWith("💻") } }
+
+    LaunchedEffect(shellLogs.size) {
+        if (shellLogs.isNotEmpty()) {
+            coroutineScope.launch { listState.animateScrollToItem(shellLogs.lastIndex) }
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // Output area
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color(0xFF0D1117))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            items(shellLogs) { line ->
+                Text(
+                    text = line,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = logLineColor(line)
+                    )
+                )
+            }
+        }
+
+        // Mobile key shortcuts
+        MobileKeyBar { key ->
+            when (key) {
+                "CTRL+C" -> onSend("")   // Send empty to kill? Or handle specially
+                "↑", "↓" -> { /* command history — future */ }
+                else -> input += key
+            }
+        }
+
+        Divider(color = Color(0xFF333333))
+
+        // Command input row
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF161B22))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "❯ ",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp,
+                    color = Color(0xFF4CAF50),
+                    fontWeight = FontWeight.Bold
+                )
+            )
+            TextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color(0xFF4CAF50),
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                placeholder = {
+                    Text("Enter command…", color = Color(0xFF555555), fontSize = 12.sp)
+                },
+                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = {
+                    if (input.isNotBlank()) { onSend(input); input = "" }
+                })
+            )
+            IconButton(
+                onClick = { if (input.isNotBlank()) { onSend(input); input = "" } }
+            ) {
+                Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF4CAF50))
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main TerminalBottomSheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TerminalBottomSheet(
+    onDismiss: () -> Unit,
+    viewModel: TerminalViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val status by viewModel.status.collectAsState()
+    val logs by viewModel.logs.collectAsState()
+    val pid by viewModel.pid.collectAsState()
+
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("⚡ Bridge Logs", "❯_ Bash Shell")
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF161B22),
+        dragHandle = { BottomSheetDefaults.DragHandle(color = Color(0xFF555555)) },
+        modifier = Modifier.fillMaxHeight(0.88f)
+    ) {
+        Column(Modifier.fillMaxSize()) {
+
+            // ── Header: Status + Controls ──────────────────────────────────
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D1117))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                StatusBadge(status, pid)
+                ControlButtons(
+                    status = status,
+                    onStart   = { viewModel.startBridge(context) },
+                    onStop    = { viewModel.stopBridge(context) },
+                    onRestart = { viewModel.restartBridge(context) },
+                    onClear   = { viewModel.clearLogs() }
+                )
+            }
+
+            // ── Bridge Info Row ────────────────────────────────────────────
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D1117))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "📍 http://127.0.0.1:8000",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF29B6F6)
+                )
+                Text(
+                    "📁 /storage/…/Download",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF9E9E9E)
+                )
+            }
+
+            // ── Tab Bar ───────────────────────────────────────────────────
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color(0xFF0D1117),
+                contentColor = Color.White,
+                indicator = { tabPositions ->
+                    TabRowDefaults.SecondaryIndicator(
+                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        color = Color(0xFF29B6F6)
+                    )
+                }
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                title,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (selectedTab == index) Color(0xFF29B6F6) else Color(0xFF9E9E9E)
+                            )
+                        }
+                    )
+                }
+            }
+
+            // ── Tab Content ───────────────────────────────────────────────
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                when (selectedTab) {
+                    0 -> BridgeLogsTab(logs)
+                    1 -> BashShellTab(
+                        logs = logs,
+                        onSend = { viewModel.sendBashCommand(it) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mini Bridge Status Pill (for WorkspaceScreen)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun BridgeStatusPill(
+    status: BridgeStatus,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val (bgColor, label) = when (status) {
+        BridgeStatus.RUNNING  -> Color(0xFF1B5E20) to "🟢 Bridge :8000"
+        BridgeStatus.STARTING -> Color(0xFF4E342E) to "🟡 Starting…"
+        BridgeStatus.STOPPING -> Color(0xFF4E342E) to "🟠 Stopping…"
+        BridgeStatus.STOPPED  -> Color(0xFF4E1010) to "🔴 Bridge Offline"
+        BridgeStatus.ERROR    -> Color(0xFF4E1010) to "❌ Bridge Error"
+    }
+    val animBg by animateColorAsState(bgColor, animationSpec = tween(400), label = "pillBg")
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = animBg,
+        tonalElevation = 4.dp
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White)
+            Icon(
+                Icons.Default.KeyboardArrowUp,
+                contentDescription = "Open Terminal",
+                modifier = Modifier.size(14.dp),
+                tint = Color.White
+            )
+        }
+    }
+}
