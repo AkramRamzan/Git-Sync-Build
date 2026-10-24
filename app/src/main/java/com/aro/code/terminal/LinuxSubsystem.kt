@@ -37,6 +37,19 @@ object LinuxSubsystem {
         return File(context.filesDir, ROOTFS_DIR)
     }
 
+    fun getProotLoader(context: Context): File? {
+        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+        val candidate = File(nativeDir, "libproot_loader.so")
+        if (candidate.exists() && candidate.canExecute()) return candidate
+
+        val binDir = File(context.filesDir, "bin")
+        val internalCandidate = File(binDir, "libproot_loader.so")
+        if (internalCandidate.exists() && internalCandidate.canExecute()) return internalCandidate
+
+        if (candidate.exists()) return candidate
+        return null
+    }
+
     fun getProotBinary(context: Context): File? {
         // 1. Check native library directory (extracted by Android package manager)
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
@@ -55,7 +68,13 @@ object LinuxSubsystem {
             val apkPath = context.applicationInfo.sourceDir
             if (apkPath != null && File(apkPath).exists()) {
                 java.util.zip.ZipFile(apkPath).use { zip ->
-                    val libsToExtract = listOf("libproot.so", "libtalloc.so", "libandroid-shmem.so")
+                    val libsToExtract = listOf(
+                        "libproot.so",
+                        "libproot_loader.so",
+                        "libproot_loader32.so",
+                        "libtalloc.so",
+                        "libandroid-shmem.so"
+                    )
                     for (libName in libsToExtract) {
                         val candidateEntries = listOf(
                             "lib/arm64-v8a/$libName",
@@ -338,6 +357,16 @@ object LinuxSubsystem {
             val nativeDir = File(context.applicationInfo.nativeLibraryDir)
             val binDir = File(context.filesDir, "bin")
             environment()["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
+
+            val loader = getProotLoader(context)
+            if (loader != null && loader.exists()) {
+                environment()["PROOT_LOADER"] = loader.absolutePath
+            }
+            val loader32Candidate = File(loader?.parentFile ?: nativeDir, "libproot_loader32.so")
+            if (loader32Candidate.exists()) {
+                environment()["PROOT_LOADER_32"] = loader32Candidate.absolutePath
+            }
+
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["PROOT_NO_SECCOMP"] = "1"
             environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
