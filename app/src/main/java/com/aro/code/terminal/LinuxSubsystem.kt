@@ -141,15 +141,35 @@ object LinuxSubsystem {
             }
             targetDir.mkdirs()
 
-            // 1. Download
-            onLog("📥 Downloading Ubuntu Rootfs (Git, Zip, Python3 pre-installed)...")
+            // 1. Download — first check local Download folder cache
+            val downloadFolder = File("/storage/emulated/0/Download")
+            val cachedRootfs = File(downloadFolder, "ubuntu-rootfs.tar.gz")
             val archiveFile = File(context.cacheDir, "ubuntu-rootfs.tar.gz")
             if (archiveFile.exists()) archiveFile.delete()
 
-            val downloaded = downloadWithFallback(UBUNTU_FULL_ROOTFS_URL, UBUNTU_BASE_FALLBACK_URL, archiveFile, onLog, onProgress)
-            if (!downloaded || !archiveFile.exists() || archiveFile.length() < 1000) {
-                onLog("❌ Download failed from all mirrors")
-                return@withContext false
+            if (cachedRootfs.exists() && cachedRootfs.length() > 10 * 1024 * 1024) {
+                // Use cached copy from Download folder — no re-download needed
+                onLog("📦 Found cached rootfs in Download folder (${cachedRootfs.length() / 1024 / 1024} MB) — skipping download!")
+                onLog("📂 Using: /storage/emulated/0/Download/ubuntu-rootfs.tar.gz")
+                onProgress(100)
+                cachedRootfs.copyTo(archiveFile, overwrite = true)
+            } else {
+                onLog("📥 Downloading Ubuntu Rootfs (Git, Zip, Python3 pre-installed)...")
+                val downloaded = downloadWithFallback(UBUNTU_FULL_ROOTFS_URL, UBUNTU_BASE_FALLBACK_URL, archiveFile, onLog, onProgress)
+                if (!downloaded || !archiveFile.exists() || archiveFile.length() < 1000) {
+                    onLog("❌ Download failed from all mirrors")
+                    return@withContext false
+                }
+                // Save a copy to Download folder for future re-installs
+                try {
+                    if (downloadFolder.exists() && downloadFolder.canWrite()) {
+                        onLog("💾 Saving copy to Download folder for future use...")
+                        archiveFile.copyTo(cachedRootfs, overwrite = true)
+                        onLog("✅ Cached → /storage/emulated/0/Download/ubuntu-rootfs.tar.gz")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not cache rootfs to Download folder: ${e.message}")
+                }
             }
 
             onLog("📦 Download complete (${archiveFile.length() / 1024 / 1024} MB). Extracting Ubuntu rootfs...")
