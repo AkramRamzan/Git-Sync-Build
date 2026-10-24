@@ -407,7 +407,8 @@ object LinuxSubsystem {
             environment()["TMP"] = prootTmp.absolutePath
             environment()["TERM"] = "xterm-256color"
             environment()["HOME"] = "/root"
-            environment()["PATH"] = "/root/.local/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin"
+            // /usr/local/bin is FIRST so our agy wrapper is always found before the real binary
+            environment()["PATH"] = "/usr/local/bin:/usr/bin:/root/.local/bin:/bin:/sbin:/usr/sbin"
             environment()["LANG"] = "C.UTF-8"
             environment()["PYTHONUNBUFFERED"] = "1"
             environment()["PYTHONIOENCODING"] = "utf-8"
@@ -416,46 +417,41 @@ object LinuxSubsystem {
     }
 
     /**
-     * Creates a smart agy wrapper at /root/.local/bin/agy inside rootfs.
-     * This overwrites the real binary path: real binary is renamed to agy.real,
-     * and the wrapper calls agy.real so it always takes priority over PATH order.
-     * When invoked without args: prompts user for task, runs non-interactively.
+     * Creates a smart agy wrapper at /usr/local/bin/agy inside rootfs.
+     *
+     * Strategy: wrapper lives at /usr/local/bin/agy which is BEFORE /root/.local/bin in PATH.
+     * The real agy binary stays at /root/.local/bin/agy (installed by curl installer).
+     * Wrapper is NEVER overwritten by `agy` installer because installer only writes to ~/.local/bin.
+     * This approach survives re-installs without any renaming tricks.
      */
     private fun setupAgyWrapper(rootfsDir: File) {
         try {
-            val localBinDir = File(rootfsDir, "root/.local/bin").apply { mkdirs() }
-            val realAgy = File(localBinDir, "agy")
-            val realAgyBackup = File(localBinDir, "agy.real")
-
-            // If real binary exists and backup doesn't, rename it
-            if (realAgy.exists() && !realAgyBackup.exists()) {
-                realAgy.renameTo(realAgyBackup)
-            }
-
-            // Write wrapper as /root/.local/bin/agy (takes priority in PATH)
-            val wrapper = File(localBinDir, "agy")
+            // Wrapper goes to /usr/local/bin — guaranteed before /root/.local/bin in PATH
+            val wrapperDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }
+            val wrapper = File(wrapperDir, "agy")
             val script = """
                 #!/bin/sh
-                AGY_ORIG="/root/.local/bin/agy.real"
-                if [ ! -f "${'$'}AGY_ORIG" ]; then
-                    echo "❌ Antigravity CLI not installed."
-                    echo "💡 Run: curl -fsSL https://antigravity.google/cli/install.sh | bash"
+                # Smart agy wrapper — avoids PTY hang in Android terminal
+                AGY_REAL="/root/.local/bin/agy"
+                if [ ! -f "${'$'}AGY_REAL" ]; then
+                    echo "❌ Antigravity CLI install nahi hai."
+                    echo "💡 Install karo: curl -fsSL https://antigravity.google/cli/install.sh | bash"
                     exit 1
                 fi
                 if [ ${'$'}# -eq 0 ]; then
                     echo "=========================================="
-                    echo "🤖 Google Antigravity CLI (v1.4.7)"
+                    echo "🤖 Google Antigravity CLI"
                     echo "=========================================="
-                    printf "Task / Prompt darj karein: "
+                    printf "📝 Task darj karein: "
                     read -r user_prompt
                     if [ -n "${'$'}user_prompt" ]; then
-                        echo "⚡ Running: agy -p \"${'$'}user_prompt\"..."
-                        exec "${'$'}AGY_ORIG" -p "${'$'}user_prompt" --dangerously-skip-permissions
+                        echo "⚡ Chal raha hai: agy -p \"${'$'}user_prompt\" ..."
+                        exec "${'$'}AGY_REAL" -p "${'$'}user_prompt" --dangerously-skip-permissions
                     else
-                        echo "Cancelled."
+                        echo "❌ Cancelled."
                     fi
                 else
-                    exec "${'$'}AGY_ORIG" "${'$'}@"
+                    exec "${'$'}AGY_REAL" "${'$'}@"
                 fi
             """.trimIndent()
             wrapper.writeText(script)
