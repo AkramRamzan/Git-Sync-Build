@@ -156,14 +156,15 @@ object LinuxSubsystem {
 
             onLog("─".repeat(44))
             onLog("🎉 In-App Mini Linux is READY!")
-            onLog("⏳ Installing Python3 & pip (apk)...")
+            onLog("⏳ Installing Python3 & pip (direct download ~16MB)...")
 
-            // Auto-bootstrap: install python3+pip so they work immediately
-            val bootstrapSuccess = runBootstrap(context, onLog)
+            // Auto-bootstrap: bypass apk (causes Bad system call on Android seccomp)
+            // Instead, directly extract Alpine .apk files (they are plain tar.gz archives)
+            val bootstrapSuccess = installPythonPackages(context, targetDir, onLog)
             if (bootstrapSuccess) {
                 onLog("✅ Python3 & pip installed successfully!")
             } else {
-                onLog("⚠️ Bootstrap partial — run: apk add python3 py3-pip gcompat manually")
+                onLog("⚠️ Python install incomplete — check internet & retry")
             }
 
             onLog("─".repeat(44))
@@ -344,76 +345,268 @@ object LinuxSubsystem {
         return pb.start()
     }
 
-    /** Runs the initial package installation inside the container */
-    fun runBootstrap(context: Context, onLog: (String) -> Unit): Boolean {
-        return try {
-            val proot = getProotBinary(context) ?: return false
-            val rootfsDir = getRootfsDir(context)
-            val rootfsPath = rootfsDir.absolutePath
+    /**
+     * Installs Python3 & pip by directly downloading and extracting Alpine .apk files.
+     * This completely bypasses `apk add` which triggers Bad system call (SIGSYS) on
+     * Android's seccomp-restricted environment.
+     *
+     * Alpine .apk files are plain gzip-compressed tar archives — we extract them
+     * exactly like the rootfs, skipping only package metadata files.
+     */
+    private suspend fun installPythonPackages(
+        context: Context,
+        destDir: File,
+        onLog: (String) -> Unit
+    ): Boolean = withContext(Dispatchers.IO) {
+        val mainBase = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main/aarch64/"
+        val commBase = "https://dl-cdn.alpinelinux.org/alpine/v3.20/community/aarch64/"
 
-            // Ensure container directories exist
-            File(rootfsDir, "tmp").mkdirs()
-            File(rootfsDir, "root").mkdirs()
+        // Full dependency chain for python3 + pip + gcompat on Alpine ARM64 v3.20
+        val packages = listOf(
+            // gcompat (glibc compatibility — needed by pip/fastapi native modules)
+            mainBase  to "musl-obstack-1.2.3-r2.apk",
+            mainBase  to "libucontext-1.2-r3.apk",
+            commBase  to "gcompat-1.1.0-r4.apk",
+            // python3 dependencies
+            mainBase  to "libbz2-1.0.8-r6.apk",
+            mainBase  to "libexpat-2.8.1-r0.apk",
+            mainBase  to "libffi-3.4.6-r0.apk",
+            mainBase  to "gdbm-1.23-r1.apk",
+            mainBase  to "xz-libs-5.8.3-r0.apk",
+            mainBase  to "mpdecimal-4.0.0-r0.apk",
+            mainBase  to "ncurses-terminfo-base-6.4_p20240420-r2.apk",
+            mainBase  to "libncursesw-6.4_p20240420-r2.apk",
+            mainBase  to "libpanelw-6.4_p20240420-r2.apk",
+            mainBase  to "readline-8.2.10-r0.apk",
+            mainBase  to "sqlite-libs-3.45.3-r3.apk",
+            mainBase  to "libcrypto3-3.3.7-r0.apk",
+            mainBase  to "libssl3-3.3.7-r0.apk",
+            mainBase  to "zlib-1.3.2-r0.apk",
+            mainBase  to "python3-3.12.13-r0.apk",
+            // pip
+            commBase  to "py3-pip-24.0-r2.apk"
+        )
 
-            // Host temporary directory for PRoot internal sockets & memory files
-            val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
+        val tmpDir = File(context.cacheDir, "apk_pkgs").apply { mkdirs() }
 
-            val bindings = mutableListOf(
-                "-b", "/dev",
-                "-b", "/proc",
-                "-b", "/sys"
-            )
-            val extStorage = File("/storage/emulated/0")
-            if (extStorage.exists()) {
-                bindings.add("-b")
-                bindings.add("/storage/emulated/0:/storage")
-                val download = File("/storage/emulated/0/Download")
-                if (download.exists()) {
-                    bindings.add("-b")
-                    bindings.add("/storage/emulated/0/Download:/root/Download")
+        try {
+            packages.forEachIndexed { index, (base, pkgName) ->
+                val pkgUrl = "$base$pkgName"
+                val pkgFile = File(tmpDir, pkgName)
+
+                onLog("📦 [${index + 1}/${packages.size}] $pkgName")
+
+                // Download package
+                try {
+                    val conn = (URL(pkgUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 20000
+                        readTimeout = 60000
+                        requestMethod = "GET"
+                        setRequestProperty("User-Agent", "Alpine apk-tools/2.14")
+                    }
+                    if (conn.responseCode != 200) {
+                        onLog("   ⚠️ HTTP ${conn.responseCode} — skipping $pkgName")
+                        return@forEachIndexed
+                    }
+                    conn.inputStream.use { input ->
+                        FileOutputStream(pkgFile).use { output -> input.copyTo(output) }
+                    }
+                } catch (e: Exception) {
+                    onLog("   ⚠️ Download failed: ${e.message} — skipping")
+                    return@forEachIndexed
+                }
+
+                // Extract package (skip .SIGN.* and .PKGINFO metadata files)
+                try {
+                    extractAlpineApk(pkgFile, destDir)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Extract failed for $pkgName", e)
+                    onLog("   ⚠️ Extract error: ${e.message}")
+                } finally {
+                    pkgFile.delete()
                 }
             }
 
-            val cmd = mutableListOf(
-                proot.absolutePath,
-                "-r", rootfsPath,
-                "-0",
-                "--link2symlink",
-                "--kill-on-exit"
-            )
-            cmd.addAll(bindings)
-            cmd.addAll(listOf(
-                "-w", "/root",
-                "/bin/sh",
-                "-c",
-                "apk update && apk add --no-cache python3 py3-pip gcompat bash && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip"
-            ))
+            // Create convenience symlinks only if they don't already exist
+            val usrBin = File(destDir, "usr/bin")
+            val pythonLink = File(usrBin, "python")
+            if (!java.nio.file.Files.exists(pythonLink.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                runCatching {
+                    java.nio.file.Files.createSymbolicLink(
+                        pythonLink.toPath(),
+                        java.nio.file.Paths.get("python3")
+                    )
+                }
+            }
+            val pipLink = File(usrBin, "pip")
+            if (!java.nio.file.Files.exists(pipLink.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                runCatching {
+                    java.nio.file.Files.createSymbolicLink(
+                        pipLink.toPath(),
+                        java.nio.file.Paths.get("pip3")
+                    )
+                }
+            }
 
-            val pb = ProcessBuilder(cmd).apply {
-                redirectErrorStream(true)
-                environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-                environment()["PROOT_NO_SECCOMP"] = "1"
-                environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
-                environment()["TMPDIR"] = prootTmp.absolutePath
-                environment()["TEMP"] = prootTmp.absolutePath
-                environment()["TMP"] = prootTmp.absolutePath
-                environment()["TERM"] = "xterm-256color"
-                environment()["HOME"] = "/root"
-                environment()["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
-                environment()["LANG"] = "C.UTF-8"
+            // Verify python3 binary exists
+            val python3 = File(destDir, "usr/bin/python3")
+            val success = python3.exists() || java.nio.file.Files.exists(
+                python3.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS
+            )
+            if (success) {
+                onLog("✅ python3 & pip ready at /usr/bin/")
+            } else {
+                onLog("⚠️ python3 binary not found after extraction")
             }
-            val proc = pb.start()
-            val reader = BufferedReader(InputStreamReader(proc.inputStream))
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                line?.let { onLog("   $it") }
-            }
-            val exitCode = proc.waitFor()
-            exitCode == 0
+            success
         } catch (e: Exception) {
-            Log.e(TAG, "Bootstrap failed", e)
-            onLog("⚠️ Bootstrap error: ${e.message}")
+            Log.e(TAG, "installPythonPackages failed", e)
+            onLog("❌ Python install error: ${e.message}")
             false
+        } finally {
+            tmpDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Extracts an Alpine .apk file (gzip-compressed tar) into destDir.
+     * Skips package metadata: entries starting with ".SIGN." or named ".PKGINFO".
+     * Uses the same TAR parsing logic as extractTarGz().
+     */
+    private fun extractAlpineApk(apkFile: File, destDir: File) {
+        GZIPInputStream(FileInputStream(apkFile)).use { gzipIn ->
+            val headerBuf = ByteArray(512)
+            while (true) {
+                var bytesRead = 0
+                while (bytesRead < 512) {
+                    val r = gzipIn.read(headerBuf, bytesRead, 512 - bytesRead)
+                    if (r == -1) break
+                    bytesRead += r
+                }
+                if (bytesRead < 512) break
+                if (headerBuf.all { it == 0.toByte() }) break // EOF blocks
+
+                // Name: 0..99
+                val rawName = String(headerBuf, 0, 100)
+                val nameNull = rawName.indexOf('\u0000')
+                val rawCleanName = if (nameNull != -1) rawName.substring(0, nameNull).trim() else rawName.trim()
+                val name = rawCleanName.removePrefix("./").removePrefix("/")
+
+                // Size: 124..135 (octal)
+                val sizeStr = String(headerBuf, 124, 12).trim('\u0000', ' ')
+                val size = sizeStr.toLongOrNull(8) ?: 0L
+
+                // Type: 156
+                val type = headerBuf[156].toInt().toChar()
+
+                // Skip Alpine package metadata
+                val baseName = name.substringAfterLast("/")
+                val isMetadata = baseName.startsWith(".SIGN.") || baseName == ".PKGINFO" ||
+                                 baseName == ".BUILDINFO" || baseName == ".COMMIT"
+                if (isMetadata || name.isEmpty()) {
+                    // Skip this entry's data blocks
+                    if (size > 0) {
+                        val toSkip = size + ((512 - (size % 512)) % 512)
+                        var skipped = 0L
+                        while (skipped < toSkip) {
+                            val s = gzipIn.skip(toSkip - skipped)
+                            if (s <= 0) break
+                            skipped += s
+                        }
+                    }
+                    continue
+                }
+
+                val outFile = File(destDir, name)
+
+                if (type == '5' || name.endsWith("/")) {
+                    outFile.mkdirs()
+                } else if (type == '2') {
+                    // Symlink
+                    val rawTarget = String(headerBuf, 157, 100)
+                    val targetNull = rawTarget.indexOf('\u0000')
+                    val linkTarget = if (targetNull != -1) rawTarget.substring(0, targetNull).trim() else rawTarget.trim()
+
+                    outFile.parentFile?.mkdirs()
+                    runCatching { java.nio.file.Files.deleteIfExists(outFile.toPath()) }
+
+                    val resolvedTarget = if (linkTarget.startsWith("/")) {
+                        val absTarget = File(destDir, linkTarget.trimStart('/'))
+                        try {
+                            outFile.parentFile?.toPath()?.relativize(absTarget.toPath())?.toString() ?: linkTarget
+                        } catch (_: Exception) {
+                            linkTarget
+                        }
+                    } else {
+                        linkTarget
+                    }
+                    runCatching {
+                        java.nio.file.Files.createSymbolicLink(
+                            outFile.toPath(),
+                            java.nio.file.Paths.get(resolvedTarget)
+                        )
+                    }
+                    // Symlinks have no data blocks
+                } else if (type == '1') {
+                    // Hardlink — treat as symlink to the link target
+                    val rawTarget = String(headerBuf, 157, 100)
+                    val targetNull = rawTarget.indexOf('\u0000')
+                    val linkTarget = (if (targetNull != -1) rawTarget.substring(0, targetNull).trim() else rawTarget.trim())
+                        .removePrefix("./").removePrefix("/")
+
+                    outFile.parentFile?.mkdirs()
+                    runCatching { java.nio.file.Files.deleteIfExists(outFile.toPath()) }
+
+                    val absTarget = File(destDir, linkTarget)
+                    val resolvedTarget = try {
+                        outFile.parentFile?.toPath()?.relativize(absTarget.toPath())?.toString() ?: linkTarget
+                    } catch (_: Exception) { linkTarget }
+
+                    runCatching {
+                        java.nio.file.Files.createSymbolicLink(
+                            outFile.toPath(),
+                            java.nio.file.Paths.get(resolvedTarget)
+                        )
+                    }
+                } else if (type == '0' || type == '\u0000') {
+                    outFile.parentFile?.mkdirs()
+                    FileOutputStream(outFile).use { fos ->
+                        var remaining = size
+                        val fileBuf = ByteArray(8192)
+                        while (remaining > 0) {
+                            val toRead = minOf(remaining, fileBuf.size.toLong()).toInt()
+                            val r = gzipIn.read(fileBuf, 0, toRead)
+                            if (r == -1) break
+                            fos.write(fileBuf, 0, r)
+                            remaining -= r
+                        }
+                    }
+                    outFile.setReadable(true, false)
+                    outFile.setWritable(true, false)
+                    outFile.setExecutable(true, false)
+
+                    val padding = (512 - (size % 512)) % 512
+                    if (padding > 0) {
+                        var skipped = 0L
+                        while (skipped < padding) {
+                            val s = gzipIn.skip(padding - skipped)
+                            if (s <= 0) break
+                            skipped += s
+                        }
+                    }
+                } else {
+                    // Unknown type — skip data
+                    if (size > 0) {
+                        val toSkip = size + ((512 - (size % 512)) % 512)
+                        var skipped = 0L
+                        while (skipped < toSkip) {
+                            val s = gzipIn.skip(toSkip - skipped)
+                            if (s <= 0) break
+                            skipped += s
+                        }
+                    }
+                }
+            }
         }
     }
 }
