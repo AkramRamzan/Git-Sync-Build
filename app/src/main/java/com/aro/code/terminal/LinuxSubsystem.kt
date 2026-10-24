@@ -422,7 +422,9 @@ object LinuxSubsystem {
      * Strategy: wrapper lives at /usr/local/bin/agy which is BEFORE /root/.local/bin in PATH.
      * The real agy binary stays at /root/.local/bin/agy (installed by curl installer).
      * Wrapper is NEVER overwritten by `agy` installer because installer only writes to ~/.local/bin.
-     * This approach survives re-installs without any renaming tricks.
+     *
+     * Auth flow: checks if already logged in via config file. If not, runs `agy auth login`
+     * which prints a Google OAuth URL to stdout (works without PTY).
      */
     private fun setupAgyWrapper(rootfsDir: File) {
         try {
@@ -431,27 +433,60 @@ object LinuxSubsystem {
             val wrapper = File(wrapperDir, "agy")
             val script = """
                 #!/bin/sh
-                # Smart agy wrapper — avoids PTY hang in Android terminal
+                # Smart agy wrapper — handles auth + avoids PTY hang in Android terminal
                 AGY_REAL="/root/.local/bin/agy"
+
                 if [ ! -f "${'$'}AGY_REAL" ]; then
                     echo "❌ Antigravity CLI install nahi hai."
                     echo "💡 Install karo: curl -fsSL https://antigravity.google/cli/install.sh | bash"
                     exit 1
                 fi
-                if [ ${'$'}# -eq 0 ]; then
-                    echo "=========================================="
-                    echo "🤖 Google Antigravity CLI"
-                    echo "=========================================="
-                    printf "📝 Task darj karein: "
-                    read -r user_prompt
-                    if [ -n "${'$'}user_prompt" ]; then
-                        echo "⚡ Chal raha hai: agy -p \"${'$'}user_prompt\" ..."
-                        exec "${'$'}AGY_REAL" -p "${'$'}user_prompt" --dangerously-skip-permissions
-                    else
-                        echo "❌ Cancelled."
-                    fi
-                else
+
+                # Pass-through: if any args given, run directly (agy --version, agy auth login, etc.)
+                if [ ${'$'}# -gt 0 ]; then
                     exec "${'$'}AGY_REAL" "${'$'}@"
+                fi
+
+                # Check if authenticated (config file exists with token)
+                AGY_CONFIG="${'$'}{HOME}/.config/antigravity/config.json"
+                IS_AUTHED=false
+                if [ -f "${'$'}AGY_CONFIG" ]; then
+                    if grep -q "access_token\|refresh_token\|id_token" "${'$'}AGY_CONFIG" 2>/dev/null; then
+                        IS_AUTHED=true
+                    fi
+                fi
+
+                # Show menu
+                echo ""
+                echo "╔══════════════════════════════════════════╗"
+                echo "║      🤖 Google Antigravity CLI           ║"
+                echo "╚══════════════════════════════════════════╝"
+
+                if [ "${'$'}IS_AUTHED" = "false" ]; then
+                    echo ""
+                    echo "⚠️  Google account se login nahi hai!"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "🔗 Login karne ke liye Google OAuth URL generate ho raha hai..."
+                    echo ""
+                    "${'$'}AGY_REAL" auth login --dangerously-skip-permissions
+                    echo ""
+                    echo "✅ Upar wala link Chrome mein kholo → Login karo → Wapas ao"
+                    echo "   Phir dobara 'agy' type karo task ke liye."
+                    exit 0
+                fi
+
+                echo ""
+                echo "✅ Google account se connected hai"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                printf "📝 Task darj karein: "
+                read -r user_prompt
+                if [ -n "${'$'}user_prompt" ]; then
+                    echo ""
+                    echo "⚡ Chal raha hai..."
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    exec "${'$'}AGY_REAL" -p "${'$'}user_prompt" --dangerously-skip-permissions
+                else
+                    echo "❌ Koi task nahi diya — cancelled."
                 fi
             """.trimIndent()
             wrapper.writeText(script)
