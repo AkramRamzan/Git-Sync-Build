@@ -26,6 +26,7 @@ object BashShellSession {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Volatile private var appContext: Context? = null
     @Volatile private var process: Process? = null
     @Volatile private var writer: BufferedWriter? = null
     @Volatile var isRunning: Boolean = false
@@ -72,12 +73,16 @@ object BashShellSession {
     }
 
     fun start(context: Context? = null) {
+        if (context != null) {
+            appContext = context.applicationContext
+        }
+        val effectiveContext = context ?: appContext
         if (isRunning) return
         try {
             val proc: Process
-            if (context != null && LinuxSubsystem.isInstalled(context)) {
+            if (effectiveContext != null && LinuxSubsystem.isInstalled(effectiveContext)) {
                 // Mode 1: Pure In-App Mini Linux Container (PRoot)
-                proc = LinuxSubsystem.spawnProotProcess(context)
+                proc = LinuxSubsystem.spawnProotProcess(effectiveContext)
                 isLinuxContainerActive = true
 
                 TermuxBridgeService.state.addLog("$SHELL_PREFIX 🐧 In-App Mini Linux (Alpine ARM64) Activated!")
@@ -111,7 +116,7 @@ object BashShellSession {
 
                 TermuxBridgeService.state.addLog("$SHELL_PREFIX ⚡ Aro Code Terminal (Host Mode)")
                 TermuxBridgeService.state.addLog("$SHELL_PREFIX 📁 Working Dir: $cwd")
-                if (context != null) {
+                if (effectiveContext != null) {
                     TermuxBridgeService.state.addLog("$SHELL_PREFIX 💡 Tip: Tap [📦 Setup Mini Linux] for 100% In-App Python!")
                 }
                 TermuxBridgeService.state.addLog("─".repeat(44))
@@ -134,9 +139,13 @@ object BashShellSession {
                     }
                 } catch (_: Exception) {
                 } finally {
-                    isRunning = false
-                    isLinuxContainerActive = false
-                    TermuxBridgeService.state.addLog("$SHELL_PREFIX [Terminal session ended]")
+                    if (process === proc) {
+                        isRunning = false
+                        isLinuxContainerActive = false
+                        process = null
+                        writer = null
+                        TermuxBridgeService.state.addLog("$SHELL_PREFIX [Terminal session ended]")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -149,6 +158,7 @@ object BashShellSession {
     fun installMiniLinux(context: Context) {
         if (isInstallingLinux) return
         isInstallingLinux = true
+        appContext = context.applicationContext
 
         scope.launch {
             try {
@@ -160,6 +170,7 @@ object BashShellSession {
                 )
                 if (success) {
                     stop()
+                    kotlinx.coroutines.delay(300)
                     start(context)
                 }
             } finally {
@@ -172,7 +183,7 @@ object BashShellSession {
         val cmd = rawCmd.trim()
         if (cmd.isEmpty()) return
 
-        if (!isRunning) start()
+        if (!isRunning) start(appContext)
 
         // 1. Clear screen
         if (cmd == "clear" || cmd == "cls") {

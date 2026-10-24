@@ -24,8 +24,13 @@ object LinuxSubsystem {
 
     fun isInstalled(context: Context): Boolean {
         val rootfs = File(context.filesDir, ROOTFS_DIR)
+        if (!rootfs.exists()) return false
         val sh = File(rootfs, "bin/sh")
-        return rootfs.exists() && sh.exists()
+        // File.exists() returns false for broken symlinks; use NOFOLLOW_LINKS to detect them too
+        return sh.exists() || java.nio.file.Files.exists(
+            sh.toPath(),
+            java.nio.file.LinkOption.NOFOLLOW_LINKS
+        )
     }
 
     fun getRootfsDir(context: Context): File {
@@ -119,10 +124,21 @@ object LinuxSubsystem {
 
             onLog("─".repeat(44))
             onLog("🎉 In-App Mini Linux is READY!")
+            onLog("⏳ Installing Python3 & pip (apk)...")
+
+            // Auto-bootstrap: install python3+pip so they work immediately
+            val bootstrapSuccess = runBootstrap(context, onLog)
+            if (bootstrapSuccess) {
+                onLog("✅ Python3 & pip installed successfully!")
+            } else {
+                onLog("⚠️ Bootstrap partial — run: apk add python3 py3-pip gcompat manually")
+            }
+
+            onLog("─".repeat(44))
             onLog("💡 Commands available:")
-            onLog("   apk add python3 py3-pip gcompat")
+            onLog("   python3 --version")
             onLog("   pip install fastapi uvicorn")
-            onLog("   python /storage/Download/server.py")
+            onLog("   python3 /storage/Download/server.py")
             onLog("─".repeat(44))
             true
         } catch (e: Exception) {
@@ -146,21 +162,54 @@ object LinuxSubsystem {
                 if (bytesRead < 512) break
                 if (headerBuf.all { it == 0.toByte() }) break // EOF blocks
 
-                // Name: 0..99
-                val name = String(headerBuf, 0, 100).trim('\u0000').trim()
+                // Name: 0..99 (null terminated)
+                val rawName = String(headerBuf, 0, 100)
+                val nameNull = rawName.indexOf('\u0000')
+                val rawCleanName = if (nameNull != -1) rawName.substring(0, nameNull).trim() else rawName.trim()
+                val name = rawCleanName.removePrefix("./").removePrefix("/")
                 if (name.isEmpty()) continue
 
                 // Size: 124..135 (octal)
                 val sizeStr = String(headerBuf, 124, 12).trim('\u0000', ' ')
                 val size = sizeStr.toLongOrNull(8) ?: 0L
 
-                // Type: 156 ('0'/NUL = file, '5' = dir)
+                // Type: 156 ('0'/NUL = file, '2' = symlink, '5' = dir)
                 val type = headerBuf[156].toInt().toChar()
 
                 val outFile = File(destDir, name)
 
                 if (type == '5' || name.endsWith("/")) {
                     outFile.mkdirs()
+                } else if (type == '2') {
+                    // ── Symlink entry ─────────────────────────────────────────
+                    // linkname lives at bytes 157-256 in the TAR header (null terminated)
+                    val rawTarget = String(headerBuf, 157, 100)
+                    val targetNull = rawTarget.indexOf('\u0000')
+                    val linkTarget = if (targetNull != -1) rawTarget.substring(0, targetNull).trim() else rawTarget.trim()
+
+                    outFile.parentFile?.mkdirs()
+                    // Safely delete any existing file or broken symlink at destination
+                    runCatching { java.nio.file.Files.deleteIfExists(outFile.toPath()) }
+
+                    // Convert absolute symlink to a relative path inside the rootfs
+                    val resolvedTarget = if (linkTarget.startsWith("/")) {
+                        // e.g. /bin/busybox -> busybox or ../../bin/busybox
+                        val absTarget = File(destDir, linkTarget.trimStart('/'))
+                        try {
+                            outFile.parentFile?.toPath()?.relativize(absTarget.toPath())?.toString() ?: linkTarget
+                        } catch (_: Exception) {
+                            linkTarget
+                        }
+                    } else {
+                        linkTarget
+                    }
+                    runCatching {
+                        java.nio.file.Files.createSymbolicLink(
+                            outFile.toPath(),
+                            java.nio.file.Paths.get(resolvedTarget)
+                        )
+                    }
+                    // Symlinks have no data blocks — nothing to skip
                 } else if (type == '0' || type == '\u0000') {
                     outFile.parentFile?.mkdirs()
                     FileOutputStream(outFile).use { fos ->
@@ -188,7 +237,7 @@ object LinuxSubsystem {
                         }
                     }
                 } else {
-                    // Skip content for symlinks or other entries
+                    // Skip content for other/unknown entry types
                     if (size > 0) {
                         val toSkip = size + ((512 - (size % 512)) % 512)
                         var skipped = 0L
@@ -208,20 +257,35 @@ object LinuxSubsystem {
         val proot = getProotBinary(context)
             ?: throw IllegalStateException("libproot.so not found in nativeLibraryDir!")
 
-        val rootfsPath = getRootfsDir(context).absolutePath
+        val rootfsDir = getRootfsDir(context)
+        val rootfsPath = rootfsDir.absolutePath
 
-        val cmd = listOf(
-            proot.absolutePath,
-            "-r", rootfsPath,
-            "-0", // Fake root ID
+        // Prefer bash if installed, fallback to sh
+        val shell = if (File(rootfsDir, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
+
+        val bindings = mutableListOf(
             "-b", "/dev",
             "-b", "/proc",
-            "-b", "/sys",
-            "-b", "/storage/emulated/0:/storage",
-            "-b", "/storage/emulated/0/Download:/root/Download",
-            "-w", "/root",
-            "/bin/sh"
+            "-b", "/sys"
         )
+        val extStorage = File("/storage/emulated/0")
+        if (extStorage.exists()) {
+            bindings.add("-b")
+            bindings.add("/storage/emulated/0:/storage")
+            val download = File("/storage/emulated/0/Download")
+            if (download.exists()) {
+                bindings.add("-b")
+                bindings.add("/storage/emulated/0/Download:/root/Download")
+            }
+        }
+
+        val cmd = mutableListOf(
+            proot.absolutePath,
+            "-r", rootfsPath,
+            "-0" // Fake root ID
+        )
+        cmd.addAll(bindings)
+        cmd.addAll(listOf("-w", "/root", shell))
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
@@ -231,5 +295,62 @@ object LinuxSubsystem {
             environment()["LANG"] = "C.UTF-8"
         }
         return pb.start()
+    }
+
+    /** Runs the initial package installation inside the container */
+    fun runBootstrap(context: Context, onLog: (String) -> Unit): Boolean {
+        return try {
+            val proot = getProotBinary(context) ?: return false
+            val rootfsPath = getRootfsDir(context).absolutePath
+
+            val bindings = mutableListOf(
+                "-b", "/dev",
+                "-b", "/proc",
+                "-b", "/sys"
+            )
+            val extStorage = File("/storage/emulated/0")
+            if (extStorage.exists()) {
+                bindings.add("-b")
+                bindings.add("/storage/emulated/0:/storage")
+                val download = File("/storage/emulated/0/Download")
+                if (download.exists()) {
+                    bindings.add("-b")
+                    bindings.add("/storage/emulated/0/Download:/root/Download")
+                }
+            }
+
+            val cmd = mutableListOf(
+                proot.absolutePath,
+                "-r", rootfsPath,
+                "-0"
+            )
+            cmd.addAll(bindings)
+            cmd.addAll(listOf(
+                "-w", "/root",
+                "/bin/sh",
+                "-c",
+                "apk update && apk add --no-cache python3 py3-pip gcompat bash && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip"
+            ))
+
+            val pb = ProcessBuilder(cmd).apply {
+                redirectErrorStream(true)
+                environment()["TERM"] = "xterm-256color"
+                environment()["HOME"] = "/root"
+                environment()["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin"
+                environment()["LANG"] = "C.UTF-8"
+            }
+            val proc = pb.start()
+            val reader = BufferedReader(InputStreamReader(proc.inputStream))
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                line?.let { onLog("   $it") }
+            }
+            val exitCode = proc.waitFor()
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Bootstrap failed", e)
+            onLog("⚠️ Bootstrap error: ${e.message}")
+            false
+        }
     }
 }

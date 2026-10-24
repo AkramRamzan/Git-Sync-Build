@@ -5,8 +5,10 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -29,6 +31,10 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
     /** PID of the running bridge process */
     val pid: StateFlow<Int?> = TermuxBridgeService.state.pid
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Mini Linux installation status */
+    private val _isLinuxInstalled = MutableStateFlow(false)
+    val isLinuxInstalled: StateFlow<Boolean> = _isLinuxInstalled.asStateFlow()
 
     /** Current working directory of the shell session */
     val currentWorkingDirectory: String get() = BashShellSession.cwd
@@ -80,14 +86,24 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
     }
 
     fun startShell(context: Context? = null) {
+        if (context != null) {
+            _isLinuxInstalled.value = LinuxSubsystem.isInstalled(context)
+        }
         viewModelScope.launch { BashShellSession.start(context) }
     }
 
     fun installMiniLinux(context: Context) {
-        viewModelScope.launch { BashShellSession.installMiniLinux(context) }
+        viewModelScope.launch {
+            BashShellSession.installMiniLinux(context)
+            _isLinuxInstalled.value = LinuxSubsystem.isInstalled(context)
+        }
     }
 
-    fun isLinuxInstalled(context: Context): Boolean = LinuxSubsystem.isInstalled(context)
+    fun isLinuxInstalled(context: Context): Boolean {
+        val installed = LinuxSubsystem.isInstalled(context)
+        _isLinuxInstalled.value = installed
+        return installed
+    }
 
     fun stopShell() {
         viewModelScope.launch { BashShellSession.stop() }

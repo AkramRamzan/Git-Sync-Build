@@ -312,7 +312,7 @@ private fun BashShellTab(
                 }
             } else {
                 Surface(
-                    onClick = { submitCommand("apk add python3 py3-pip gcompat bash") },
+                    onClick = { submitCommand("apk add python3 py3-pip gcompat bash && ln -sf /usr/bin/python3 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip") },
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFF238636)
                 ) {
@@ -326,7 +326,7 @@ private fun BashShellTab(
             }
 
             val quickActions = listOf(
-                "▶ Run server.py" to "python /storage/Download/server.py",
+                "▶ Run server.py" to "python3 /storage/Download/server.py",
                 "📦 pip install reqs" to "pip install fastapi uvicorn pydantic sse-starlette",
                 "📂 ls -la" to "ls -la",
                 "📍 pwd" to "pwd",
@@ -442,6 +442,7 @@ fun TerminalBottomSheet(
     val status by viewModel.status.collectAsState()
     val logs by viewModel.logs.collectAsState()
     val pid by viewModel.pid.collectAsState()
+    val isLinuxInstalled by viewModel.isLinuxInstalled.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("⚡ Bridge Logs", "❯_ Bash Shell")
@@ -543,7 +544,7 @@ fun TerminalBottomSheet(
                         logs = logs,
                         onSend = { viewModel.sendBashCommand(it) },
                         onSetupLinux = { viewModel.installMiniLinux(context) },
-                        isLinuxInstalled = viewModel.isLinuxInstalled(context)
+                        isLinuxInstalled = isLinuxInstalled
                     )
                 }
             }
