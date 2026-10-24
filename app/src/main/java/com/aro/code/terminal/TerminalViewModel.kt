@@ -62,6 +62,10 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
         TermuxBridgeService.state.clearLogs()
     }
 
+    fun openTermux(context: Context) {
+        TermuxBridgeService.openTermux(context)
+    }
+
     // ──────────────────────────────────────────────────────────────
     // Bash Shell
     // ──────────────────────────────────────────────────────────────

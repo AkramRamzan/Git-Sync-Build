@@ -30,6 +30,7 @@ import re
 import json
 import shutil
 import asyncio
+import collections
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +38,37 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="Anti-Gravity Termux Bridge", version="2.4")
+
+# In-memory circular log buffer to serve live logs to Aro Code UI via /v1/logs
+server_logs = collections.deque(maxlen=300)
+
+class LogInterceptor:
+    def __init__(self, original_stream):
+        self.original_stream = original_stream
+
+    def write(self, s):
+        try:
+            self.original_stream.write(s)
+            self.original_stream.flush()
+        except Exception:
+            pass
+        if s:
+            for line in s.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    server_logs.append(stripped)
+
+    def flush(self):
+        try:
+            self.original_stream.flush()
+        except Exception:
+            pass
+
+    def isatty(self):
+        return getattr(self.original_stream, "isatty", lambda: False)()
+
+sys.stdout = LogInterceptor(sys.stdout)
+sys.stderr = LogInterceptor(sys.stderr)
 
 # Regex to strip ANSI terminal escape color codes for clean Android markdown
 ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -105,6 +137,10 @@ async def health_check():
             "gemini-4-argon"
         ]
     }
+
+@app.get("/v1/logs")
+async def get_logs():
+    return {"logs": list(server_logs)}
 
 @app.get("/v1/models")
 async def list_models():

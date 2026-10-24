@@ -90,11 +90,31 @@ private fun ControlButtons(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onOpenTermux: () -> Unit
 ) {
     val isRunning = status == BridgeStatus.RUNNING || status == BridgeStatus.STARTING
 
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        // 1-tap Open Termux button
+        Surface(
+            onClick = onOpenTermux,
+            shape = RoundedCornerShape(6.dp),
+            color = Color(0xFF1F6FEB),
+            modifier = Modifier.padding(end = 4.dp)
+        ) {
+            Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text("📲 Termux", style = MaterialTheme.typography.labelSmall, color = Color.White)
+            }
+        }
+
         // Start
         IconButton(onClick = onStart, enabled = !isRunning) {
             Icon(
@@ -351,10 +371,11 @@ fun TerminalBottomSheet(
                 StatusBadge(status, pid)
                 ControlButtons(
                     status = status,
-                    onStart   = { viewModel.startBridge(context) },
-                    onStop    = { viewModel.stopBridge(context) },
-                    onRestart = { viewModel.restartBridge(context) },
-                    onClear   = { viewModel.clearLogs() }
+                    onStart      = { viewModel.startBridge(context) },
+                    onStop       = { viewModel.stopBridge(context) },
+                    onRestart    = { viewModel.restartBridge(context) },
+                    onClear      = { viewModel.clearLogs() },
+                    onOpenTermux = { viewModel.openTermux(context) }
                 )
             }
 
