@@ -588,6 +588,22 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
                 # Check if authenticated (token file exists and is not empty)
                 AGY_TOKEN="${'$'}{HOME}/.gemini/antigravity-cli/antigravity-oauth-token"
+                
+                # Auto-import token from shared Android Download folder (e.g. copied from Termux)
+                if [ ! -s "${'$'}AGY_TOKEN" ]; then
+                    if [ -s "/storage/Download/antigravity-oauth-token" ]; then
+                        mkdir -p "${'$'}{HOME}/.gemini/antigravity-cli"
+                        cp "/storage/Download/antigravity-oauth-token" "${'$'}AGY_TOKEN"
+                        chmod 600 "${'$'}AGY_TOKEN"
+                        echo "✅ Google auth token auto-imported from /storage/Download/!"
+                    elif [ -s "/root/Download/antigravity-oauth-token" ]; then
+                        mkdir -p "${'$'}{HOME}/.gemini/antigravity-cli"
+                        cp "/root/Download/antigravity-oauth-token" "${'$'}AGY_TOKEN"
+                        chmod 600 "${'$'}AGY_TOKEN"
+                        echo "✅ Google auth token auto-imported from /root/Download/!"
+                    fi
+                fi
+
                 IS_AUTHED=false
                 if [ -s "${'$'}AGY_TOKEN" ]; then
                     IS_AUTHED=true
@@ -603,11 +619,17 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                     echo ""
                     echo "⚠️  Google account se login nahi hai!"
                     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "🔗 Login karne ke liye Google OAuth URL generate ho raha hai..."
-                    echo "👉 Link par click karein → Login karein → Authorization code yahan paste karein:"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "💡 SUB SE AASAAN TAREEQA (Termux Shortcut):"
+                    echo "   Agar aap Termux use karte hain, Termux me ye command chalayein:"
                     echo ""
-                    exec "${'$'}AGY_REAL" -p "hello" --dangerously-skip-permissions
+                    echo "   cp ~/.gemini/antigravity-cli/antigravity-oauth-token /sdcard/Download/"
+                    echo ""
+                    echo "   Aro Code token khud detect karke foran connect ho jayega!"
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "🔗 In-App Login Link generate ho raha hai..."
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    python3 /usr/local/bin/agy_login.py
+                    exit 0
                 fi
 
                 echo ""
@@ -626,6 +648,72 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             """.trimIndent()
             wrapper.writeText(script)
             wrapper.setExecutable(true, false)
+
+            val loginHelper = File(wrapperDir, "agy_login.py")
+            val pyScript = """
+                import pty, os, time, sys, select, re
+
+                def main():
+                    master, slave = pty.openpty()
+                    pid = os.fork()
+                    if pid == 0:
+                        os.close(master)
+                        os.setsid()
+                        try:
+                            import fcntl, termios
+                            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+                        except:
+                            pass
+                        os.dup2(slave, 0)
+                        os.dup2(slave, 1)
+                        os.dup2(slave, 2)
+                        os.close(slave)
+                        os.environ['TERM'] = 'xterm-256color'
+                        os.execv('/root/.local/bin/agy', ['/root/.local/bin/agy'])
+                    else:
+                        os.close(slave)
+                        buf = b''
+                        while b'Navigate' not in buf:
+                            try:
+                                chunk = os.read(master, 512)
+                                if not chunk: break
+                                buf += chunk
+                            except: break
+
+                        time.sleep(0.3)
+                        os.write(master, b'\r\n')
+
+                        url = None
+                        for _ in range(25):
+                            r, _, _ = select.select([master], [], [], 1)
+                            if not r: continue
+                            data = os.read(master, 2048)
+                            if not data: break
+                            text = data.decode('utf-8', errors='replace')
+                            m = re.search(r'https://accounts\.google\.com/o/oauth2/auth\?[^\x1b\x07\s]+', text)
+                            if m:
+                                url = m.group(0)
+                                break
+
+                        if url:
+                            print("\n╔══════════════════════════════════════════════════════════════╗")
+                            print("║ 🔗 GOOGLE LOGIN URL:                                         ║")
+                            print("╚══════════════════════════════════════════════════════════════╝\n")
+                            print(url)
+                            print("\n👉 Upar wala link Chrome me khol kar login karein.")
+                        else:
+                            print("❌ Login link generate nahi ho saka. Termux se token copy karein:")
+                            print("   cp ~/.gemini/antigravity-cli/antigravity-oauth-token /sdcard/Download/")
+
+                        os.close(master)
+                        try: os.kill(pid, 9)
+                        except: pass
+
+                if __name__ == '__main__':
+                    main()
+            """.trimIndent()
+            loginHelper.writeText(pyScript)
+            loginHelper.setExecutable(true, false)
         } catch (e: Exception) {
             Log.w(TAG, "setupAgyWrapper failed: ${e.message}")
         }
