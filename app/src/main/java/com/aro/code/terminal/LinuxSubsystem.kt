@@ -183,9 +183,18 @@ object LinuxSubsystem {
             File(etcDir, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
             onLog("🌐 DNS configured (Google & Cloudflare).")
 
-            // 4. Configure APT Sandbox (required for Android PRoot)
+            // 4. Configure APT Sandbox + Progress + Performance (required for Android PRoot)
             val aptConfDir = File(etcDir, "apt/apt.conf.d").apply { mkdirs() }
+            // Sandbox fix for PRoot (no user separation)
             File(aptConfDir, "01sandbox").writeText("APT::Sandbox::User \"root\";\nDir::Log::Terminal \"\";\n")
+            // Disable binary package cache — prevents "Reading package lists..." from freezing in PRoot
+            File(aptConfDir, "02nocache").writeText(
+                "Dir::Cache::pkgcache \"\";\nDir::Cache::srcpkgcache \"\";\n"
+            )
+            // Enable fancy dpkg progress bar (shows % like Ubuntu/Kali terminal)
+            File(aptConfDir, "03progress").writeText(
+                "Dpkg::Progress-Fancy \"1\";\nAPT::Color \"1\";\n"
+            )
 
             // 5. Configure Hosts & Environment
             File(etcDir, "hosts").writeText("127.0.0.1 localhost arocode\n::1 localhost ip6-localhost ip6-loopback\n")
