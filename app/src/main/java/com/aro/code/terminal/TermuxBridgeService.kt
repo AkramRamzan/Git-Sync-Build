@@ -97,16 +97,39 @@ class TermuxBridgeService : Service() {
                     return@launch
                 }
 
-                // Try python3, then python
-                val pythonCandidates = listOf(
+                // Detect Python binary — check file existence first (reliable on Android)
+                val pythonAbsoluteCandidates = listOf(
+                    // Standard Termux install paths
                     "/data/data/com.termux/files/usr/bin/python3",
                     "/data/data/com.termux/files/usr/bin/python",
-                    "python3",
-                    "python"
+                    // Multi-user Android (work profile, etc.)
+                    "/data/user/0/com.termux/files/usr/bin/python3",
+                    "/data/user/0/com.termux/files/usr/bin/python",
+                    // Some ROMs / alternative locations
+                    "/system/usr/bin/python3",
+                    "/usr/bin/python3",
+                    "/usr/bin/python"
                 )
-                val python = pythonCandidates.firstOrNull { cmd ->
-                    runCatching { Runtime.getRuntime().exec(arrayOf(cmd, "--version")) }.isSuccess
-                } ?: "python3"
+                val python = pythonAbsoluteCandidates.firstOrNull { path ->
+                    java.io.File(path).exists()
+                } ?: run {
+                    // Fallback: try PATH-based python via 'which'
+                    val whichResult = runCatching {
+                        val p = Runtime.getRuntime().exec(arrayOf("which", "python3"))
+                        p.inputStream.bufferedReader().readLine()?.trim()
+                    }.getOrNull()
+                    if (!whichResult.isNullOrEmpty() && java.io.File(whichResult).exists()) {
+                        whichResult
+                    } else {
+                        // Last resort: try plain python3 (will fail with readable error)
+                        state._status.value = BridgeStatus.ERROR
+                        appendLog("❌ Python not found! Please install Termux from F-Droid and run:")
+                        appendLog("   pkg install python")
+                        appendLog("   Then reopen Aro Code.")
+                        updateNotification("❌ Python not found — install Termux + python")
+                        return@launch
+                    }
+                }
 
                 appendLog("🐍 Using Python: $python")
                 appendLog("📄 Script: $serverScript")
