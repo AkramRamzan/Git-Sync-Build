@@ -312,7 +312,12 @@ private fun BashShellTab(
                 }
             } else {
                 Surface(
-                    onClick = { submitCommand("python3 /storage/Download/server.py") },
+                    onClick = {
+                        // Always deploy latest bundled server.py before running
+                        val ctx = context
+                        LinuxSubsystem.deployServerPy(ctx)
+                        submitCommand("python3 /storage/Download/server.py")
+                    },
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFF238636)
                 ) {

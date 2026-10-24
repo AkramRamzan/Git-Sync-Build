@@ -22,6 +22,23 @@ object LinuxSubsystem {
     private const val ROOTFS_DIR = "rootfs"
     private const val ROOTFS_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz"
 
+    /**
+     * Copies the bundled server.py from APK assets → /storage/emulated/0/Download/server.py
+     * Always overwrites so user always gets the latest version.
+     */
+    fun deployServerPy(context: Context): Boolean {
+        return try {
+            val dest = java.io.File("/storage/emulated/0/Download/server.py")
+            context.assets.open("server.py").use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+            true
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "deployServerPy failed", e)
+            false
+        }
+    }
+
     fun isInstalled(context: Context): Boolean {
         val rootfs = File(context.filesDir, ROOTFS_DIR)
         if (!rootfs.exists()) return false
@@ -188,6 +205,17 @@ object LinuxSubsystem {
                 onLog("✅ Python3 & pip installed successfully!")
             } else {
                 onLog("⚠️ Python install incomplete — check internet & retry")
+            }
+
+            // ── Auto-deploy bundled server.py to /storage/emulated/0/Download/ ──
+            try {
+                val destServerPy = java.io.File("/storage/emulated/0/Download/server.py")
+                context.assets.open("server.py").use { input ->
+                    destServerPy.outputStream().use { output -> input.copyTo(output) }
+                }
+                onLog("✅ server.py deployed → /storage/Download/server.py")
+            } catch (e: Exception) {
+                onLog("⚠️ server.py copy failed: ${e.message}")
             }
 
             onLog("─".repeat(44))
