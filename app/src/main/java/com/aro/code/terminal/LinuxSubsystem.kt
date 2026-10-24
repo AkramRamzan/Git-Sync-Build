@@ -520,10 +520,20 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
-        // Termux-style Real PTY: use Python POSIX PTY so bash runs with real isatty=true, /dev/pts, and full terminal control
+        // Termux-style Real PTY: use Python POSIX PTY with 2000 cols so long URLs never line-wrap or fragment
         val hasPython = File(rootfsDir, "usr/bin/python3").exists()
         if (hasPython) {
-            cmd.addAll(listOf("-w", "/root", "/usr/bin/python3", "-c", "import pty; pty.spawn(['/bin/bash', '-i'])"))
+            val pyPtyInit = "import pty,os,fcntl,termios,struct,sys;" +
+                            "m,s=pty.openpty();" +
+                            "fcntl.ioctl(m,termios.TIOCSWINSZ,struct.pack('HHHH',50,2000,0,0));" +
+                            "pid=os.fork();" +
+                            "os.close(m) if pid==0 else None;" +
+                            "os.login_tty(s) if pid==0 else None;" +
+                            "os.execv('/bin/bash',['/bin/bash','-i']) if pid==0 else None;" +
+                            "os.close(s);" +
+                            "pty._copy(m);" +
+                            "os.waitpid(pid,0)"
+            cmd.addAll(listOf("-w", "/root", "/usr/bin/python3", "-c", pyPtyInit))
         } else {
             cmd.addAll(listOf("-w", "/root", shell, "-i"))
         }
@@ -550,6 +560,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             environment()["TEMP"] = prootTmp.absolutePath
             environment()["TMP"] = prootTmp.absolutePath
             environment()["TERM"] = "xterm-256color"
+            environment()["COLUMNS"] = "2000"
+            environment()["LINES"] = "50"
             environment()["HOME"] = "/root"
             environment()["USER"] = "root"
             // Crucial: remove Android host environment variables so Python platformdirs/pip treats environment as Linux

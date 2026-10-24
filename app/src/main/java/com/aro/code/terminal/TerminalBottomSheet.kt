@@ -501,11 +501,26 @@ private fun BashShellTab(
             }
         }
 
-        // ── 1-Tap Google OAuth Login Button (Direct Chrome Launch) ─────────
+        // ── 1-Tap Google OAuth Login Button (Direct Chrome Launch & Multi-line Stitched) ─
         val oauthUrl = remember(shellLogs.size) {
-            shellLogs.asReversed().firstOrNull { it.contains("https://accounts.google.com/o/oauth2/auth") }?.let { line ->
-                val start = line.indexOf("https://accounts.google.com/o/oauth2/auth")
-                line.substring(start).substringBefore(" ").substringBefore("\n").substringBefore("\r")
+            val allText = shellLogs.joinToString("\n")
+            val marker = "https://accounts.google.com/o/oauth2/auth?"
+            val startIdx = allText.indexOf(marker)
+            if (startIdx != -1) {
+                val sub = allText.substring(startIdx)
+                val stopTokens = listOf("Paste authorization code", "Enter authorization code", "root@arocode", "aro@code", "\n\n")
+                var endIdx = sub.length.coerceAtMost(3500)
+                for (stop in stopTokens) {
+                    val idx = sub.indexOf(stop)
+                    if (idx in 1 until endIdx) {
+                        endIdx = idx
+                    }
+                }
+                // Strip all newlines, carriage returns, and spaces introduced by terminal line wrapping
+                val rawUrl = sub.substring(0, endIdx).replace(Regex("[\\r\\n\\s]+"), "").trim()
+                if (rawUrl.startsWith("https://accounts.google.com")) rawUrl else null
+            } else {
+                null
             }
         }
 
@@ -561,6 +576,7 @@ private fun BashShellTab(
         }
 
         if (oauthUrl != null) {
+            val clipboardManager = LocalClipboardManager.current
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -579,9 +595,11 @@ private fun BashShellTab(
                 }
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         "🔑 1-Tap Google Login (Open in Chrome)",
@@ -589,6 +607,17 @@ private fun BashShellTab(
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.bodyMedium
                     )
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(oauthUrl))
+                            Toast.makeText(context, "Full URL Copied! 📋", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("📋 Copy Link", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }

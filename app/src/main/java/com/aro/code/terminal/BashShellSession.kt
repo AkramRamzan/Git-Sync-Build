@@ -70,6 +70,7 @@ class ShellSession(
                 val buffer = CharArray(1024)
                 val lineBuffer = StringBuilder()
                 var lastWasCr = false
+                var isPartialFlush = false
 
                 try {
                     while (isActive) {
@@ -81,39 +82,40 @@ class ShellSession(
                                 if (lineBuffer.isNotEmpty()) {
                                     val text = lineBuffer.toString().trimEnd()
                                     if (text.isNotBlank()) {
-                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
                                     }
                                     lineBuffer.clear()
                                 }
                                 lastWasCr = true
+                                isPartialFlush = false
                             } else if (ch == '\n') {
                                 if (lineBuffer.isNotEmpty()) {
                                     val text = lineBuffer.toString().trimEnd()
                                     if (text.isNotBlank()) {
-                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
                                     }
                                     lineBuffer.clear()
                                 }
                                 lastWasCr = false
+                                isPartialFlush = false
                             } else {
                                 lineBuffer.append(ch)
                             }
                         }
 
-                        // Flush trailing prompt (e.g., "root@arocode:~# ") when no more immediate bytes are available
+                        // Flush trailing prompt (e.g., "root@arocode:~# ") without clearing lineBuffer so long URLs aren't fragmented
                         if (lineBuffer.isNotEmpty() && !reader.ready()) {
                             val text = lineBuffer.toString().trimEnd()
                             if (text.isNotBlank()) {
-                                updateOrAddLog("💻 $text", replaceLast = lastWasCr)
-                                lineBuffer.clear()
-                                lastWasCr = false
+                                updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
+                                isPartialFlush = true
                             }
                         }
                     }
                     if (lineBuffer.isNotEmpty()) {
                         val text = lineBuffer.toString().trimEnd()
                         if (text.isNotBlank()) {
-                            updateOrAddLog("💻 $text", replaceLast = lastWasCr)
+                            updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
                         }
                     }
                 } catch (_: Exception) {
