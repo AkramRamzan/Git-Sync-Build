@@ -51,11 +51,12 @@ object BashShellSession {
             scope.launch {
                 val reader = BufferedReader(InputStreamReader(proc.inputStream))
                 try {
-                    var line: String?
-                    while (isActive && reader.readLine().also { line = it } != null) {
-                        val msg = "$SHELL_PREFIX ${line!!}"
+                    var line = reader.readLine()
+                    while (isActive && line != null) {
+                        val msg = "$SHELL_PREFIX $line"
                         TermuxBridgeService.state.addLog(msg)
                         onOutput?.invoke(msg)
+                        line = reader.readLine()
                     }
                 } catch (_: Exception) {
                 } finally {

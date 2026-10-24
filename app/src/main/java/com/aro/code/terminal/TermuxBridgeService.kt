@@ -116,19 +116,26 @@ class TermuxBridgeService : Service() {
                 pb.redirectErrorStream(true) // Merge stdout+stderr into one stream
                 bridgeProcess = pb.start()
                 state._process.value = bridgeProcess
+
+                // pid() requires API 26+; use reflection to safely get PID
+                val procPid: Int? = runCatching {
+                    bridgeProcess!!.javaClass.getDeclaredMethod("pid").invoke(bridgeProcess) as? Int
+                        ?: (bridgeProcess!!.javaClass.getDeclaredField("pid").also { it.isAccessible = true }.getInt(bridgeProcess))
+                }.getOrNull()
                 state._status.value = BridgeStatus.RUNNING
-                state._pid.value = bridgeProcess!!.pid().toInt()
+                state._pid.value = procPid
 
                 updateNotification("🟢 Bridge Running on :8000")
-                appendLog("✅ Bridge started! PID: ${bridgeProcess!!.pid()}")
+                appendLog("✅ Bridge started! PID: ${procPid ?: "unknown"}")
                 appendLog("📍 http://127.0.0.1:8000 — Ready for Aro Code")
                 appendLog("─".repeat(44))
 
                 // Stream bridge output in real-time
                 val reader = BufferedReader(InputStreamReader(bridgeProcess!!.inputStream))
-                var line: String?
-                while (isActive && reader.readLine().also { line = it } != null) {
-                    appendLog(line ?: "")
+                var logLine = reader.readLine()
+                while (isActive && logLine != null) {
+                    appendLog(logLine)
+                    logLine = reader.readLine()
                 }
 
                 // Process exited

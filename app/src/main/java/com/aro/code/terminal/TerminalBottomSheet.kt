@@ -385,9 +385,11 @@ fun TerminalBottomSheet(
                 containerColor = Color(0xFF0D1117),
                 contentColor = Color.White,
                 indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = Color(0xFF29B6F6)
+                    Box(
+                        Modifier
+                            .tabIndicatorOffset(tabPositions[selectedTab])
+                            .height(2.dp)
+                            .background(Color(0xFF29B6F6))
                     )
                 }
             ) {
