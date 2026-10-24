@@ -339,15 +339,34 @@ if __name__ == "__main__":
     print("📱 Aro Code app will automatically connect to this URL.")
     print("="*55 + "\n")
 
+    # SO_REUSEPORT: TIME_WAIT zombie sockets ko bypass karta hai
+    # SO_REUSEADDR: crashed process ke baad turant rebind allow karta hai
+    import socket
+
+    def _run_with_reuse(host: str, port: int):
+        """Create a socket with SO_REUSEADDR + SO_REUSEPORT, then hand it to uvicorn."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except (AttributeError, OSError):
+            pass  # SO_REUSEPORT not available on all kernels — graceful fallback
+        sock.bind((host, port))
+        uvicorn.run(app, fd=sock.fileno())
+        sock.close()
+
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        _run_with_reuse("0.0.0.0", 8000)
     except OSError as e:
         if e.errno == 98 or "address in use" in str(e).lower():
-            print("\n⚠️ Port 8000 is occupied. Trying 127.0.0.1:8000...")
-            try:
-                uvicorn.run(app, host="127.0.0.1", port=8000)
-            except Exception as e2:
-                print(f"\n❌ Could not bind to port 8000: {e2}")
-                print("💡 Solution: Termux app me ja kar 'pkill -f python' karein, ya run: 'fuser -k 8000/tcp'")
+            print("\n⚠️ Port 8000 abhi bhi busy hai. Auto port-select kar rahe hain...")
+            for fallback_port in [8080, 8888, 9000]:
+                try:
+                    _run_with_reuse("0.0.0.0", fallback_port)
+                    break
+                except OSError:
+                    print(f"   Port {fallback_port} bhi busy — agle try kar rahe hain...")
+            else:
+                print("\n❌ Koi bhi port available nahi. 'pkill -f python' kar ke dobara try karein.")
         else:
             raise
