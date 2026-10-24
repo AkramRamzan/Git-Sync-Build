@@ -503,24 +503,28 @@ private fun BashShellTab(
 
         // ── 1-Tap Google OAuth Login Button (Direct Chrome Launch & Multi-line Stitched) ─
         val oauthUrl = remember(shellLogs.size) {
-            val allText = shellLogs.joinToString("\n")
-            val marker = "https://accounts.google.com/o/oauth2/auth?"
-            val startIdx = allText.indexOf(marker)
-            if (startIdx != -1) {
-                val sub = allText.substring(startIdx)
-                val stopTokens = listOf("Paste authorization code", "Enter authorization code", "root@arocode", "aro@code", "\n\n")
-                var endIdx = sub.length.coerceAtMost(3500)
-                for (stop in stopTokens) {
-                    val idx = sub.indexOf(stop)
-                    if (idx in 1 until endIdx) {
-                        endIdx = idx
+            val urlRegex = Regex("https://accounts\\.google\\.com/o/oauth2/auth\\?[A-Za-z0-9_.~%!$&'()*+,;=:@/?#\\-]+")
+            // 1. Check each log line from newest to oldest for clean full URL
+            shellLogs.asReversed().firstNotNullOfOrNull { line ->
+                urlRegex.find(line)?.value
+            } ?: run {
+                // 2. Fallback: Scan across all logs taking only valid URL characters (stops at box-drawing '─', emoji, or text)
+                val allText = shellLogs.joinToString("\n")
+                val start = allText.indexOf("https://accounts.google.com/o/oauth2/auth?")
+                if (start != -1) {
+                    val sb = StringBuilder()
+                    for (ch in allText.substring(start).take(2500)) {
+                        if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "_-.~%!$&'()*+,;=:@/?#") {
+                            sb.append(ch)
+                        } else if (ch == '\r' || ch == '\n' || ch == ' ') {
+                            continue // Skip wrapping whitespace
+                        } else {
+                            break // Stop at any decorative/emoji/boundary character like ─ or 💻
+                        }
                     }
-                }
-                // Strip all newlines, carriage returns, and spaces introduced by terminal line wrapping
-                val rawUrl = sub.substring(0, endIdx).replace(Regex("[\\r\\n\\s]+"), "").trim()
-                if (rawUrl.startsWith("https://accounts.google.com")) rawUrl else null
-            } else {
-                null
+                    val url = sb.toString()
+                    if (url.contains("client_id") && url.contains("code_challenge")) url else null
+                } else null
             }
         }
 
