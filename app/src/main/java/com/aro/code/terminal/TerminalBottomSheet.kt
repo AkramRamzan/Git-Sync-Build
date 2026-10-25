@@ -848,7 +848,7 @@ private fun BashShellTab(
                 }
             }
 
-            // [Restart] Button if active session has exited
+            // [Restart] & [Host Shell] Buttons if active session has exited
             if (activeSession?.isRunning == false) {
                 Surface(
                     onClick = { activeSession.restart(context) },
@@ -867,6 +867,20 @@ private fun BashShellTab(
                             modifier = Modifier.size(14.dp)
                         )
                         Text("Restart", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                    }
+                }
+
+                Surface(
+                    onClick = { activeSession.startHost(context) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF30363D)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("Host Shell", style = MaterialTheme.typography.labelSmall, color = Color.White)
                     }
                 }
             }

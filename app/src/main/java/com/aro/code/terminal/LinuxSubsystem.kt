@@ -722,21 +722,33 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "COLORTERM=truecolor",
             "LANG=C.UTF-8",
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            shell, "-l"
+            shell, "-l", "-i"
         ))
 
         // Environment for static PRoot process (clean and self-contained):
         // Position-independent static PRoot 5.4.0 embeds its own loader, needs no
         // external .so libraries or LD_LIBRARY_PATH, preventing all SIGSEGV crashes.
         val envMap = HashMap<String, String>()
+        // CRITICAL for Android: Disable seccomp accelerator because Android Zygote already
+        // installed an irreversible seccomp filter on the app process. Without this, PRoot
+        // fails to enable PTRACE_O_TRACESECCOMP and exits with code 255!
+        envMap["PROOT_NO_SECCOMP"] = "1"
+        envMap["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
         envMap["PROOT_TMP_DIR"] = prootTmp.absolutePath
         envMap["TMPDIR"] = prootTmp.absolutePath
         envMap["TEMP"] = prootTmp.absolutePath
         envMap["TMP"] = prootTmp.absolutePath
 
+        // Host system paths for Bionic kernel/linker
+        envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
+        envMap["ANDROID_DATA"] = System.getenv("ANDROID_DATA") ?: "/data"
+        envMap["PATH"] = System.getenv("PATH") ?: "/system/bin:/system/xbin"
+
         // Strip any dangerous host environment variables
         envMap.remove("LD_PRELOAD")
         envMap.remove("LD_LIBRARY_PATH")
+        envMap.remove("PROOT_LOADER")
+        envMap.remove("PROOT_LOADER_32")
         envMap.remove("CLASSPATH")
         envMap.remove("DEX2OATBOOTCLASSPATH")
         envMap.remove("BOOTCLASSPATH")
@@ -815,6 +827,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
+            environment()["PROOT_NO_SECCOMP"] = "1"
+            environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["TMPDIR"] = prootTmp.absolutePath
             environment()["TEMP"] = prootTmp.absolutePath
