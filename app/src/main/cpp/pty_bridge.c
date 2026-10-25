@@ -91,6 +91,14 @@ static pid_t my_forkpty(int *masterFd, int rows, int cols) {
     strncpy(slaveName, p, sizeof(slaveName) - 1);
     slaveName[sizeof(slaveName) - 1] = '\0';
 
+    /* Enable UTF-8 mode and disable flow control (Termux standard) */
+    struct termios tios;
+    if (tcgetattr(master, &tios) == 0) {
+        tios.c_iflag |= IUTF8;
+        tios.c_iflag &= ~(IXON | IXOFF);
+        tcsetattr(master, TCSANOW, &tios);
+    }
+
     /* Set initial window size on master before fork */
     struct winsize ws = { .ws_row = (unsigned short)rows,
                           .ws_col = (unsigned short)cols,

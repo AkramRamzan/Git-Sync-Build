@@ -79,14 +79,16 @@ class ShellSession(
                 val workingDir = File("/storage/emulated/0/Download").apply { mkdirs() }
                 cwd = workingDir.absolutePath
 
-                val cmd = arrayOf("/system/bin/sh", "-l")
-                val envp = arrayOf(
-                    "PATH=/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin",
-                    "HOME=/storage/emulated/0/Download",
-                    "TERM=xterm-256color",
-                    "COLORTERM=truecolor",
-                    "LANG=C.UTF-8"
-                )
+                val cmd = arrayOf("/system/bin/sh", "-i")
+                val envMap = HashMap(System.getenv())
+                envMap["PATH"] = "/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
+                envMap["HOME"] = workingDir.absolutePath
+                envMap["TERM"] = "xterm-256color"
+                envMap["COLORTERM"] = "truecolor"
+                envMap["LANG"] = "C.UTF-8"
+                if (!envMap.containsKey("ANDROID_ROOT")) envMap["ANDROID_ROOT"] = "/system"
+                if (!envMap.containsKey("ANDROID_DATA")) envMap["ANDROID_DATA"] = "/data"
+                val envp = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
 
                 ptySession.start(cmd, envp, cwd, initialRows, initialCols)
                 isRunning = ptySession.isRunning

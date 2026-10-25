@@ -734,8 +734,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val binDir = File(context.filesDir, "bin")
-        val envMap = mutableMapOf<String, String>()
+        val envMap = HashMap(System.getenv())
         envMap["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
+        if (!envMap.containsKey("ANDROID_ROOT")) envMap["ANDROID_ROOT"] = "/system"
+        if (!envMap.containsKey("ANDROID_DATA")) envMap["ANDROID_DATA"] = "/data"
 
         val loader = getProotLoader(context)
         if (loader != null && loader.exists()) {
