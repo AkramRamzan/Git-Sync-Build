@@ -387,10 +387,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
             // 5. Configure Hosts & Environment
             File(etcDir, "hosts").writeText("127.0.0.1 localhost arocode\n::1 localhost ip6-localhost ip6-loopback\n")
-            File(etcDir, "environment").writeText("PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\nLANG=\"C.UTF-8\"\n")
+            File(etcDir, "environment").writeText("PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\nLANG=\"C.UTF-8\"\nGLIBC_TUNABLES=\"glibc.pthread.rseq=0\"\n")
 
             // Unset Android variables in profile & bashrc so python pip / packages run as standard Linux
-            val unsetAndroidVars = "\nunset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT\n"
+            val unsetAndroidVars = "\nunset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT\nexport GLIBC_TUNABLES=\"glibc.pthread.rseq=0\"\n"
             File(etcDir, "profile").appendText(unsetAndroidVars)
             val rootDir = File(targetDir, "root").apply { mkdirs() }
             File(rootDir, ".bashrc").appendText(unsetAndroidVars)
@@ -757,6 +757,11 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         envMap["COLORTERM"] = "truecolor"
         envMap["LANG"] = "C.UTF-8"
         envMap["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        // CRITICAL for Android + Ubuntu 22.04 LTS (glibc 2.35):
+        // Android Zygote's seccomp filter blocks the rseq() (Restartable Sequences) system call,
+        // triggering Signal 31 (SIGSYS) which immediately terminates bash (vpid 1).
+        // Disabling rseq via GLIBC_TUNABLES prevents glibc from issuing the syscall altogether!
+        envMap["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
 
         // Host system paths for Bionic kernel/linker
         envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
@@ -847,6 +852,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             redirectErrorStream(true)
             environment()["PROOT_NO_SECCOMP"] = "1"
             environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
+            environment()["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
             environment()["TMPDIR"] = prootTmp.absolutePath
             environment()["TEMP"] = prootTmp.absolutePath
@@ -1122,6 +1128,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 unset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT \
                       ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT
 
+                # ── GLIBC Tunables (Disable rseq to eliminate Android Signal 31 SIGSYS) ──
+                export GLIBC_TUNABLES="glibc.pthread.rseq=0"
+
                 # ── PATH ──
                 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
 
@@ -1230,6 +1239,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 export COLORTERM="truecolor"
                 export PYTHONUNBUFFERED=1
                 export PYTHONIOENCODING=utf-8
+                export GLIBC_TUNABLES="glibc.pthread.rseq=0"
                 unset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT \
                       ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT
             """.trimIndent() + "\n")
@@ -1239,7 +1249,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             File(etcDir, "environment").writeText(
                 "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\"\n" +
                 "LANG=\"C.UTF-8\"\n" +
-                "LC_ALL=\"C.UTF-8\"\n"
+                "LC_ALL=\"C.UTF-8\"\n" +
+                "GLIBC_TUNABLES=\"glibc.pthread.rseq=0\"\n"
             )
 
             // ── 5. pip.conf — no cache, no root warning, allow user-install ──────────
