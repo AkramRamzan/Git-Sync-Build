@@ -61,6 +61,71 @@ object LinuxSubsystem {
         return File(context.filesDir, ROOTFS_DIR)
     }
 
+    /**
+     * Checks if Google OAuth token exists for agy CLI.
+     */
+    fun isLoggedIn(context: Context): Boolean {
+        return try {
+            val rootfsDir = getRootfsDir(context)
+            val tokenFile = File(rootfsDir, "root/.gemini/antigravity-cli/antigravity-oauth-token")
+            val dlToken = File("/storage/emulated/0/Download/antigravity-oauth-token")
+            (tokenFile.exists() && tokenFile.length() > 0) || (dlToken.exists() && dlToken.length() > 0)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Reads current model from ~/.gemini/antigravity-cli/settings.json.
+     */
+    fun getSelectedModel(context: Context): String {
+        return try {
+            val rootfsDir = getRootfsDir(context)
+            val settingsFile = File(rootfsDir, "root/.gemini/antigravity-cli/settings.json")
+            if (settingsFile.exists()) {
+                val json = settingsFile.readText()
+                val match = Regex("\"model\"\\s*:\\s*\"([^\"]+)\"").find(json)
+                match?.groupValues?.get(1) ?: "Gemini 3.8 Flash (High)"
+            } else {
+                "Gemini 3.8 Flash (High)"
+            }
+        } catch (_: Exception) {
+            "Gemini 3.8 Flash (High)"
+        }
+    }
+
+    /**
+     * Updates model in ~/.gemini/antigravity-cli/settings.json.
+     */
+    fun updateSelectedModel(context: Context, modelName: String): Boolean {
+        return try {
+            val rootfsDir = getRootfsDir(context)
+            val configDir = File(rootfsDir, "root/.gemini/antigravity-cli").apply { mkdirs() }
+            val settingsFile = File(configDir, "settings.json")
+            val content = """{"model":"$modelName","trustedWorkspaces":["/root","/storage","/storage/Download"]}"""
+            settingsFile.writeText(content)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Resets agy authentication so user can re-login.
+     */
+    fun resetAuth(context: Context): Boolean {
+        return try {
+            val rootfsDir = getRootfsDir(context)
+            val tokenFile = File(rootfsDir, "root/.gemini/antigravity-cli/antigravity-oauth-token")
+            if (tokenFile.exists()) tokenFile.delete()
+            val dlToken = File("/storage/emulated/0/Download/antigravity-oauth-token")
+            if (dlToken.exists()) dlToken.delete()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun getProotLoader(context: Context): File? {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val candidate = File(nativeDir, "libproot_loader.so")
@@ -582,6 +647,26 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
      */
     private fun setupAgyWrapper(rootfsDir: File) {
         try {
+            // Auto-configure agy settings & onboarding state to skip color scheme & onboarding TUI wizards
+            val agyConfigDir = File(rootfsDir, "root/.gemini/antigravity-cli").apply { mkdirs() }
+            val settingsFile = File(agyConfigDir, "settings.json")
+            if (!settingsFile.exists()) {
+                settingsFile.writeText("""{"model":"Gemini 3.8 Flash (High)","trustedWorkspaces":["/root","/storage","/storage/Download"]}""")
+            }
+            val jetskiFile = File(agyConfigDir, "jetski_state.pbtxt")
+            if (!jetskiFile.exists()) {
+                jetskiFile.writeText(
+                    """
+                    post_onboarding: {
+                      completed_steps: POST_ONBOARDING_STEP_TYPE_MANAGER_WELCOME
+                      completed_steps: POST_ONBOARDING_STEP_TYPE_USAGE_MODE
+                      completed_steps: POST_ONBOARDING_STEP_TYPE_AGENT_CONFIGURATION
+                      completed_steps: POST_ONBOARDING_STEP_TYPE_ADD_WORKSPACE
+                    }
+                    """.trimIndent()
+                )
+            }
+
             val wrapperDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }
             val wrapper = File(wrapperDir, "agy")
             val script = """
@@ -598,7 +683,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                     exit 1
                 fi
 
-                # Pass-through: if any args given, run directly (agy --version, agy auth login, etc.)
+                # Pass-through: if any args given, run directly (agy -p "prompt", agy --continue, etc.)
                 if [ ${'$'}# -gt 0 ]; then
                     exec "${'$'}AGY_REAL" "${'$'}@"
                 fi
@@ -626,37 +711,26 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                     IS_AUTHED=true
                 fi
 
-                # Show menu
-                echo ""
-                echo "╔══════════════════════════════════════════╗"
-                echo "║      🤖 Google Antigravity CLI           ║"
-                echo "╚══════════════════════════════════════════╝"
-
                 if [ "${'$'}IS_AUTHED" = "false" ]; then
                     echo ""
-                    echo "⚠️  Google account se login nahi hai!"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "💡 AASAAN TAREEQA (Termux Shortcut):"
-                    echo "   Termux me: cp ~/.gemini/antigravity-cli/antigravity-oauth-token /sdcard/Download/"
-                    echo "   Aro Code apne aap token detect karke connect ho jayega!"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "╔═════════════════════════════════════════════════════╗"
+                    echo "║       🤖 Google Antigravity CLI                     ║"
+                    echo "║       ⚠️  Google Account se Login Nahi Hai           ║"
+                    echo "╚═════════════════════════════════════════════════════╝"
                     echo "🔗 Google OAuth shuru ho raha hai..."
-                    echo "   URL neeche aayega → '1-Tap Google Login' button dabayein"
-                    echo "   Login karne ke baad authorization code yahan paste karein"
-                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "👉 '1-Tap Google Login' button dabayein"
+                    echo "👉 Login karne ke baad authorization code yahan paste karein"
                     echo ""
                     exec "${'$'}AGY_REAL"
                 fi
 
-                echo ""
-                echo "╔══════════════════════════════════════════╗"
-                echo "║  🤖 Antigravity CLI — Ready!             ║"
-                echo "║  ✅ Google Account Connected             ║"
-                echo "╚══════════════════════════════════════════╝"
-                echo ""
-                echo "  Naya task: agy -p \"tumhara kaam\""
-                echo "  Interactive: agy"
-                echo "  Resume: agy --continue"
+                # Clean screen upon login — display only current session info
+                clear 2>/dev/null || printf "\033[2J\033[H"
+                echo "╔═════════════════════════════════════════════════════╗"
+                echo "║          🤖 Google Antigravity CLI                  ║"
+                echo "║  🟢 Session: Active    🔑 Auth: Connected           ║"
+                echo "║  🧠 Model: $(grep -o '"model"[^,]*' ~/.gemini/antigravity-cli/settings.json 2>/dev/null | cut -d'"' -f4 || echo 'Gemini 3.8 Flash (High)')"
+                echo "╚═════════════════════════════════════════════════════╝"
                 echo ""
                 exec "${'$'}AGY_REAL"
             """.trimIndent()

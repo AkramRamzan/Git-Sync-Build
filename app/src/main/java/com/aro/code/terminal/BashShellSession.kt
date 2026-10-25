@@ -36,11 +36,19 @@ class ShellSession(
     fun start(context: Context) {
         if (isRunning) return
         try {
+            logs.clear() // Clean slate: clear old logs so only current session details are displayed
             val proc: Process
             if (LinuxSubsystem.isInstalled(context)) {
                 proc = LinuxSubsystem.spawnProotProcess(context)
                 isLinuxContainerActive = true
-                addLog("💻 🐧 [Session $id] In-App Ubuntu Linux (ARM64 GLIBC) Container Started")
+                val isAuth = LinuxSubsystem.isLoggedIn(context)
+                val model = LinuxSubsystem.getSelectedModel(context)
+                addLog("╔════════════════════════════════════════════════════════╗")
+                addLog("║  🤖 Aro Code — Termux Linux Environment                ║")
+                addLog("║  🟢 Container: Ubuntu 22.04 LTS (ARM64 GLIBC)          ║")
+                addLog("║  🔑 Google Auth: ${if (isAuth) "Connected (Active)" else "Login Required"}")
+                addLog("║  🧠 Model: $model")
+                addLog("╚════════════════════════════════════════════════════════╝")
             } else {
                 isLinuxContainerActive = false
                 val workingDirFile = File(cwd).let {
@@ -57,7 +65,7 @@ class ShellSession(
                     environment()["TERM"] = "xterm-256color"
                 }
                 proc = pb.start()
-                addLog("💻 ⚡ [Session $id] Host Terminal Started")
+                addLog("⚡ [Session $id] Host Terminal Started")
             }
 
             process = proc
@@ -72,14 +80,38 @@ class ShellSession(
                 var lastWasCr = false
                 var isPartialFlush = false
 
+                // Track if we have already cleared once after login
+                var clearedAfterLogin = false
+
                 try {
                     while (isActive) {
                         val count = reader.read(buffer)
                         if (count == -1) break
 
-                        // Full-screen TUI clear detection (\u001B[2J or \u001B[3J) — prevents overlapping frames
                         val chunkStr = String(buffer, 0, count)
-                        if (chunkStr.contains("\u001B[2J") || chunkStr.contains("\u001B[3J")) {
+
+                        // ── LOGIN SUCCESS: clear all previous output to start fresh ──
+                        if (!clearedAfterLogin && (
+                            chunkStr.contains("Antigravity CLI — Ready") ||
+                            chunkStr.contains("Google Account Connected") ||
+                            chunkStr.contains("Welcome to Antigravity CLI") ||
+                            chunkStr.contains("Choose your color scheme")
+                        )) {
+                            logs.clear()
+                            lineBuffer.clear()
+                            isPartialFlush = false
+                            clearedAfterLogin = true
+                            val model = LinuxSubsystem.getSelectedModel(context)
+                            addLog("╔════════════════════════════════════════════════════════╗")
+                            addLog("║  🤖 Google Antigravity CLI — Session Active            ║")
+                            addLog("║  🟢 Status: Connected (Google OAuth)                   ║")
+                            addLog("║  🧠 Model:  $model                                     ║")
+                            addLog("║  📁 Workdir: /storage/emulated/0/Download              ║")
+                            addLog("╚════════════════════════════════════════════════════════╝")
+                        }
+
+                        // Full-screen TUI clear detection (\u001B[2J, \u001B[3J, \u001Bc, or \u001B[H\u001B[2J)
+                        if (chunkStr.contains("\u001B[2J") || chunkStr.contains("\u001B[3J") || chunkStr.contains("\u001Bc") || chunkStr.contains("\u001B[H\u001B[2J")) {
                             logs.clear()
                             lineBuffer.clear()
                             isPartialFlush = false
@@ -91,7 +123,7 @@ class ShellSession(
                                 if (lineBuffer.isNotEmpty()) {
                                     val text = lineBuffer.toString().trimEnd()
                                     if (text.isNotBlank()) {
-                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
+                                        updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
                                     }
                                     lineBuffer.clear()
                                 }
@@ -101,7 +133,7 @@ class ShellSession(
                                 if (lineBuffer.isNotEmpty()) {
                                     val text = lineBuffer.toString().trimEnd()
                                     if (text.isNotBlank()) {
-                                        updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
+                                        updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
                                     }
                                     lineBuffer.clear()
                                 }
@@ -116,7 +148,7 @@ class ShellSession(
                         if (lineBuffer.isNotEmpty() && !reader.ready()) {
                             val text = lineBuffer.toString().trimEnd()
                             if (text.isNotBlank()) {
-                                updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
+                                updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
                                 isPartialFlush = true
                             }
                         }
@@ -124,17 +156,17 @@ class ShellSession(
                     if (lineBuffer.isNotEmpty()) {
                         val text = lineBuffer.toString().trimEnd()
                         if (text.isNotBlank()) {
-                            updateOrAddLog("💻 $text", replaceLast = lastWasCr || isPartialFlush)
+                            updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
                         }
                     }
                 } catch (_: Exception) {
                 } finally {
                     isRunning = false
-                    addLog("💻 [Session $id stopped]")
+                    addLog("[Session $id stopped]")
                 }
             }
         } catch (e: Exception) {
-            addLog("💻 [Session $id error: ${e.message}]")
+            addLog("[Session $id error: ${e.message}]")
         }
     }
 
@@ -144,7 +176,7 @@ class ShellSession(
 
         if (cmd == "clear" || cmd == "cls") {
             logs.clear()
-            addLog("💻 ⚡ Screen Cleared")
+            addLog("⚡ Screen Cleared")
             return
         }
 
@@ -157,17 +189,17 @@ class ShellSession(
         }
 
         val promptTag = if (isLinuxContainerActive) "root@arocode:~#" else "aro@code$"
-        if (logs.isNotEmpty() && logs.last().trim() == "💻 $promptTag".trim()) {
-            logs[logs.lastIndex] = "💻 $promptTag $cmd"
+        if (logs.isNotEmpty() && logs.last().trim() == promptTag.trim()) {
+            logs[logs.lastIndex] = "$promptTag $cmd"
         } else if (!isLinuxContainerActive) {
-            addLog("💻 $promptTag $cmd")
+            addLog("$promptTag $cmd")
         }
         try {
             writer?.write(cmd)
             writer?.newLine()
             writer?.flush()
         } catch (e: Exception) {
-            addLog("💻 [Command error: ${e.message}]")
+            addLog("[Command error: ${e.message}]")
         }
     }
 
@@ -175,7 +207,7 @@ class ShellSession(
         try {
             writer?.write("\u0003")
             writer?.flush()
-            addLog("💻 ^C")
+            addLog("^C")
         } catch (_: Exception) {}
     }
 
@@ -203,12 +235,18 @@ class ShellSession(
     }
 
     private fun updateOrAddLog(line: String, replaceLast: Boolean) {
-        val stripped = stripAnsi(line)
-        if (replaceLast && logs.isNotEmpty() && logs.last().startsWith("💻")) {
+        val stripped = stripAnsi(line).trimEnd()
+        if (stripped.isBlank() || isUselessNoise(stripped)) return
+        if (replaceLast && logs.isNotEmpty()) {
             logs[logs.lastIndex] = stripped
         } else {
             addLog(stripped)
         }
+    }
+
+    private fun isUselessNoise(line: String): Boolean {
+        val t = line.trim()
+        return t == "💻" || t.matches(Regex("^\\[[?>][0-9;]*\\\$?[a-zA-Z0-9;]*$"))
     }
 
     /** Strip ANSI/VT100 escape sequences and query artifacts so text and URLs are clean. */
@@ -221,9 +259,10 @@ class ShellSession(
     }
 
     private fun addLog(line: String) {
-        logs.add(line)
+        val cleanLine = line.removePrefix("💻 ")
+        logs.add(cleanLine)
         if (logs.size > 800) logs.removeAt(0)
-        TermuxBridgeService.state.addLog(line)
+        TermuxBridgeService.state.addLog(if (line.startsWith("💻")) line else "💻 $line")
     }
 }
 

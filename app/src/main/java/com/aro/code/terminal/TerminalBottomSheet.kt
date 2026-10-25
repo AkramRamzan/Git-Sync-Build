@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,17 +45,21 @@ import kotlinx.coroutines.launch
 
 @Composable
 private fun logLineColor(line: String): Color = when {
-    line.contains("✅") || line.contains("RUNNING") || line.contains("started") ->
-        Color(0xFF4CAF50)
-    line.contains("❌") || line.contains("ERROR") || line.contains("error", true) ->
-        Color(0xFFEF5350)
+    line.startsWith("root@arocode") || line.contains("❯") || line.startsWith("aro@code") ->
+        Color(0xFF58A6FF) // Prompt in bright blue
+    line.contains("✅") || line.contains("Connected") || line.contains("Active") || line.contains("RUNNING") || line.contains("started") ->
+        Color(0xFF3FB950) // Success in crisp green
+    line.contains("❌") || line.contains("ERROR") || line.contains("error", true) || line.contains("failed", true) ->
+        Color(0xFFF85149) // Errors in red
+    line.contains("⚠️") || line.contains("WARN") || line.contains("warn", true) ->
+        Color(0xFFD29922) // Warnings in amber
+    line.contains("╔") || line.contains("║") || line.contains("╚") || line.contains("🤖") ->
+        Color(0xFF58A6FF) // Banners in bright cyan
+    line.contains("•") || line.contains("Thought Process") || line.contains("tool:") ->
+        Color(0xFFBC8CFF) // AI agent thoughts in purple
     line.contains("[Termux Bridge]") || line.contains("INFO") ->
         Color(0xFF29B6F6)
-    line.contains("⚠") || line.contains("WARN") ->
-        Color(0xFFFFA726)
-    line.contains("💻") || line.contains("\$") ->
-        Color(0xFFCE93D8)
-    else -> Color(0xFFE0E0E0)
+    else -> Color(0xFFC9D1D9) // Standard terminal text in clean light grey
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,20 +336,24 @@ private fun BashShellTab(
     var input by remember { mutableStateOf("") }
     val history = remember { mutableStateListOf<String>() }
     var historyIndex by remember { mutableIntStateOf(-1) }
-    var showAgyDialog by remember { mutableStateOf(false) }
+    var showAgyPromptDialog by remember { mutableStateOf(false) }
     var agyPromptInput by remember { mutableStateOf("") }
+    var showCommandsDialog by remember { mutableStateOf(false) }
+    var showModelDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    if (showAgyDialog) {
+    // ── Dialog 1: Agy Custom Prompt Task Runner ─────────────────────────────
+    if (showAgyPromptDialog) {
         AlertDialog(
-            onDismissRequest = { showAgyDialog = false },
+            onDismissRequest = { showAgyPromptDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("🤖", fontSize = 22.sp)
-                    Text("Antigravity CLI Agent", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text("Antigravity AI Task", style = MaterialTheme.typography.titleMedium, color = Color.White)
                 }
             },
             text = {
@@ -371,7 +380,7 @@ private fun BashShellTab(
                             onSend("agy -p \"${agyPromptInput.trim()}\" --dangerously-skip-permissions")
                             agyPromptInput = ""
                         }
-                        showAgyDialog = false
+                        showAgyPromptDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636))
                 ) {
@@ -379,8 +388,331 @@ private fun BashShellTab(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAgyDialog = false }) {
+                TextButton(onClick = { showAgyPromptDialog = false }) {
                     Text("Cancel", color = Color(0xFF8B949E))
+                }
+            },
+            containerColor = Color(0xFF161B22)
+        )
+    }
+
+    // ── Dialog 2: Termux-Style Interactive Commands Menu ───────────────────
+    if (showCommandsDialog) {
+        AlertDialog(
+            onDismissRequest = { showCommandsDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("⚡", fontSize = 20.sp)
+                    Text("Interactive Commands", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("🤖 Antigravity AI Agent", color = Color(0xFF58A6FF), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            onClick = {
+                                onSend("agy")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1F6FEB)
+                        ) {
+                            Text("🤖 Start agy", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
+                        }
+                        Surface(
+                            onClick = {
+                                showCommandsDialog = false
+                                showAgyPromptDialog = true
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF238636)
+                        ) {
+                            Text("💬 Task Prompt...", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                onSend("agy --continue")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("🔄 Resume Chat", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                BashShellSession.sendCtrlC()
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF4E1010)
+                        ) {
+                            Text("🛑 Stop (^C)", color = Color(0xFFFF7B72), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                    }
+
+                    Text("🐍 Python & Development", color = Color(0xFF3FB950), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            onClick = {
+                                LinuxSubsystem.deployServerPy(context)
+                                onSend("python3 /storage/Download/server.py")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF238636)
+                        ) {
+                            Text("🚀 server.py", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                onSend("pip install fastapi uvicorn pydantic sse-starlette")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("📦 Pip Reqs", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                onSend("pip list")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("📋 Pip List", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                    }
+
+                    Text("🛠️ Linux Shell & Git", color = Color(0xFFD29922), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            onClick = {
+                                onSend("git status")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("🔍 git status", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                onSend("ls -la")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("📂 ls -la", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                onSend("pwd")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("📍 pwd", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Surface(
+                            onClick = {
+                                onSend("clear")
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D)
+                        ) {
+                            Text("🧹 clear", color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showCommandsDialog = false }) {
+                    Text("Close", color = Color(0xFF8B949E))
+                }
+            },
+            containerColor = Color(0xFF161B22)
+        )
+    }
+
+    // ── Dialog 3: Termux-Style Model Selection Dialog ──────────────────────
+    if (showModelDialog) {
+        val currentModel = remember(showModelDialog) { LinuxSubsystem.getSelectedModel(context) }
+        val models = listOf(
+            "Gemini 3.8 Flash (High)" to "Fastest reasoning, large context window (Recommended)",
+            "Gemini 2.5 Pro" to "Advanced problem solving & complex coding",
+            "Gemini 2.0 Flash" to "Ultra low-latency, lightweight tasks",
+            "Claude 3.5 Sonnet" to "High-level agentic tools and reasoning"
+        )
+
+        AlertDialog(
+            onDismissRequest = { showModelDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🧠", fontSize = 20.sp)
+                    Text("Change AI Model", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select default model for Antigravity CLI:", style = MaterialTheme.typography.bodySmall, color = Color(0xFF8B949E))
+                    models.forEach { (modelName, desc) ->
+                        val isSelected = currentModel.equals(modelName, ignoreCase = true) ||
+                                (modelName.contains("Flash (High)") && currentModel.contains("Flash", true))
+                        Surface(
+                            onClick = {
+                                LinuxSubsystem.updateSelectedModel(context, modelName)
+                                Toast.makeText(context, "Model switched to: $modelName", Toast.LENGTH_SHORT).show()
+                                BashShellSession.activeSession?.addLog("🧠 [System] Model set to: $modelName")
+                                showModelDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) Color(0xFF1F3A24) else Color(0xFF21262D),
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3FB950)) else null,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(if (isSelected) "🟢" else "⚪", fontSize = 14.sp)
+                                Column {
+                                    Text(modelName, color = if (isSelected) Color(0xFF3FB950) else Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    Text(desc, color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showModelDialog = false }) {
+                    Text("Cancel", color = Color(0xFF8B949E))
+                }
+            },
+            containerColor = Color(0xFF161B22)
+        )
+    }
+
+    // ── Dialog 4: Termux-Style Settings Dialog ─────────────────────────────
+    if (showSettingsDialog) {
+        val isAuth = remember(showSettingsDialog) { LinuxSubsystem.isLoggedIn(context) }
+
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("⚙️", fontSize = 20.sp)
+                    Text("Terminal & agy Settings", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Google Authentication", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                Text(if (isAuth) "🟢 Connected" else "🔴 Login Needed", color = if (isAuth) Color(0xFF3FB950) else Color(0xFFF85149), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                            if (isAuth) {
+                                Button(
+                                    onClick = {
+                                        LinuxSubsystem.resetAuth(context)
+                                        Toast.makeText(context, "Logged out! Re-authenticating...", Toast.LENGTH_SHORT).show()
+                                        onSend("agy")
+                                        showSettingsDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B1A1A)),
+                                    shape = RoundedCornerShape(6.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("🔑 Re-authenticate / Logout", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
+                        onClick = {
+                            onSend("clear")
+                            showSettingsDialog = false
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("🧹", fontSize = 16.sp)
+                            Text("Clear Screen & History", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+
+                    Surface(
+                        onClick = {
+                            TermuxBridgeService.openTermuxSetup(context)
+                            showSettingsDialog = false
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("📲", fontSize = 16.sp)
+                            Text("Fix Termux Config (External Apps)", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+
+                    if (isLinuxInstalled) {
+                        Surface(
+                            onClick = {
+                                onSetupLinux()
+                                showSettingsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF21262D),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("🔄", fontSize = 16.sp)
+                                Text("Reinstall Ubuntu Container", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showSettingsDialog = false }) {
+                    Text("Close", color = Color(0xFF8B949E))
                 }
             },
             containerColor = Color(0xFF161B22)
@@ -676,143 +1008,7 @@ private fun BashShellTab(
             }
         }
 
-        // ── Agy Color Scheme Picker Smart Buttons ───────────────────────────
-        val isAgyColorPicker = remember(shellLogs.size) {
-            val recent = shellLogs.takeLast(15).joinToString("\n")
-            recent.contains("color scheme", ignoreCase = true) ||
-            recent.contains("solarized", ignoreCase = true) ||
-            recent.contains("tokyo night", ignoreCase = true)
-        }
-
-        if (isAgyColorPicker && !isAgyMenu) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                color = Color(0xFF161B22),
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF58A6FF))
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text("🎨 Color Scheme Chunein:", color = Color(0xFF58A6FF),
-                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("⬛ Terminal", color = Color.White, style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\u001B[B\u001B[B\u001B[B\u001B[B\u001B[B\u001B[B\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("🌙 Tokyo Night", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\u001B[B\u001B[B\u001B[B\u001B[B\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("🌑 Dark", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                    }
-                }
-            }
-        }
-
-        // ── Agy Model Selection Smart Buttons ───────────────────────────────
-        val isAgyModelSelect = remember(shellLogs.size) {
-            val recent = shellLogs.takeLast(12).joinToString("\n")
-            !isAgyColorPicker && (
-                (recent.contains("model", ignoreCase = true) && recent.contains("Flash", ignoreCase = true)) ||
-                (recent.contains("gemini", ignoreCase = true) && recent.contains("Select", ignoreCase = true))
-            )
-        }
-
-        if (isAgyModelSelect && !isAgyMenu && !isAgyColorPicker) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                color = Color(0xFF161B22),
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD29922))
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text("🤖 Model Chunein:", color = Color(0xFFD29922),
-                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("✅ Pehla (Enter)", color = Color.White, style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("⬇ Agla", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                    }
-                }
-            }
-        }
-
-        // ── Agy Conversation List Smart Buttons ─────────────────────────────
-        val isAgyConversationList = remember(shellLogs.size) {
-            val recent = shellLogs.takeLast(10).joinToString("\n")
-            !isAgyColorPicker && !isAgyModelSelect && (
-                recent.contains("conversation", ignoreCase = true) ||
-                (recent.contains("resume", ignoreCase = true) && recent.contains("new", ignoreCase = true)) ||
-                recent.contains("new project", ignoreCase = true)
-            )
-        }
-
-        if (isAgyConversationList && !isAgyMenu && !isAgyColorPicker && !isAgyModelSelect) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                color = Color(0xFF161B22),
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3FB950))
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    Text("💬 Conversation:", color = Color(0xFF3FB950),
-                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("▶ Resume (Enter)", color = Color.White, style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("➕ New Chat", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                    }
-                }
-            }
-        }
-
-        // ── Agy Interactive Mode Quick Actions ──────────────────────────────
+        // ── Agy Interactive Approval Strip (Only when Agy is asking for input) ──
         val isAgyInteractive = remember(shellLogs.size) {
             val recent = shellLogs.takeLast(8).joinToString("\n")
             recent.contains("you:", ignoreCase = true) ||
@@ -828,48 +1024,50 @@ private fun BashShellTab(
                 shape = RoundedCornerShape(8.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1F6FEB))
             ) {
-                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                    Text("⚡ Agy Controls:", color = Color(0xFF58A6FF),
-                        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("⏎ Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("[Next]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("s\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("[Skip]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("continue\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F6FEB)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                            modifier = Modifier.weight(1f)
-                        ) { Text("Continue→", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                    }
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { BashShellSession.sendRaw("\r") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("⏎ Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = { BashShellSession.sendRaw("\u001B[B\r") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("[Next]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                    Button(
+                        onClick = { BashShellSession.sendRaw("s\r") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("[Skip]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
+                    Button(
+                        onClick = { BashShellSession.sendRaw("continue\r") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F6FEB)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Continue→", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                    Button(
+                        onClick = { BashShellSession.sendCtrlC() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4E1010)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) { Text("^C", color = Color(0xFFFF7B72), style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }
 
-        // Output area
+        // ── Main Terminal Viewport (Crisp Monospace, Clean output) ──────────
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -880,127 +1078,141 @@ private fun BashShellTab(
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
             items(shellLogs) { line ->
-                Text(
-                    text = line,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = logLineColor(line)
+                val cleanLine = line.removePrefix("💻 ")
+                if (cleanLine.isNotBlank()) {
+                    Text(
+                        text = cleanLine,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = logLineColor(cleanLine)
+                        )
                     )
-                )
+                }
             }
         }
 
-        // VS Code Quick Action Chips
+        // ── Termux-Style Interactive Menu Bar (Commands, Model, Settings) ───
+        val isAuthNow = remember(shellLogs.size) { LinuxSubsystem.isLoggedIn(context) }
+        val activeModelName = remember(shellLogs.size, showModelDialog) { LinuxSubsystem.getSelectedModel(context) }
+
         Row(
-            Modifier
+            modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
                 .background(Color(0xFF161B22))
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            if (isLinuxInstalled) {
-                // 🤖 1-Tap agy AI Prompt runner
-                Surface(
-                    onClick = { showAgyDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF1F6FEB)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text("🤖", fontSize = 12.sp)
-                        Text(
-                            text = "agy Prompt",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            if (!isLinuxInstalled) {
-                Surface(
-                    onClick = onSetupLinux,
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF6E40C9)
-                ) {
-                    Text(
-                        text = "📦 Setup Ubuntu Linux (Full)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            } else {
-                Surface(
-                    onClick = {
-                        // Always deploy latest bundled server.py before running
-                        LinuxSubsystem.deployServerPy(context)
-                        submitCommand("python3 /storage/Download/server.py")
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF238636)
-                ) {
-                    Text(
-                        text = "🚀 Run server.py",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-                Surface(
-                    onClick = onSetupLinux,
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF6E40C9)
-                ) {
-                    Text(
-                        text = "🔄 Reinstall Ubuntu",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-
-            // Termux allow-external-apps config shortcut
-            val context = LocalContext.current
+            // ⚡ Commands Menu
             Surface(
-                onClick = { TermuxBridgeService.openTermuxSetup(context) },
-                shape = RoundedCornerShape(12.dp),
+                onClick = { showCommandsDialog = true },
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF21262D)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text("⚡", fontSize = 12.sp)
+                    Text("Commands", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // 🧠 Model Menu
+            Surface(
+                onClick = { showModelDialog = true },
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF21262D)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text("🧠", fontSize = 12.sp)
+                    val shortModel = when {
+                        activeModelName.contains("3.8", true) -> "3.8 Flash"
+                        activeModelName.contains("2.5", true) -> "2.5 Pro"
+                        activeModelName.contains("2.0", true) -> "2.0 Flash"
+                        activeModelName.contains("Claude", true) -> "Claude"
+                        else -> "Model"
+                    }
+                    Text("Model ($shortModel)", color = Color(0xFFD29922), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // ⚙️ Settings Menu
+            Surface(
+                onClick = { showSettingsDialog = true },
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF21262D)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text("⚙️", fontSize = 12.sp)
+                    Text("Settings", color = Color(0xFF3FB950), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // 🤖 Quick Run agy
+            Surface(
+                onClick = { onSend("agy") },
+                shape = RoundedCornerShape(8.dp),
                 color = Color(0xFF1F6FEB)
             ) {
-                Text(
-                    text = "⚙️ Fix Termux Config",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("🤖", fontSize = 11.sp)
+                    Text("agy", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
             }
 
-            val quickActions = listOf(
-                "📦 pip install reqs" to "pip install fastapi uvicorn pydantic sse-starlette",
-                "📂 ls -la" to "ls -la",
-                "📍 pwd" to "pwd",
-                "🔍 git status" to "git status",
-                "🧹 clear" to "clear"
-            )
-            quickActions.forEach { (label, cmd) ->
-                Surface(
-                    onClick = { submitCommand(cmd) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF21262D)
+            // 🔄 Quick Resume
+            Surface(
+                onClick = { onSend("agy --continue") },
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF21262D)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF58A6FF),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                    Text("🔄", fontSize = 11.sp)
+                    Text("Resume", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            // 🧹 Clear
+            Surface(
+                onClick = { onSend("clear") },
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF21262D)
+            ) {
+                Text("🧹 Clear", color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+            }
+
+            // 🟢 Status Pill
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = if (isAuthNow) Color(0xFF1A3B1A) else Color(0xFF3B1A1A)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149)))
+                    Text(if (isAuthNow) "Connected" else "Login", color = if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
