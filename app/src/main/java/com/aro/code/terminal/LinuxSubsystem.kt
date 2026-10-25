@@ -437,6 +437,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             setupAgyWrapper(targetDir)
             setupAptWrapper(targetDir)
 
+            // 10. Termux-like full setup: rich shell, aliases, pip, nano, locale, profile.d
+            setupTermuxLikeEnvironment(targetDir)
+            onLog("🐚 Shell environment configured (aliases, colors, pip, nano).")
+
             onLog("─".repeat(44))
             onLog("🎉 In-App Ubuntu Linux (ARM64 GLIBC) is READY!")
             onLog("💡 Commands available:")
@@ -696,6 +700,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         deployServerPy(context)
         setupAgyWrapper(rootfsDir)
         setupAptWrapper(rootfsDir)
+        setupTermuxLikeEnvironment(rootfsDir)
 
         val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
         val shell = if (File(rootfsDir, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
@@ -843,8 +848,6 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             environment()["TEMP"] = prootTmp.absolutePath
             environment()["TMP"] = prootTmp.absolutePath
             environment()["TERM"] = "xterm-256color"
-            environment()["COLUMNS"] = "2000"
-            environment()["LINES"] = "50"
             environment()["HOME"] = "/root"
             environment()["USER"] = "root"
             // Crucial: remove Android host environment variables so Python platformdirs/pip treats environment as Linux
@@ -893,10 +896,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             val wrapper = File(wrapperDir, "agy")
             val script = """
                 #!/bin/sh
-                # Smart agy wrapper — handles auth + avoids PTY hang in Android terminal
-                stty cols 2000 rows 50 2>/dev/null
-                export COLUMNS=2000
-                export LINES=50
+                # Smart agy wrapper — handles auth; terminal size set by real PTY (TIOCSWINSZ)
                 AGY_REAL="/root/.local/bin/agy"
 
                 if [ ! -f "${'$'}AGY_REAL" ]; then
@@ -1082,6 +1082,270 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             aptWrapper.setExecutable(true, false)
         } catch (e: Exception) {
             Log.w(TAG, "setupAptWrapper failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Configures the Ubuntu environment to behave like Termux:
+     * - Rich colorful PS1 prompt
+     * - Common aliases (ll, la, .., update, install, etc.)
+     * - pip.conf (no cache, user-install friendly)
+     * - nano with syntax highlighting
+     * - profile.d welcome script
+     * - locale set to C.UTF-8
+     * - /usr/local/bin in PATH for all login/non-login shells
+     */
+    private fun setupTermuxLikeEnvironment(rootfsDir: File) {
+        try {
+            val rootDir = File(rootfsDir, "root").apply { mkdirs() }
+            val etcDir = File(rootfsDir, "etc").apply { mkdirs() }
+
+            // ── 1. Rich .bashrc (overwrite to canonical state) ───────────────────────
+            val bashrc = File(rootDir, ".bashrc")
+            bashrc.writeText("""
+                # ~/.bashrc — AroCode Ubuntu Shell  (Termux-like)
+                # ─────────────────────────────────────────────────
+
+                # If not running interactively, do nothing
+                case ${'$'}-in
+                  *i*) ;;
+                  *) return;;
+                esac
+
+                # Unset Android host variables that confuse Python/pip
+                unset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT \
+                      ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT
+
+                # ── PATH ──
+                export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
+
+                # ── Locale ──
+                export LANG="C.UTF-8"
+                export LC_ALL="C.UTF-8"
+
+                # ── Terminal colours ──
+                export TERM="xterm-256color"
+                export COLORTERM="truecolor"
+
+                # ── Python ──
+                export PYTHONUNBUFFERED=1
+                export PYTHONIOENCODING=utf-8
+
+                # ── Colorful prompt (Termux-style) ──
+                # green user@host, blue cwd, white #
+                export PS1='\[\e[0;32m\]root@arocode\[\e[0m\]:\[\e[0;34m\]\w\[\e[0m\]\# '
+
+                # ── LS colours ──
+                export LS_COLORS='di=34:ln=36:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=34;42'
+                alias ls='ls --color=auto'
+                alias ll='ls -alF --color=auto'
+                alias la='ls -A --color=auto'
+                alias l='ls -CF --color=auto'
+
+                # ── Navigation ──
+                alias ..='cd ..'
+                alias ...='cd ../..'
+                alias ~='cd ~'
+
+                # ── APT shortcuts (Termux-like) ──
+                alias update='apt-get update'
+                alias upgrade='apt-get upgrade -y'
+                alias install='apt-get install -y'
+                alias remove='apt-get remove -y'
+                alias search='apt-cache search'
+                alias show='apt-cache show'
+
+                # ── Python shortcuts ──
+                alias python='python3'
+                alias pip='pip3'
+
+                # ── Git shortcuts ──
+                alias gs='git status'
+                alias gd='git diff'
+                alias gl='git log --oneline -10'
+                alias ga='git add'
+                alias gc='git commit'
+                alias gp='git push'
+
+                # ── Misc ──
+                alias cls='clear'
+                alias h='history'
+                alias df='df -h'
+                alias du='du -sh'
+                alias free='free -h'
+                alias ps='ps aux'
+                alias top='htop 2>/dev/null || top'
+                alias ports='ss -tulnp'
+                alias myip='curl -s ifconfig.me 2>/dev/null || echo "No network"'
+
+                # ── History ──
+                HISTSIZE=2000
+                HISTFILESIZE=4000
+                HISTCONTROL=ignoredups:erasedups
+                shopt -s histappend
+
+                # ── Grep colours ──
+                alias grep='grep --color=auto'
+                alias egrep='egrep --color=auto'
+                alias fgrep='fgrep --color=auto'
+
+                # ── Better diffs ──
+                alias diff='diff --color=auto'
+
+                # ── Safety ──
+                alias rm='rm -i'
+                alias cp='cp -i'
+                alias mv='mv -i'
+
+                # ── Enable bash completion if available ──
+                if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
+                    . /etc/bash_completion
+                fi
+            """.trimIndent() + "\n")
+
+            // ── 2. .bash_profile (login shells) ──────────────────────────────────────
+            val bashProfile = File(rootDir, ".bash_profile")
+            bashProfile.writeText("""
+                # ~/.bash_profile — login shell entry point
+                [ -f ~/.bashrc ] && source ~/.bashrc
+                [ -f ~/.profile ] && source ~/.profile
+            """.trimIndent() + "\n")
+
+            // ── 3. /etc/profile.d/arocode.sh (system-wide; sourced by /etc/profile) ──
+            val profileD = File(etcDir, "profile.d").apply { mkdirs() }
+            val sysProfile = File(profileD, "arocode.sh")
+            sysProfile.writeText("""
+                #!/bin/sh
+                # AroCode Ubuntu — system-wide environment (profile.d)
+                export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
+                export LANG="C.UTF-8"
+                export LC_ALL="C.UTF-8"
+                export TERM="xterm-256color"
+                export COLORTERM="truecolor"
+                export PYTHONUNBUFFERED=1
+                export PYTHONIOENCODING=utf-8
+                unset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT \
+                      ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT
+            """.trimIndent() + "\n")
+            sysProfile.setExecutable(true, false)
+
+            // ── 4. /etc/environment (non-login, non-interactive path/locale) ─────────
+            File(etcDir, "environment").writeText(
+                "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin\"\n" +
+                "LANG=\"C.UTF-8\"\n" +
+                "LC_ALL=\"C.UTF-8\"\n"
+            )
+
+            // ── 5. pip.conf — no cache, no root warning, allow user-install ──────────
+            val pipDir = File(rootDir, ".pip").apply { mkdirs() }
+            File(pipDir, "pip.conf").writeText("""
+                [global]
+                no-cache-dir = true
+                disable-pip-version-check = true
+                break-system-packages = true
+                timeout = 60
+                [install]
+                user = false
+            """.trimIndent() + "\n")
+
+            // Also write system-level pip.conf
+            val etcPipDir = File(etcDir, "pip").apply { mkdirs() }
+            File(etcPipDir, "pip.conf").writeText("""
+                [global]
+                no-cache-dir = true
+                disable-pip-version-check = true
+                break-system-packages = true
+                timeout = 60
+            """.trimIndent() + "\n")
+
+            // ── 6. nano config — sane defaults with syntax highlighting ──────────────
+            val nanorc = File(rootDir, ".nanorc")
+            nanorc.writeText("""
+                set smooth
+                set autoindent
+                set softwrap
+                set tabsize 4
+                set tabstospaces
+                set linenumbers
+                set mouse
+                set constantshow
+                set historylog
+                # Include syntax files if available
+                include "/usr/share/nano/*.nanorc"
+            """.trimIndent() + "\n")
+
+            // ── 7. .inputrc — disable bracketed-paste artifacts, VI mode optional ────
+            val inputrc = File(rootDir, ".inputrc")
+            if (!inputrc.exists() || inputrc.readText().isBlank()) {
+                inputrc.writeText("""
+                    set enable-bracketed-paste off
+                    set bell-style none
+                    set completion-ignore-case on
+                    set show-all-if-ambiguous on
+                    "\e[A": history-search-backward
+                    "\e[B": history-search-forward
+                """.trimIndent() + "\n")
+            }
+
+            // ── 8. /etc/inputrc — system-wide readline ───────────────────────────────
+            val etcInputrc = File(etcDir, "inputrc")
+            if (!etcInputrc.exists() || etcInputrc.readText().isBlank()) {
+                etcInputrc.writeText("""
+                    set enable-bracketed-paste off
+                    set bell-style none
+                    set completion-ignore-case on
+                """.trimIndent() + "\n")
+            }
+
+            // ── 9. /etc/wgetrc — default wget options ─────────────────────────────────
+            File(etcDir, "wgetrc").writeText("""
+                # AroCode wget defaults
+                timeout = 60
+                tries = 3
+                continue = on
+                progress = bar:force
+            """.trimIndent() + "\n")
+
+            // ── 10. motd — Message of the Day ────────────────────────────────────────
+            val motd = File(etcDir, "motd")
+            motd.writeText(
+                "\n🐧 AroCode Ubuntu 22.04 LTS (ARM64) — Termux-Compatible Shell\n" +
+                "   Type 'help' or 'agy' to get started.\n\n"
+            )
+
+            // ── 11. /usr/local/bin/help — quick-start helper ──────────────────────────
+            val wrapperDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }
+            val helpCmd = File(wrapperDir, "help")
+            helpCmd.writeText("""
+                #!/bin/sh
+                echo ""
+                echo "╔═══════════════════════════════════════════════════╗"
+                echo "║  🐧 AroCode Ubuntu — Quick Reference              ║"
+                echo "╠═══════════════════════════════════════════════════╣"
+                echo "║  Package management:                               ║"
+                echo "║    apt update           → Update package lists     ║"
+                echo "║    apt install <pkg>    → Install a package        ║"
+                echo "║    apt remove <pkg>     → Remove a package         ║"
+                echo "║    apt search <term>    → Search packages          ║"
+                echo "╠═══════════════════════════════════════════════════╣"
+                echo "║  Python:                                           ║"
+                echo "║    python3 script.py    → Run a script             ║"
+                echo "║    pip install <pkg>    → Install Python package   ║"
+                echo "╠═══════════════════════════════════════════════════╣"
+                echo "║  Antigravity CLI:                                  ║"
+                echo "║    agy                  → Start AI coding session  ║"
+                echo "║    agy -p 'prompt'      → One-shot AI prompt       ║"
+                echo "╠═══════════════════════════════════════════════════╣"
+                echo "║  Server:                                           ║"
+                echo "║    python3 /storage/Download/server.py             ║"
+                echo "╚═══════════════════════════════════════════════════╝"
+                echo ""
+            """.trimIndent() + "\n")
+            helpCmd.setExecutable(true, false)
+
+            Log.i(TAG, "setupTermuxLikeEnvironment: complete")
+        } catch (e: Exception) {
+            Log.w(TAG, "setupTermuxLikeEnvironment failed: ${e.message}")
         }
     }
 }
