@@ -729,7 +729,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         val envBinary = if (File(rootfsDir, "usr/bin/env").exists()) "/usr/bin/env" else "/bin/env"
         val cmd = mutableListOf(
             proot.absolutePath,
-            "-v", "1",
+            "-v", "-1",
             "-r", rootfsPath,
             "-0", // Fake root ID
             "-l", // --link2symlink
@@ -751,6 +751,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         val envMap = HashMap<String, String>()
         // CRITICAL for Android: Disable seccomp accelerator because Android Zygote already
         // installed an irreversible seccomp filter on the app process.
+        envMap["PROOT_VERBOSE"] = "-1"
         envMap["PROOT_NO_SECCOMP"] = "1"
         envMap["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
         envMap["PROOT_TMP_DIR"] = prootTmp.absolutePath
@@ -834,6 +835,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         val cmd = mutableListOf(
             proot.absolutePath,
+            "-v", "-1",
             "-r", rootfsPath,
             "-0", // Fake root ID
             "--link2symlink",
@@ -862,6 +864,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             redirectErrorStream(true)
             val nativeDir = File(context.applicationInfo.nativeLibraryDir)
             val binDir = File(context.filesDir, "bin")
+            environment()["PROOT_VERBOSE"] = "-1"
             environment()["PROOT_NO_SECCOMP"] = "1"
             environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
             environment()["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
@@ -957,11 +960,6 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 IS_AUTHED=false
                 if [ -s "${'$'}AGY_TOKEN" ]; then
                     IS_AUTHED=true
-                fi
-
-                if [ "${'$'}IS_AUTHED" = "false" ]; then
-                    echo "🔑 Google OAuth: Tap Login to authenticate"
-                    exec "${'$'}AGY_REAL"
                 fi
 
                 exec "${'$'}AGY_REAL"

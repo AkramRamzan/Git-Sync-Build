@@ -126,12 +126,13 @@ fun WorkspaceScreen(
                     }
 
                     // Anti-Gravity Autonomous Agent (⚡)
-                    IconButton(onClick = { onChatOpen("antigravity") }) {
+                    IconButton(onClick = { onChatOpen("antigravity") }, modifier = Modifier.size(36.dp)) {
                         Icon(
                             Icons.Default.Bolt,
                             contentDescription = "Anti-Gravity Autonomous Agent",
                             tint = if (state.isGoogleSignedIn) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(17.dp)
                         )
                     }
 

@@ -305,7 +305,7 @@ object BashShellSession {
         if (context != null) appContext = context.applicationContext
         val ctx = context ?: appContext ?: return
         if (sessions.isEmpty()) {
-            val first = ShellSession(1, "1: server.py", scope)
+            val first = ShellSession(1, "1: Shell", scope)
             sessions.add(first)
             first.ensureJsInterface(ctx)
             activeSessionIndex = 0
