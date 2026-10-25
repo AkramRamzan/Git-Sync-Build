@@ -1,6 +1,7 @@
 package com.aro.code.terminal
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -9,16 +10,11 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.BufferedReader
-import java.io.BufferedWriter
 import java.io.File
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 
 /**
- * Individual terminal session representing one shell process (container or host).
+ * Individual terminal session backed by a real POSIX PTY (PtySession) and xterm.js.
  */
 class ShellSession(
     val id: Int,
@@ -27,149 +23,77 @@ class ShellSession(
 ) {
     var title by mutableStateOf(initialTitle)
     val logs = mutableStateListOf<String>()
-    var process: Process? = null
-    var writer: BufferedWriter? = null
     var isRunning by mutableStateOf(false)
     var isLinuxContainerActive by mutableStateOf(false)
     var cwd by mutableStateOf("/storage/emulated/0/Download")
+    var rows by mutableIntStateOf(24)
+    var cols by mutableIntStateOf(80)
+    var exitCode by mutableIntStateOf(-1)
 
-    fun start(context: Context) {
+    val ptySession = PtySession(id)
+    var jsInterface: XtermJsInterface? = null
+        private set
+
+    fun ensureJsInterface(context: Context): XtermJsInterface {
+        val existing = jsInterface
+        if (existing != null) return existing
+
+        val iface = XtermJsInterface(
+            context = context.applicationContext,
+            session = ptySession,
+            onReadyCalled = { r, c ->
+                rows = r
+                cols = c
+                if (!isRunning) {
+                    start(context, r, c)
+                } else {
+                    ptySession.resize(r, c)
+                }
+            },
+            onExitCalled = { code ->
+                exitCode = code
+                isRunning = false
+                addLog("[Session $id exited with code $code]")
+            }
+        )
+        jsInterface = iface
+        return iface
+    }
+
+    fun start(context: Context, initialRows: Int = 24, initialCols: Int = 80) {
         if (isRunning) return
+        rows = initialRows
+        cols = initialCols
+
         try {
-            logs.clear() // Clean slate: clear old logs so only current session details are displayed
-            val proc: Process
             if (LinuxSubsystem.isInstalled(context)) {
-                proc = LinuxSubsystem.spawnProotProcess(context)
+                val config = LinuxSubsystem.getProotLaunchConfig(context)
                 isLinuxContainerActive = true
-                val isAuth = LinuxSubsystem.isLoggedIn(context)
-                val model = LinuxSubsystem.getSelectedModel(context)
-                addLog("╔════════════════════════════════════════════════════════╗")
-                addLog("║  🤖 Aro Code — Termux Linux Environment                ║")
-                addLog("║  🟢 Container: Ubuntu 22.04 LTS (ARM64 GLIBC)          ║")
-                addLog("║  🔑 Google Auth: ${if (isAuth) "Connected (Active)" else "Login Required"}")
-                addLog("║  🧠 Model: $model")
-                addLog("╚════════════════════════════════════════════════════════╝")
+                cwd = "/root"
+
+                ptySession.start(config.cmd, config.envp, config.cwd, initialRows, initialCols)
+                isRunning = ptySession.isRunning
+                addLog("[Session $id: Ubuntu 22.04 LTS (ARM64 GLIBC) PTY started]")
             } else {
                 isLinuxContainerActive = false
-                val workingDirFile = File(cwd).let {
-                    if (it.exists() && it.isDirectory) it else File("/storage/emulated/0/Download")
-                }
-                if (!workingDirFile.exists()) workingDirFile.mkdirs()
-                cwd = workingDirFile.absolutePath
+                val workingDir = File("/storage/emulated/0/Download").apply { mkdirs() }
+                cwd = workingDir.absolutePath
 
-                val pb = ProcessBuilder("sh").apply {
-                    directory(workingDirFile)
-                    redirectErrorStream(true)
-                    environment()["PATH"] = "/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
-                    environment()["HOME"] = cwd
-                    environment()["TERM"] = "xterm-256color"
-                }
-                proc = pb.start()
-                addLog("╔════════════════════════════════════════════════════════╗")
-                addLog("║  ⚡ [Session $id] Host Terminal Started                 ║")
-                addLog("║  ⚠️ In-App Ubuntu Linux container install nahi hai!    ║")
-                addLog("║  👉 Niche '📦 Install Ubuntu' button dabayein.         ║")
-                addLog("╚════════════════════════════════════════════════════════╝")
-            }
+                val cmd = arrayOf("/system/bin/sh", "-l")
+                val envp = arrayOf(
+                    "PATH=/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin",
+                    "HOME=/storage/emulated/0/Download",
+                    "TERM=xterm-256color",
+                    "COLORTERM=truecolor",
+                    "LANG=C.UTF-8"
+                )
 
-            process = proc
-            isRunning = true
-            writer = BufferedWriter(OutputStreamWriter(proc.outputStream))
-
-            scope.launch {
-                val stream = proc.inputStream
-                val reader = InputStreamReader(stream, Charsets.UTF_8)
-                val buffer = CharArray(1024)
-                val lineBuffer = StringBuilder()
-                var lastWasCr = false
-                var isPartialFlush = false
-
-                // Track if we have already cleared once after login
-                var clearedAfterLogin = false
-
-                try {
-                    while (isActive) {
-                        val count = reader.read(buffer)
-                        if (count == -1) break
-
-                        val chunkStr = String(buffer, 0, count)
-
-                        // ── LOGIN SUCCESS: clear all previous output to start fresh ──
-                        if (!clearedAfterLogin && (
-                            chunkStr.contains("Antigravity CLI — Ready") ||
-                            chunkStr.contains("Google Account Connected") ||
-                            chunkStr.contains("Welcome to Antigravity CLI") ||
-                            chunkStr.contains("Choose your color scheme")
-                        )) {
-                            logs.clear()
-                            lineBuffer.clear()
-                            isPartialFlush = false
-                            clearedAfterLogin = true
-                            val model = LinuxSubsystem.getSelectedModel(context)
-                            addLog("╔════════════════════════════════════════════════════════╗")
-                            addLog("║  🤖 Google Antigravity CLI — Session Active            ║")
-                            addLog("║  🟢 Status: Connected (Google OAuth)                   ║")
-                            addLog("║  🧠 Model:  $model                                     ║")
-                            addLog("║  📁 Workdir: /storage/emulated/0/Download              ║")
-                            addLog("╚════════════════════════════════════════════════════════╝")
-                        }
-
-                        // Full-screen TUI clear detection (\u001B[2J, \u001B[3J, \u001Bc, or \u001B[H\u001B[2J)
-                        if (chunkStr.contains("\u001B[2J") || chunkStr.contains("\u001B[3J") || chunkStr.contains("\u001Bc") || chunkStr.contains("\u001B[H\u001B[2J")) {
-                            logs.clear()
-                            lineBuffer.clear()
-                            isPartialFlush = false
-                        }
-
-                        for (i in 0 until count) {
-                            val ch = buffer[i]
-                            if (ch == '\r') {
-                                if (lineBuffer.isNotEmpty()) {
-                                    val text = lineBuffer.toString().trimEnd()
-                                    if (text.isNotBlank()) {
-                                        updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
-                                    }
-                                    lineBuffer.clear()
-                                }
-                                lastWasCr = true
-                                isPartialFlush = false
-                            } else if (ch == '\n') {
-                                if (lineBuffer.isNotEmpty()) {
-                                    val text = lineBuffer.toString().trimEnd()
-                                    if (text.isNotBlank()) {
-                                        updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
-                                    }
-                                    lineBuffer.clear()
-                                }
-                                lastWasCr = false
-                                isPartialFlush = false
-                            } else {
-                                lineBuffer.append(ch)
-                            }
-                        }
-
-                        // Flush trailing prompt (e.g., "root@arocode:~# ") without clearing lineBuffer so long URLs aren't fragmented
-                        if (lineBuffer.isNotEmpty() && !reader.ready()) {
-                            val text = lineBuffer.toString().trimEnd()
-                            if (text.isNotBlank()) {
-                                updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
-                                isPartialFlush = true
-                            }
-                        }
-                    }
-                    if (lineBuffer.isNotEmpty()) {
-                        val text = lineBuffer.toString().trimEnd()
-                        if (text.isNotBlank()) {
-                            updateOrAddLog(text, replaceLast = lastWasCr || isPartialFlush)
-                        }
-                    }
-                } catch (_: Exception) {
-                } finally {
-                    isRunning = false
-                    addLog("[Session $id stopped]")
-                }
+                ptySession.start(cmd, envp, cwd, initialRows, initialCols)
+                isRunning = ptySession.isRunning
+                addLog("[Session $id: Host Terminal PTY started]")
             }
         } catch (e: Exception) {
+            Log.e("ShellSession", "Failed starting session $id", e)
             addLog("[Session $id error: ${e.message}]")
         }
     }
@@ -182,83 +106,67 @@ class ShellSession(
         }
 
         if (cmd == "clear" || cmd == "cls") {
-            logs.clear()
-            sendRaw("clear\n")
+            clear()
             return
         }
 
-        // Dynamically name tab after command (e.g., "server.py", "agy", "python")
         if (title.contains("Shell") || title.contains("Linux") || title.contains("Session")) {
             val shortName = cmd.substringBefore(" ").removePrefix("./").take(12)
-            if (shortName.isNotBlank()) {
-                title = "$id: $shortName"
-            }
+            if (shortName.isNotBlank()) title = "$id: $shortName"
         }
 
-        try {
-            if (!isLinuxContainerActive) {
-                addLog("aro@code$ $cmd")
-            }
-            writer?.write(cmd + "\n")
-            writer?.flush()
-        } catch (e: Exception) {
-            addLog("[Command error: ${e.message}]")
-        }
+        sendRaw(cmd + "\r")
     }
 
     fun sendCtrlC() {
-        try {
-            writer?.write("\u0003")
-            writer?.flush()
-            addLog("^C")
-        } catch (_: Exception) {}
+        sendRaw("\u0003")
     }
 
-    /**
-     * Send raw bytes directly to stdin without adding newline or echo.
-     * Used for TUI navigation: arrow keys, Enter, ESC, etc.
-     */
+    fun sendCtrlZ() {
+        sendRaw("\u001A")
+    }
+
+    fun sendCtrlD() {
+        sendRaw("\u0004")
+    }
+
     fun sendRaw(seq: String) {
-        try {
-            writer?.write(seq)
-            writer?.flush()
-        } catch (_: Exception) {}
+        ptySession.write(seq.toByteArray(Charsets.UTF_8))
     }
 
-    fun stop() {
-        try {
-            writer?.write("\u0003")
-            writer?.flush()
-            writer?.close()
-            process?.destroy()
-        } catch (_: Exception) {}
-        isRunning = false
-        process = null
-        writer = null
+    fun sendRawBytes(bytes: ByteArray) {
+        ptySession.write(bytes)
     }
 
-    private fun updateOrAddLog(line: String, replaceLast: Boolean) {
-        val stripped = stripAnsi(line).trimEnd()
-        if (stripped.isBlank() || isUselessNoise(stripped)) return
-        if (replaceLast && logs.isNotEmpty()) {
-            logs[logs.lastIndex] = stripped
-        } else {
-            addLog(stripped)
+    /** Sends bracketed paste so TUIs (vim, nano, bash, agy) receive text without mangling */
+    fun pasteText(text: String) {
+        val bracketed = "\u001B[200~$text\u001B[201~"
+        val bytes = bracketed.toByteArray(Charsets.UTF_8)
+        val chunkSize = 4096
+        for (i in 0 until bytes.size step chunkSize) {
+            val end = (i + chunkSize).coerceAtMost(bytes.size)
+            ptySession.write(bytes.copyOfRange(i, end))
         }
     }
 
-    private fun isUselessNoise(line: String): Boolean {
-        val t = line.trim()
-        return t == "💻" || t.matches(Regex("^\\[[?>][0-9;]*\\\$?[a-zA-Z0-9;]*$"))
+    fun resize(newRows: Int, newCols: Int) {
+        rows = newRows
+        cols = newCols
+        ptySession.resize(newRows, newCols)
     }
 
-    /** Strip ANSI/VT100 escape sequences and query artifacts so text and URLs are clean. */
-    private fun stripAnsi(text: String): String {
-        return text.replace(Regex("\u001B\\[[0-9;?><= !\"#\\$%&'()*+,-./]*[A-Za-z~@]"), "")   // CSI sequences
-                   .replace(Regex("\\[[?>][0-9;]*\\\$?[a-zA-Z0-9;]*"), "")                     // Stray query artifacts like [>q, [?2026$p
-                   .replace(Regex("\u001B[()][AB012]"), "")                                     // Charset designators
-                   .replace(Regex("\u001B[78DEZHMNO]"), "")                                     // Single-char ESC sequences
-                   .replace(Regex("\u001B\\][^\u0007]*(\u0007|\\\\)"), "")                         // OSC sequences
+    fun clear() {
+        jsInterface?.clear()
+        sendRaw("clear\r")
+    }
+
+    fun refocus() {
+        jsInterface?.refocus()
+    }
+
+    fun stop() {
+        ptySession.stop()
+        isRunning = false
     }
 
     fun addLog(line: String) {
@@ -297,10 +205,7 @@ object BashShellSession {
             if (file.exists() && file.isDirectory) {
                 session.cwd = file.absolutePath
                 if (session.isRunning) {
-                    runCatching {
-                        session.writer?.write("cd \"${session.cwd}\"\n")
-                        session.writer?.flush()
-                    }
+                    session.sendRaw("cd \"${session.cwd}\"\r")
                 }
             }
         }
@@ -312,7 +217,7 @@ object BashShellSession {
         if (sessions.isEmpty()) {
             val first = ShellSession(1, "1: server.py", scope)
             sessions.add(first)
-            first.start(ctx)
+            first.ensureJsInterface(ctx)
             activeSessionIndex = 0
         } else {
             activeSession?.let { if (!it.isRunning) it.start(ctx) }
@@ -326,7 +231,9 @@ object BashShellSession {
         val defaultTitle = "$nextId: Shell"
         val session = ShellSession(nextId, customTitle ?: defaultTitle, scope)
         sessions.add(session)
-        if (ctx != null) session.start(ctx)
+        if (ctx != null) {
+            session.ensureJsInterface(ctx)
+        }
         activeSessionIndex = sessions.lastIndex
         return session
     }
@@ -345,6 +252,7 @@ object BashShellSession {
     fun switchSession(index: Int) {
         if (index in sessions.indices) {
             activeSessionIndex = index
+            activeSession?.refocus()
         }
     }
 
@@ -359,13 +267,28 @@ object BashShellSession {
         activeSession?.sendCtrlC()
     }
 
+    fun sendCtrlZ() {
+        activeSession?.sendCtrlZ()
+    }
+
+    fun sendCtrlD() {
+        activeSession?.sendCtrlD()
+    }
+
     fun addLog(line: String) {
         activeSession?.addLog(line)
     }
 
-    /** Send raw escape sequence to active session's stdin (for TUI navigation). */
     fun sendRaw(seq: String) {
         activeSession?.sendRaw(seq)
+    }
+
+    fun pasteText(text: String) {
+        activeSession?.pasteText(text)
+    }
+
+    fun clear() {
+        activeSession?.clear()
     }
 
     fun installMiniLinux(context: Context) {
@@ -375,23 +298,23 @@ object BashShellSession {
 
         scope.launch {
             try {
-                activeSession?.logs?.clear()
-                activeSession?.addLog("🚀 Initializing Ubuntu Linux Installer (22.04 LTS ARM64)...")
+                activeSession?.clear()
+                activeSession?.sendRaw("echo '🚀 Initializing Ubuntu Linux Installer (22.04 LTS ARM64)...'\r")
                 val success = LinuxSubsystem.install(
                     context = context,
                     onLog = { msg ->
-                        activeSession?.addLog(msg)
+                        activeSession?.sendRaw("echo '[Installer] ${msg.replace("'", "")}'\r")
                         TermuxBridgeService.state.addLog("💻 $msg")
                     },
                     onProgress = { /* progress */ }
                 )
                 if (success) {
-                    activeSession?.addLog("✅ Ubuntu Linux Subsystem installed successfully! Starting session...")
+                    activeSession?.sendRaw("echo '✅ Ubuntu Linux Subsystem installed successfully! Restarting session...'\r")
                     stop()
                     kotlinx.coroutines.delay(500)
                     start(context)
                 } else {
-                    activeSession?.addLog("❌ Installation failed! Please check internet connection and try again.")
+                    activeSession?.sendRaw("echo '❌ Installation failed! Please check internet connection and try again.'\r")
                 }
             } finally {
                 isInstallingLinux = false

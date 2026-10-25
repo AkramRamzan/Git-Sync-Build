@@ -170,8 +170,11 @@ private fun MobileKeyBar(
     onKey: (String) -> Unit,
     onPaste: () -> Unit
 ) {
-    // Row 1 — Navigation & Control (Termux style with Arrow keys & Enter)
-    val navKeys = listOf("ESC", "TAB", "CTRL+C", "↑", "↓", "ENTER", "PASTE")
+    var isCtrlSticky by remember { mutableStateOf(false) }
+    var isAltSticky by remember { mutableStateOf(false) }
+
+    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, Enter)
+    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ENTER", "PASTE")
     // Row 2 — Shell & symbols
     val shellKeys = listOf("clear", "-", "/", "~", "|", "&&", "\"", "ls -la")
 
@@ -192,27 +195,53 @@ private fun MobileKeyBar(
         ) {
             navKeys.forEach { key ->
                 val isEnter = key == "ENTER"
-                val isArrow = key == "↑" || key == "↓"
+                val isArrow = key == "↑" || key == "↓" || key == "←" || key == "→"
                 val isCtrlC = key == "CTRL+C"
+                val isCtrlD = key == "CTRL+D"
+                val isCtrl = key == "CTRL"
+                val isAlt = key == "ALT"
                 val isPaste = key == "PASTE"
                 val isAccent = key == "ESC" || key == "TAB"
+                val isHighlighted = (isCtrl && isCtrlSticky) || (isAlt && isAltSticky)
 
                 Surface(
                     onClick = {
-                        if (isPaste) onPaste() else onKey(key)
+                        when (key) {
+                            "CTRL" -> isCtrlSticky = !isCtrlSticky
+                            "ALT"  -> isAltSticky = !isAltSticky
+                            "PASTE" -> onPaste()
+                            else -> {
+                                if (isCtrlSticky) {
+                                    isCtrlSticky = false
+                                    when (key) {
+                                        "CTRL+C" -> onKey("CTRL+C")
+                                        "CTRL+D" -> onKey("CTRL+D")
+                                        else -> onKey(key)
+                                    }
+                                } else if (isAltSticky) {
+                                    isAltSticky = false
+                                    onKey("\u001B$key")
+                                } else {
+                                    onKey(key)
+                                }
+                            }
+                        }
                     },
                     shape = RoundedCornerShape(6.dp),
                     color = when {
+                        isHighlighted -> Color(0xFF388BFD)
                         isEnter -> Color(0xFF238636)   // GitHub green
                         isArrow -> Color(0xFF1F6FEB)   // Termux / VS Code blue
-                        isCtrlC -> Color(0xFF4E1010)   // Red
+                        isCtrlC || isCtrlD -> Color(0xFF4E1010)   // Red
                         isPaste -> Color(0xFF382554)   // Purple
+                        isCtrl || isAlt -> Color(0xFF21262D)
                         isAccent -> Color(0xFF21262D)  // Dark slate
                         else -> Color(0xFF21262D)
                     },
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
                         when {
+                            isHighlighted -> Color(0xFF58A6FF)
                             isEnter -> Color(0xFF2EA043)
                             isArrow -> Color(0xFF388BFD)
                             isPaste -> Color(0xFF8957E5)
@@ -222,7 +251,7 @@ private fun MobileKeyBar(
                     modifier = Modifier.height(36.dp)
                 ) {
                     Box(
-                        Modifier.padding(horizontal = if (isEnter || isArrow) 14.dp else 10.dp),
+                        Modifier.padding(horizontal = if (isEnter || isArrow) 12.dp else 9.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -230,12 +259,13 @@ private fun MobileKeyBar(
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = if (isEnter || isArrow) 13.sp else 12.sp,
-                                fontWeight = if (isEnter || isArrow || isPaste) FontWeight.Bold else FontWeight.Medium
+                                fontWeight = if (isEnter || isArrow || isPaste || isHighlighted) FontWeight.Bold else FontWeight.Medium
                             ),
                             color = when {
+                                isHighlighted -> Color.White
                                 isEnter -> Color.White
                                 isArrow -> Color.White
-                                isCtrlC -> Color(0xFFFF7B72)
+                                isCtrlC || isCtrlD -> Color(0xFFFF7B72)
                                 isPaste -> Color(0xFFD2A8FF)
                                 isAccent -> Color(0xFF58A6FF)
                                 else -> Color(0xFFC9D1D9)
@@ -333,16 +363,12 @@ private fun BashShellTab(
     onSetupLinux: () -> Unit,
     isLinuxInstalled: Boolean
 ) {
-    var input by remember { mutableStateOf("") }
-    val history = remember { mutableStateListOf<String>() }
-    var historyIndex by remember { mutableIntStateOf(-1) }
     var showAgyPromptDialog by remember { mutableStateOf(false) }
     var agyPromptInput by remember { mutableStateOf("") }
     var showCommandsDialog by remember { mutableStateOf(false) }
     var showModelDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -740,43 +766,15 @@ private fun BashShellTab(
     val activeSession = BashShellSession.activeSession
     val shellLogs = activeSession?.logs ?: remember(logs) { logs.filter { it.startsWith("💻") } }
 
-    LaunchedEffect(shellLogs.size) {
-        if (shellLogs.isNotEmpty()) {
-            coroutineScope.launch { listState.animateScrollToItem(shellLogs.lastIndex) }
-        }
-    }
-
-    LaunchedEffect(input) {
-        if (input.isNotEmpty() && shellLogs.isNotEmpty()) {
-            listState.animateScrollToItem(shellLogs.lastIndex)
-        }
+    LaunchedEffect(Unit) {
+        BashShellSession.start(context)
     }
 
     val submitCommand: (String) -> Unit = { raw ->
         val trimmed = raw.trim()
         if (trimmed.isNotBlank()) {
-            val recent = shellLogs.takeLast(10).joinToString("\n")
-            val isAgyMenu = recent.contains("Select login method", ignoreCase = true) ||
-                            (recent.contains("Antigravity CLI", ignoreCase = true) && recent.contains("Google OAuth"))
-
-            if (isAgyMenu && (trimmed == "1" || trimmed.equals("Google OAuth", ignoreCase = true))) {
-                // User typed 1 or Google OAuth on agy menu -> select Google OAuth!
-                BashShellSession.sendRaw("\r")
-                input = ""
-            } else if (isAgyMenu && (trimmed == "2" || trimmed.contains("Cloud", ignoreCase = true))) {
-                // User typed 2 on agy menu -> move down + enter
-                BashShellSession.sendRaw("\u001B[B\r")
-                input = ""
-            } else {
-                if (history.isEmpty() || history.last() != trimmed) {
-                    history.add(trimmed)
-                }
-                historyIndex = -1
-                onSend(trimmed)
-                input = ""
-            }
+            onSend(trimmed)
         } else {
-            // Empty input: user pressed Send or Enter on blank field -> send raw \r
             BashShellSession.sendRaw("\r")
         }
     }
@@ -1127,27 +1125,23 @@ private fun BashShellTab(
             }
         }
 
-        // ── Main Terminal Viewport (Crisp Monospace, Clean output) ──────────
-        LazyColumn(
-            state = listState,
+        // ── Real Terminal Emulator Viewport (xterm.js + PTY) ──────────
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .background(Color(0xFF0D1117))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            items(shellLogs) { line ->
-                val cleanLine = line.removePrefix("💻 ")
-                if (cleanLine.isNotBlank()) {
-                    Text(
-                        text = cleanLine,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = logLineColor(cleanLine)
-                        )
-                    )
+            val session = activeSession
+            if (session != null) {
+                XtermView(
+                    session = session.ptySession,
+                    jsInterface = session.ensureJsInterface(context),
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No active terminal session", color = Color(0xFF8B949E))
                 }
             }
         }
@@ -1320,105 +1314,31 @@ private fun BashShellTab(
         MobileKeyBar(
             onKey = { key ->
                 when (key) {
-                    "CTRL+C" -> BashShellSession.sendCtrlC()
-                    "ESC"    -> BashShellSession.sendRaw("\u001B")
-                    "TAB"    -> {
-                        if (input.isNotBlank()) {
-                            // Send current input + TAB for shell autocomplete
-                            BashShellSession.sendRaw(input + "\t")
-                            input = ""
-                        } else {
-                            BashShellSession.sendRaw("\t")
-                        }
-                    }
-                    "↑" -> {
-                        // Send ANSI up-arrow — works for both TUI (agy menu navigation) and shell history
-                        BashShellSession.sendRaw("\u001B[A")
-                        // Also update history index for text input field
-                        if (history.isNotEmpty()) {
-                            historyIndex = (historyIndex + 1).coerceAtMost(history.lastIndex)
-                            input = history[history.lastIndex - historyIndex]
-                        }
-                    }
-                    "↓" -> {
-                        // Send ANSI down-arrow — works for both TUI (agy menu navigation) and shell history
-                        BashShellSession.sendRaw("\u001B[B")
-                        if (historyIndex > 0) {
-                            historyIndex--
-                            input = history[history.lastIndex - historyIndex]
-                        } else if (historyIndex == 0) {
-                            historyIndex = -1
-                            input = ""
-                        }
-                    }
-                    "ENTER"  -> submitCommand(input)
-                    "clear"  -> submitCommand("clear")
-                    "ls -la" -> submitCommand("ls -la")
-                    else     -> input += key
+                    "CTRL+C" -> { BashShellSession.sendCtrlC(); activeSession?.refocus() }
+                    "CTRL+D" -> { BashShellSession.sendCtrlD(); activeSession?.refocus() }
+                    "CTRL+Z" -> { BashShellSession.sendCtrlZ(); activeSession?.refocus() }
+                    "ESC"    -> { BashShellSession.sendRaw("\u001B"); activeSession?.refocus() }
+                    "TAB"    -> { BashShellSession.sendRaw("\t"); activeSession?.refocus() }
+                    "↑"      -> { BashShellSession.sendRaw("\u001B[A"); activeSession?.refocus() }
+                    "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
+                    "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
+                    "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
+                    "ENTER"  -> { BashShellSession.sendRaw("\r"); activeSession?.refocus() }
+                    "clear"  -> { BashShellSession.clear(); activeSession?.refocus() }
+                    "ls -la" -> { BashShellSession.sendCommand("ls -la"); activeSession?.refocus() }
+                    else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
                 }
             },
             onPaste = {
                 val clip = clipboardManager.getText()?.text
                 if (!clip.isNullOrBlank()) {
-                    input += clip
+                    activeSession?.pasteText(clip)
+                    activeSession?.refocus()
                 } else {
                     Toast.makeText(context, "Clipboard empty!", Toast.LENGTH_SHORT).show()
                 }
             }
         )
-
-        Divider(color = Color(0xFF333333))
-
-        // Command input row (VS Code prompt)
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF161B22))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val active = BashShellSession.activeSession
-            val promptText = if (active?.isLinuxContainerActive == true) {
-                "root@arocode ❯ "
-            } else {
-                "${File(active?.cwd ?: "/storage/emulated/0/Download").name.ifEmpty { "root" }} ❯ "
-            }
-            Text(
-                promptText,
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    color = if (active?.isLinuxContainerActive == true) Color(0xFF58A6FF) else Color(0xFF4CAF50),
-                    fontWeight = FontWeight.Bold
-                )
-            )
-            TextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color(0xFF4CAF50),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
-                placeholder = {
-                    Text("command (e.g. ls, python, pip)", color = Color(0xFF555555), fontSize = 11.sp)
-                },
-                keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { submitCommand(input) })
-            )
-            IconButton(
-                onClick = { submitCommand(input) }
-            ) {
-                Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF4CAF50))
-            }
-        }
     }
 }
 

@@ -674,6 +674,92 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         }
     }
 
+    data class ProotLaunchConfig(
+        val cmd: Array<String>,
+        val envp: Array<String>,
+        val cwd: String
+    )
+
+    /** Builds command & environment arrays for running PRoot inside a real native PTY */
+    fun getProotLaunchConfig(context: Context): ProotLaunchConfig {
+        val proot = getProotBinary(context)
+            ?: throw IllegalStateException("libproot.so not found in nativeLibraryDir!")
+
+        val rootfsDir = getRootfsDir(context)
+        val rootfsPath = rootfsDir.absolutePath
+
+        File(rootfsDir, "tmp").mkdirs()
+        File(rootfsDir, "root").mkdirs()
+        File(rootfsDir, "root/.local/bin").mkdirs()
+
+        fixGroupAndPasswd(rootfsDir)
+        deployServerPy(context)
+        setupAgyWrapper(rootfsDir)
+        setupAptWrapper(rootfsDir)
+
+        val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
+        val shell = if (File(rootfsDir, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
+
+        val bindings = mutableListOf(
+            "-b", "/dev",
+            "-b", "/proc",
+            "-b", "/sys"
+        )
+        val extStorage = File("/storage/emulated/0")
+        if (extStorage.exists()) {
+            bindings.add("-b")
+            bindings.add("/storage/emulated/0:/storage")
+            val download = File("/storage/emulated/0/Download")
+            if (download.exists()) {
+                bindings.add("-b")
+                bindings.add("/storage/emulated/0/Download:/root/Download")
+            }
+        }
+
+        val cmd = mutableListOf(
+            proot.absolutePath,
+            "-r", rootfsPath,
+            "-0", // Fake root ID
+            "--link2symlink",
+            "--kill-on-exit"
+        )
+        cmd.addAll(bindings)
+        // Login shell directly in native PTY — no python wrapper needed
+        cmd.addAll(listOf("-w", "/root", shell, "-l"))
+
+        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+        val binDir = File(context.filesDir, "bin")
+        val envMap = mutableMapOf<String, String>()
+        envMap["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
+
+        val loader = getProotLoader(context)
+        if (loader != null && loader.exists()) {
+            envMap["PROOT_LOADER"] = loader.absolutePath
+        }
+        val loader32Candidate = File(loader?.parentFile ?: nativeDir, "libproot_loader32.so")
+        if (loader32Candidate.exists()) {
+            envMap["PROOT_LOADER_32"] = loader32Candidate.absolutePath
+        }
+
+        envMap["PROOT_TMP_DIR"] = prootTmp.absolutePath
+        envMap["PROOT_NO_SECCOMP"] = "1"
+        envMap["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
+        envMap["TMPDIR"] = prootTmp.absolutePath
+        envMap["TEMP"] = prootTmp.absolutePath
+        envMap["TMP"] = prootTmp.absolutePath
+        envMap["TERM"] = "xterm-256color"
+        envMap["COLORTERM"] = "truecolor"
+        envMap["HOME"] = "/root"
+        envMap["USER"] = "root"
+        envMap["PATH"] = "/usr/local/bin:/usr/bin:/root/.local/bin:/bin:/sbin:/usr/sbin"
+        envMap["LANG"] = "C.UTF-8"
+        envMap["PYTHONUNBUFFERED"] = "1"
+        envMap["PYTHONIOENCODING"] = "utf-8"
+
+        val envp = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
+        return ProotLaunchConfig(cmd.toTypedArray(), envp, "/root")
+    }
+
     /** Spawns the Linux container process */
     fun spawnProotProcess(context: Context): Process {
         val proot = getProotBinary(context)
@@ -696,12 +782,6 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         // Deploy smart agy & apt wrappers so commands give clear feedback
         setupAgyWrapper(rootfsDir)
         setupAptWrapper(rootfsDir)
-
-        // Ensure .bashrc has 2000 column terminal width so URLs never line-wrap
-        val bashrc = File(rootfsDir, "root/.bashrc")
-        if (bashrc.exists() && !bashrc.readText().contains("stty cols 2000")) {
-            bashrc.appendText("\nstty cols 2000 rows 50 2>/dev/null\nexport COLUMNS=2000\nexport LINES=50\n")
-        }
 
         // Host temporary directory for PRoot internal sockets & memory files
         val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }

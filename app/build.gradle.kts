@@ -34,6 +34,13 @@ android {
         }
     }
 
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     signingConfigs {
         create("release") {
             // Populated from environment / CI secrets via gradle.properties
