@@ -723,6 +723,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             }
         }
 
+        val envBinary = if (File(rootfsDir, "usr/bin/env").exists()) "/usr/bin/env" else "/bin/env"
         val cmd = mutableListOf(
             proot.absolutePath,
             "-v", "1",
@@ -733,8 +734,13 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         )
         cmd.addAll(bindings)
 
+        // Pass GLIBC_TUNABLES=glibc.pthread.rseq=0 explicitly through /usr/bin/env so that
+        // glibc's dynamic linker reads it BEFORE making the rseq() syscall.
+        // Android Zygote seccomp blocks rseq() → Signal 31 (SIGSYS) → exit code 255.
+        // Disabling rseq here prevents glibc from ever issuing that syscall.
         cmd.addAll(listOf(
             "-w", "/root",
+            envBinary, "GLIBC_TUNABLES=glibc.pthread.rseq=0",
             shell, "-l"
         ))
 
