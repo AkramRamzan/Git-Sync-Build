@@ -65,7 +65,11 @@ class ShellSession(
                     environment()["TERM"] = "xterm-256color"
                 }
                 proc = pb.start()
-                addLog("⚡ [Session $id] Host Terminal Started")
+                addLog("╔════════════════════════════════════════════════════════╗")
+                addLog("║  ⚡ [Session $id] Host Terminal Started                 ║")
+                addLog("║  ⚠️ In-App Ubuntu Linux container install nahi hai!    ║")
+                addLog("║  👉 Niche '📦 Install Ubuntu' button dabayein.         ║")
+                addLog("╚════════════════════════════════════════════════════════╝")
             }
 
             process = proc
@@ -372,16 +376,23 @@ object BashShellSession {
 
         scope.launch {
             try {
-                TermuxBridgeService.state.addLog("💻 🚀 Initializing Ubuntu Linux Installer...")
+                activeSession?.logs?.clear()
+                activeSession?.addLog("🚀 Initializing Ubuntu Linux Installer (22.04 LTS ARM64)...")
                 val success = LinuxSubsystem.install(
                     context = context,
-                    onLog = { TermuxBridgeService.state.addLog("💻 $it") },
+                    onLog = { msg ->
+                        activeSession?.addLog(msg)
+                        TermuxBridgeService.state.addLog("💻 $msg")
+                    },
                     onProgress = { /* progress */ }
                 )
                 if (success) {
+                    activeSession?.addLog("✅ Ubuntu Linux Subsystem installed successfully! Starting session...")
                     stop()
-                    kotlinx.coroutines.delay(300)
+                    kotlinx.coroutines.delay(500)
                     start(context)
+                } else {
+                    activeSession?.addLog("❌ Installation failed! Please check internet connection and try again.")
                 }
             } finally {
                 isInstallingLinux = false

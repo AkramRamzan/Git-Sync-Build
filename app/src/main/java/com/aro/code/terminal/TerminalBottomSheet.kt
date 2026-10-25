@@ -541,6 +541,21 @@ private fun BashShellTab(
                         ) {
                             Text("🧹 clear", color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                         }
+                        Surface(
+                            onClick = {
+                                onSetupLinux()
+                                showCommandsDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF6E40C9)
+                        ) {
+                            Text(
+                                if (isLinuxInstalled) "🔄 Reinstall Ubuntu" else "📦 Install Ubuntu",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                 }
             },
@@ -691,20 +706,23 @@ private fun BashShellTab(
                         }
                     }
 
-                    if (isLinuxInstalled) {
-                        Surface(
-                            onClick = {
-                                onSetupLinux()
-                                showSettingsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("🔄", fontSize = 16.sp)
-                                Text("Reinstall Ubuntu Container", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                            }
+                    Surface(
+                        onClick = {
+                            onSetupLinux()
+                            showSettingsDialog = false
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isLinuxInstalled) Color(0xFF21262D) else Color(0xFF6E40C9),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(if (isLinuxInstalled) "🔄" else "📦", fontSize = 16.sp)
+                            Text(
+                                if (isLinuxInstalled) "Reinstall Ubuntu Linux Container" else "Install In-App Ubuntu Linux Subsystem (22.04 LTS)",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (!isLinuxInstalled) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }
@@ -829,6 +847,48 @@ private fun BashShellTab(
                         modifier = Modifier.size(14.dp)
                     )
                     Text("+ New Session", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                }
+            }
+        }
+
+        // ── In-App Ubuntu Linux Subsystem Installation Banner (When not installed) ──
+        if (!isLinuxInstalled) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = Color(0xFF6E40C9),
+                shape = RoundedCornerShape(8.dp),
+                onClick = onSetupLinux
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "📦 In-App Ubuntu Linux Subsystem",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "Ubuntu 22.04 LTS (Git, Python3, Pip, agy CLI) install karein",
+                            color = Color(0xFFE1D5F5),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Button(
+                        onClick = onSetupLinux,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("📥 Install", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -1157,6 +1217,43 @@ private fun BashShellTab(
                 ) {
                     Text("⚙️", fontSize = 12.sp)
                     Text("Settings", color = Color(0xFF3FB950), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // 📦 Install Ubuntu (if not installed)
+            if (!isLinuxInstalled) {
+                Surface(
+                    onClick = onSetupLinux,
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF6E40C9)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("📦", fontSize = 11.sp)
+                        Text("Install Ubuntu", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else {
+                // 🚀 Run server.py (when installed)
+                Surface(
+                    onClick = {
+                        LinuxSubsystem.deployServerPy(context)
+                        onSend("python3 /storage/Download/server.py")
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF238636)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("🚀", fontSize = 11.sp)
+                        Text("server.py", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
 
