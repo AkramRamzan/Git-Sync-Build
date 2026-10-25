@@ -279,11 +279,7 @@ object LinuxSubsystem {
             val apkPath = context.applicationInfo.sourceDir
             if (apkPath != null && File(apkPath).exists()) {
                 java.util.zip.ZipFile(apkPath).use { zip ->
-                    val libsToExtract = listOf(
-                        "libproot.so",
-                        "libtalloc.so",
-                        "libandroid-shmem.so"
-                    )
+                    val libsToExtract = listOf("libproot.so")
                     for (libName in libsToExtract) {
                         val candidateEntries = listOf(
                             "lib/arm64-v8a/$libName",
@@ -737,6 +733,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "-r", rootfsPath,
             "-0", // Fake root ID
             "-l", // --link2symlink
+            "-L", // Correct symlink sizes
+            "--sysvipc", // System V IPC support
+            "-k", "6.17.0-PRoot-Distro", // Override kernel release for modern glibc compatibility
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
@@ -768,15 +767,13 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         // Disabling rseq via GLIBC_TUNABLES prevents glibc from issuing the rseq() syscall.
         envMap["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
 
-        // Ensure Bionic dynamic linker can find libtalloc.so and libandroid-shmem.so
-        envMap["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
-
         // Host system paths for Bionic kernel/linker
         envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
         envMap["ANDROID_DATA"] = System.getenv("ANDROID_DATA") ?: "/data"
 
-        // Strip any dangerous host environment variables
+        // Strip any dangerous host environment variables (static binary needs no LD_LIBRARY_PATH)
         envMap.remove("LD_PRELOAD")
+        envMap.remove("LD_LIBRARY_PATH")
         // CRITICAL: Ensure loader is NOT set! Termux PRoot's loader has fixed VA 0x5400000000
         // which collides with Android ART memory space causing SIGSEGV (code 139).
         // Without PROOT_LOADER, PRoot runs cleanly via standard ptrace with zero crashes!
@@ -840,6 +837,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "-r", rootfsPath,
             "-0", // Fake root ID
             "--link2symlink",
+            "-L",
+            "--sysvipc",
+            "-k", "6.17.0-PRoot-Distro",
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
@@ -862,7 +862,6 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             redirectErrorStream(true)
             val nativeDir = File(context.applicationInfo.nativeLibraryDir)
             val binDir = File(context.filesDir, "bin")
-            environment()["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
             environment()["PROOT_NO_SECCOMP"] = "1"
             environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
             environment()["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
@@ -881,6 +880,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             environment().remove("ANDROID_I18N_ROOT")
             environment().remove("ANDROID_TZDATA_ROOT")
             environment().remove("LD_PRELOAD")
+            environment().remove("LD_LIBRARY_PATH")
             environment().remove("PROOT_LOADER")
             environment().remove("PROOT_LOADER_32")
 
