@@ -56,9 +56,6 @@ class XtermJsInterface(
         session.onExit = { code ->
             scope.launch(Dispatchers.Main) {
                 onExitCalled(code)
-                // Show exit message in the terminal itself
-                val msg = "\r\n\r\n[Process exited with code $code — tap Restart to reopen]\r\n"
-                sendOutputToJs(msg.toByteArray(Charsets.UTF_8))
             }
         }
     }

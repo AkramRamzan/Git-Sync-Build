@@ -960,26 +960,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 fi
 
                 if [ "${'$'}IS_AUTHED" = "false" ]; then
-                    echo ""
-                    echo "╔═════════════════════════════════════════════════════╗"
-                    echo "║       🤖 Google Antigravity CLI                     ║"
-                    echo "║       ⚠️  Google Account se Login Nahi Hai           ║"
-                    echo "╚═════════════════════════════════════════════════════╝"
-                    echo "🔗 Google OAuth shuru ho raha hai..."
-                    echo "👉 '1-Tap Google Login' button dabayein"
-                    echo "👉 Login karne ke baad authorization code yahan paste karein"
-                    echo ""
+                    echo "🔑 Google OAuth: Tap Login to authenticate"
                     exec "${'$'}AGY_REAL"
                 fi
 
-                # Clean screen upon login — display only current session info
-                clear 2>/dev/null || printf "\033[2J\033[H"
-                echo "╔═════════════════════════════════════════════════════╗"
-                echo "║          🤖 Google Antigravity CLI                  ║"
-                echo "║  🟢 Session: Active    🔑 Auth: Connected           ║"
-                echo "║  🧠 Model: $(grep -o '"model"[^,]*' ~/.gemini/antigravity-cli/settings.json 2>/dev/null | cut -d'"' -f4 || echo 'Gemini 3.8 Flash (High)')"
-                echo "╚═════════════════════════════════════════════════════╝"
-                echo ""
                 exec "${'$'}AGY_REAL"
             """.trimIndent()
             wrapper.writeText(script)
@@ -1381,12 +1365,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 progress = bar:force
             """.trimIndent() + "\n")
 
-            // ── 10. motd — Message of the Day ────────────────────────────────────────
+            // ── 10. motd — Clean (no watermark) ─────────────────────────────────────
             val motd = File(etcDir, "motd")
-            motd.writeText(
-                "\n🐧 AroCode Ubuntu 22.04 LTS (ARM64) — Termux-Compatible Shell\n" +
-                "   Type 'help' or 'agy' to get started.\n\n"
-            )
+            motd.writeText("")
 
             // ── 11. /usr/local/bin/help — quick-start helper ──────────────────────────
             val wrapperDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }

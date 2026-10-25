@@ -130,7 +130,7 @@ private fun ControlButtons(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text("📲 Termux", style = TextStyle(fontSize = 8.5.sp, color = Color.White))
+                Icon(Icons.Default.PhoneAndroid, contentDescription = "Termux", tint = Color.White, modifier = Modifier.size(12.dp))
             }
         }
 
@@ -239,10 +239,10 @@ private fun MobileKeyBar(
     var isCtrlSticky by remember { mutableStateOf(false) }
     var isAltSticky by remember { mutableStateOf(false) }
 
-    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, SPACE, Enter, PASTE, and + button at very end)
-    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "SPACE", "ENTER", "PASTE", "+")
+    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT)
+    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→")
     // Row 2 — Shell & symbols
-    val shellKeys = listOf("clear", "-", "/", "~", "|", "&&", "\"", "ls -la")
+    val shellKeys = listOf("clear", "-", "/", "~", "|", "&&", "\"")
 
     Column(
         Modifier
@@ -260,15 +260,11 @@ private fun MobileKeyBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             navKeys.forEach { key ->
-                val isEnter = key == "ENTER"
-                val isSpace = key == "SPACE"
                 val isArrow = key == "↑" || key == "↓" || key == "←" || key == "→"
                 val isCtrlC = key == "CTRL+C"
                 val isCtrlD = key == "CTRL+D"
                 val isCtrl = key == "CTRL"
                 val isAlt = key == "ALT"
-                val isPaste = key == "PASTE"
-                val isPlus = key == "+"
                 val isAccent = key == "ESC" || key == "TAB"
                 val isHighlighted = (isCtrl && isCtrlSticky) || (isAlt && isAltSticky)
 
@@ -277,8 +273,6 @@ private fun MobileKeyBar(
                         when (key) {
                             "CTRL" -> isCtrlSticky = !isCtrlSticky
                             "ALT"  -> isAltSticky = !isAltSticky
-                            "PASTE" -> onPaste()
-                            "+" -> onNewSession()
                             else -> {
                                 if (isCtrlSticky) {
                                     isCtrlSticky = false
@@ -299,12 +293,8 @@ private fun MobileKeyBar(
                     shape = RoundedCornerShape(5.dp),
                     color = when {
                         isHighlighted -> Color(0xFF388BFD)
-                        isPlus -> Color(0xFF238636)    // Termux green for add session
-                        isEnter -> Color(0xFF238636)   // GitHub green
-                        isSpace -> Color(0xFF1F6FEB)   // Crisp blue for space select
-                        isArrow -> Color(0xFF1F6FEB)   // Termux / VS Code blue
-                        isCtrlC || isCtrlD -> Color(0xFF4E1010)   // Red
-                        isPaste -> Color(0xFF382554)   // Purple
+                        isArrow -> Color(0xFF1F6FEB)
+                        isCtrlC || isCtrlD -> Color(0xFF4E1010)
                         isCtrl || isAlt -> Color(0xFF21262D)
                         isAccent -> Color(0xFF21262D)
                         else -> Color(0xFF21262D)
@@ -313,31 +303,26 @@ private fun MobileKeyBar(
                         1.dp,
                         when {
                             isHighlighted -> Color(0xFF58A6FF)
-                            isPlus -> Color(0xFF2EA043)
-                            isEnter -> Color(0xFF2EA043)
-                            isSpace -> Color(0xFF388BFD)
                             isArrow -> Color(0xFF388BFD)
-                            isPaste -> Color(0xFF8957E5)
                             else -> Color(0xFF30363D)
                         }
                     ),
                     modifier = Modifier.height(25.dp)
                 ) {
                     Box(
-                        Modifier.padding(horizontal = if (isEnter || isSpace) 8.dp else if (isPlus) 7.dp else 5.dp),
+                        Modifier.padding(horizontal = 5.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isEnter) "⏎ ENTER" else if (isSpace) "␣ SPACE" else if (isPlus) "＋" else key,
+                            text = key,
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = if (isPlus) 11.sp else 9.sp,
-                                fontWeight = if (isEnter || isSpace || isArrow || isPaste || isHighlighted || isPlus) FontWeight.Bold else FontWeight.Medium
+                                fontSize = 9.sp,
+                                fontWeight = if (isArrow || isHighlighted) FontWeight.Bold else FontWeight.Medium
                             ),
                             color = when {
-                                isHighlighted || isEnter || isSpace || isArrow || isPlus -> Color.White
+                                isHighlighted || isArrow -> Color.White
                                 isCtrlC || isCtrlD -> Color(0xFFFF7B72)
-                                isPaste -> Color(0xFFD2A8FF)
                                 isAccent -> Color(0xFF58A6FF)
                                 else -> Color(0xFFC9D1D9)
                             }
@@ -1359,10 +1344,7 @@ private fun BashShellTab(
                         "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
                         "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
                         "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
-                        "SPACE"  -> { BashShellSession.sendRaw(" "); activeSession?.refocus() }
-                        "ENTER"  -> { BashShellSession.sendRaw("\r"); activeSession?.refocus() }
                         "clear"  -> { BashShellSession.clear(); activeSession?.refocus() }
-                        "ls -la" -> { BashShellSession.sendCommand("ls -la"); activeSession?.refocus() }
                         else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
                     }
                 },

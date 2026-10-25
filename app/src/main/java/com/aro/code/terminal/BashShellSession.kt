@@ -69,13 +69,7 @@ class ShellSession(
             onExitCalled = { code ->
                 exitCode = code
                 isRunning = false
-                val reason = when (code) {
-                    139 -> "Segmentation fault (code 139)"
-                    127 -> "Command not found (code 127)"
-                    0 -> "Finished (code 0)"
-                    else -> "code $code"
-                }
-                addLog("[Session $id exited: $reason]")
+                Log.d("ShellSession", "Session $id exited with code $code")
             }
         )
         jsInterface = iface
@@ -95,7 +89,6 @@ class ShellSession(
 
                 ptySession.start(config.cmd, config.envp, config.cwd, initialRows, initialCols)
                 isRunning = ptySession.isRunning
-                addLog("[Session $id: Ubuntu 22.04 LTS (ARM64 GLIBC) PTY started]")
             } else {
                 isLinuxContainerActive = false
                 val workingDir = File("/storage/emulated/0/Download").apply { mkdirs() }
@@ -114,7 +107,6 @@ class ShellSession(
 
                 ptySession.start(cmd, envp, cwd, initialRows, initialCols)
                 isRunning = ptySession.isRunning
-                addLog("[Session $id: Host Terminal PTY started]")
             }
         } catch (e: Exception) {
             Log.e("ShellSession", "Failed starting session $id", e)
@@ -146,7 +138,6 @@ class ShellSession(
 
         ptySession.start(cmd, envp, cwd, rows, cols)
         isRunning = ptySession.isRunning
-        addLog("[Session $id: Host Terminal PTY started]")
     }
 
     fun sendCommand(rawCmd: String) {

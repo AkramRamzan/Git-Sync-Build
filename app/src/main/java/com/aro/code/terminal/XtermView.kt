@@ -82,13 +82,18 @@ fun XtermView(
         }
     }
 
+    // Stable refresh: only refresh when refreshTrigger explicitly changes, not on every recomposition
+    LaunchedEffect(refreshTrigger) {
+        if (refreshTrigger > 0) {
+            jsInterface.refresh()
+        }
+    }
+
     AndroidView(
         factory = { webView },
         modifier = modifier,
-        update = { wv ->
-            wv.onResume()
-            wv.invalidate()
-            jsInterface.refresh()
+        update = {
+            // Stable: no continuous invalidate/refresh in update block to eliminate blinking
         }
     )
 }
