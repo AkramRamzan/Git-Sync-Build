@@ -59,6 +59,14 @@ static char** toStringArray(JNIEnv *env, jobjectArray arr, int *outLen) {
     return result;
 }
 
+static void freeStringArray(char **arr) {
+    if (!arr) return;
+    for (int i = 0; arr[i] != NULL; i++) {
+        free(arr[i]);
+    }
+    free(arr);
+}
+
 /* ── Manual forkpty for Android API 26/27 compatibility ── */
 static pid_t my_forkpty(int *masterFd, int rows, int cols) {
     /* Open PTY master */
@@ -72,12 +80,16 @@ static pid_t my_forkpty(int *masterFd, int rows, int cols) {
         close(master);
         return -1;
     }
-    char *slaveName = ptsname(master);
-    if (!slaveName) {
+
+    char slaveName[128];
+    char *p = ptsname(master);
+    if (!p) {
         LOGE("ptsname failed: %s", strerror(errno));
         close(master);
         return -1;
     }
+    strncpy(slaveName, p, sizeof(slaveName) - 1);
+    slaveName[sizeof(slaveName) - 1] = '\0';
 
     /* Set initial window size on master before fork */
     struct winsize ws = { .ws_row = (unsigned short)rows,
@@ -93,19 +105,17 @@ static pid_t my_forkpty(int *masterFd, int rows, int cols) {
     }
 
     if (pid == 0) {
-        /* ── Child process ── */
+        /* ── Child process (ONLY async-signal-safe calls; NO JNI!) ── */
         close(master);
 
         /* New session so we become process group leader */
         if (setsid() < 0) {
-            LOGE("setsid failed: %s", strerror(errno));
             _exit(1);
         }
 
         /* Open slave end */
         int slave = open(slaveName, O_RDWR);
         if (slave < 0) {
-            LOGE("open slave '%s' failed: %s", slaveName, strerror(errno));
             _exit(1);
         }
 
@@ -121,7 +131,6 @@ static pid_t my_forkpty(int *masterFd, int rows, int cols) {
         dup2(slave, STDERR_FILENO);
         if (slave > STDERR_FILENO) close(slave);
 
-        /* Child returns 0; caller (in Kotlin via JNI) will exec the process */
         return 0;
     }
 
@@ -146,33 +155,82 @@ Java_com_aro_code_terminal_PtyBridge_forkAndExec(
         jstring jcwd, jint rows, jint cols)
 {
     (void)clazz;
-    int masterFd = -1;
-    pid_t pid = my_forkpty(&masterFd, (int)rows, (int)cols);
-    if (pid < 0) return NULL;
 
-    if (pid == 0) {
-        /* ── Child: exec the target process ── */
-        int cmdLen = 0, envLen = 0;
-        char **cmd  = toStringArray(env, jcmd,  &cmdLen);
-        char **envp = toStringArray(env, jenvp, &envLen);
-
-        const char *cwd = jcwd ? (*env)->GetStringUTFChars(env, jcwd, NULL) : NULL;
-        if (cwd && chdir(cwd) < 0) {
-            /* non-fatal — container may not have the dir yet */
-        }
-
-        if (execve(cmd[0], cmd, envp) < 0) {
-            /* Write error to stderr (now the slave PTY) */
-            char buf[256];
-            snprintf(buf, sizeof(buf), "\r\nexecve failed: %s: %s\r\n", cmd[0], strerror(errno));
-            write(STDERR_FILENO, buf, strlen(buf));
-            _exit(127);
-        }
-        /* unreachable */
-        _exit(1);
+    /* 1. Extract all Java strings in the parent BEFORE forking.
+     * CRITICAL: Calling JNI methods in the child after fork() causes
+     * an instant SIGSEGV (exit code 139) because the ART VM runtime state is unsafe! */
+    int cmdLen = 0, envLen = 0;
+    char **cmd = toStringArray(env, jcmd, &cmdLen);
+    if (!cmd || cmdLen == 0 || !cmd[0]) {
+        LOGE("forkAndExec: cmd array is empty or null");
+        freeStringArray(cmd);
+        return NULL;
     }
 
-    /* Parent: return [masterFd, pid] */
+    char **envp = toStringArray(env, jenvp, &envLen);
+
+    char *cwd = NULL;
+    if (jcwd) {
+        const char *rawCwd = (*env)->GetStringUTFChars(env, jcwd, NULL);
+        if (rawCwd) {
+            cwd = strdup(rawCwd);
+            (*env)->ReleaseStringUTFChars(env, jcwd, rawCwd);
+        }
+    }
+
+    /* 2. Allocate PTY and fork process */
+    int masterFd = -1;
+    pid_t pid = my_forkpty(&masterFd, (int)rows, (int)cols);
+    if (pid < 0) {
+        freeStringArray(cmd);
+        freeStringArray(envp);
+        if (cwd) free(cwd);
+        return NULL;
+    }
+
+    if (pid == 0) {
+        /* ── Child: ONLY async-signal-safe calls here! ZERO JNI! ── */
+        if (cwd && chdir(cwd) < 0) {
+            /* non-fatal */
+        }
+
+        /* Clear signal masks inherited from Android zygote */
+        sigset_t set;
+        sigemptyset(&set);
+        sigprocmask(SIG_SETMASK, &set, NULL);
+
+        /* Reset all signals to default */
+        for (int sig = 1; sig < 32; sig++) {
+            if (sig != SIGKILL && sig != SIGSTOP) {
+                signal(sig, SIG_DFL);
+            }
+        }
+
+        /* Close leaked file descriptors above STDERR */
+        int maxFd = (int)sysconf(_SC_OPEN_MAX);
+        if (maxFd < 32) maxFd = 256;
+        for (int fd = 3; fd < maxFd; fd++) {
+            close(fd);
+        }
+
+        if (envp) {
+            execve(cmd[0], cmd, envp);
+        } else {
+            execv(cmd[0], cmd);
+        }
+
+        /* If exec failed, write error to stderr */
+        char buf[256];
+        snprintf(buf, sizeof(buf), "\r\nexecve failed: %s: %s\r\n", cmd[0], strerror(errno));
+        write(STDERR_FILENO, buf, strlen(buf));
+        _exit(127);
+    }
+
+    /* ── Parent: clean up C strings and return [masterFd, pid] ── */
+    freeStringArray(cmd);
+    freeStringArray(envp);
+    if (cwd) free(cwd);
+
     jintArray result = (*env)->NewIntArray(env, 2);
     if (!result) { close(masterFd); return NULL; }
     jint buf[2] = { masterFd, (jint)pid };
