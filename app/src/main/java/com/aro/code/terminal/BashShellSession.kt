@@ -53,7 +53,13 @@ class ShellSession(
             onExitCalled = { code ->
                 exitCode = code
                 isRunning = false
-                addLog("[Session $id exited with code $code]")
+                val reason = when (code) {
+                    139 -> "Segmentation fault (code 139)"
+                    127 -> "Command not found (code 127)"
+                    0 -> "Finished (code 0)"
+                    else -> "code $code"
+                }
+                addLog("[Session $id exited: $reason]")
             }
         )
         jsInterface = iface
@@ -98,6 +104,33 @@ class ShellSession(
             Log.e("ShellSession", "Failed starting session $id", e)
             addLog("[Session $id error: ${e.message}]")
         }
+    }
+
+    fun restart(context: Context) {
+        stop()
+        start(context, rows, cols)
+    }
+
+    fun startHost(context: Context) {
+        if (isRunning) stop()
+        isLinuxContainerActive = false
+        val workingDir = File("/storage/emulated/0/Download").apply { mkdirs() }
+        cwd = workingDir.absolutePath
+
+        val cmd = arrayOf("/system/bin/sh", "-i")
+        val envMap = HashMap(System.getenv())
+        envMap["PATH"] = "/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin"
+        envMap["HOME"] = workingDir.absolutePath
+        envMap["TERM"] = "xterm-256color"
+        envMap["COLORTERM"] = "truecolor"
+        envMap["LANG"] = "C.UTF-8"
+        if (!envMap.containsKey("ANDROID_ROOT")) envMap["ANDROID_ROOT"] = "/system"
+        if (!envMap.containsKey("ANDROID_DATA")) envMap["ANDROID_DATA"] = "/data"
+        val envp = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
+
+        ptySession.start(cmd, envp, cwd, rows, cols)
+        isRunning = ptySession.isRunning
+        addLog("[Session $id: Host Terminal PTY started]")
     }
 
     fun sendCommand(rawCmd: String) {

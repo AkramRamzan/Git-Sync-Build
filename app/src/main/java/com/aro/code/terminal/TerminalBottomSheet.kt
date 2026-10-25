@@ -847,6 +847,29 @@ private fun BashShellTab(
                     Text("+ New Session", style = MaterialTheme.typography.labelSmall, color = Color.White)
                 }
             }
+
+            // [Restart] Button if active session has exited
+            if (activeSession?.isRunning == false) {
+                Surface(
+                    onClick = { activeSession.restart(context) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF1F6FEB)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Restart Session",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text("Restart", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                    }
+                }
+            }
         }
 
         // ── In-App Ubuntu Linux Subsystem Installation Banner (When not installed) ──

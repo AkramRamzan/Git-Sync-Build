@@ -69,10 +69,13 @@ static void freeStringArray(char **arr) {
 
 /* ── Manual forkpty for Android API 26/27 compatibility ── */
 static pid_t my_forkpty(int *masterFd, int rows, int cols) {
-    /* Open PTY master */
-    int master = posix_openpt(O_RDWR | O_NOCTTY);
+    /* Open PTY master with O_CLOEXEC so master FD doesn't leak into children */
+    int master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
     if (master < 0) {
-        LOGE("posix_openpt failed: %s", strerror(errno));
+        master = open("/dev/ptmx", O_RDWR | O_CLOEXEC);
+    }
+    if (master < 0) {
+        LOGE("posix_openpt and /dev/ptmx failed: %s", strerror(errno));
         return -1;
     }
     if (grantpt(master) < 0 || unlockpt(master) < 0) {

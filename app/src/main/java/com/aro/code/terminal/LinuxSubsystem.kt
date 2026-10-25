@@ -703,7 +703,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         setupTermuxLikeEnvironment(rootfsDir)
 
         val prootTmp = File(context.cacheDir, "proot_tmp").apply { mkdirs() }
-        val shell = if (File(rootfsDir, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
+        val shell = if (File(rootfsDir, "bin/bash").exists() || File(rootfsDir, "usr/bin/bash").exists()) "/bin/bash" else "/bin/sh"
 
         val bindings = mutableListOf(
             "-b", "/dev",
@@ -729,15 +729,33 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
-        // Login shell directly in native PTY — no python wrapper needed
-        cmd.addAll(listOf("-w", "/root", shell, "-l"))
+
+        // Termux proot-distro standard: invoke via /usr/bin/env -i to construct a clean,
+        // sanitized environment for the container. This prevents host environment variables
+        // (especially LD_LIBRARY_PATH, LD_PRELOAD, ANDROID_ROOT, ANDROID_DATA) from leaking
+        // into the GLIBC guest container and causing SIGSEGV (code 139)!
+        val envBinary = if (File(rootfsDir, "usr/bin/env").exists()) "/usr/bin/env" else "/bin/env"
+        cmd.addAll(listOf(
+            "-w", "/root",
+            envBinary, "-i",
+            "HOME=/root",
+            "USER=root",
+            "TERM=xterm-256color",
+            "COLORTERM=truecolor",
+            "LANG=C.UTF-8",
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            shell, "-l"
+        ))
 
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val binDir = File(context.filesDir, "bin")
-        val envMap = HashMap(System.getenv())
+
+        // Environment for PRoot itself (Bionic process on Android host):
+        val envMap = HashMap<String, String>()
+        envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
+        envMap["ANDROID_DATA"] = System.getenv("ANDROID_DATA") ?: "/data"
+        envMap["PATH"] = System.getenv("PATH") ?: "/system/bin:/system/xbin"
         envMap["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
-        if (!envMap.containsKey("ANDROID_ROOT")) envMap["ANDROID_ROOT"] = "/system"
-        if (!envMap.containsKey("ANDROID_DATA")) envMap["ANDROID_DATA"] = "/data"
 
         val loader = getProotLoader(context)
         if (loader != null && loader.exists()) {
@@ -754,17 +772,15 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         envMap["TMPDIR"] = prootTmp.absolutePath
         envMap["TEMP"] = prootTmp.absolutePath
         envMap["TMP"] = prootTmp.absolutePath
-        envMap["TERM"] = "xterm-256color"
-        envMap["COLORTERM"] = "truecolor"
-        envMap["HOME"] = "/root"
-        envMap["USER"] = "root"
-        envMap["PATH"] = "/usr/local/bin:/usr/bin:/root/.local/bin:/bin:/sbin:/usr/sbin"
-        envMap["LANG"] = "C.UTF-8"
-        envMap["PYTHONUNBUFFERED"] = "1"
-        envMap["PYTHONIOENCODING"] = "utf-8"
+
+        // CRITICAL: Strip any dangerous host environment variables that cause SIGSEGV in PRoot/ptrace
+        envMap.remove("LD_PRELOAD")
+        envMap.remove("CLASSPATH")
+        envMap.remove("DEX2OATBOOTCLASSPATH")
+        envMap.remove("BOOTCLASSPATH")
 
         val envp = envMap.map { "${it.key}=${it.value}" }.toTypedArray()
-        return ProotLaunchConfig(cmd.toTypedArray(), envp, "/root")
+        return ProotLaunchConfig(cmd.toTypedArray(), envp, rootfsPath)
     }
 
     /** Spawns the Linux container process */
@@ -822,10 +838,17 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         cmd.addAll(bindings)
         // Termux-style Real PTY: use Python POSIX PTY so bash runs with real isatty=true, /dev/pts, and full terminal control
         val hasPython = File(rootfsDir, "usr/bin/python3").exists()
+        val envBinary = if (File(rootfsDir, "usr/bin/env").exists()) "/usr/bin/env" else "/bin/env"
         if (hasPython) {
-            cmd.addAll(listOf("-w", "/root", "/usr/bin/python3", "-c", "import pty; pty.spawn(['/bin/bash', '-i'])"))
+            cmd.addAll(listOf("-w", "/root", envBinary, "-i",
+                "HOME=/root", "USER=root", "TERM=xterm-256color", "COLORTERM=truecolor", "LANG=C.UTF-8",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "/usr/bin/python3", "-c", "import pty; pty.spawn(['/bin/bash', '-i'])"))
         } else {
-            cmd.addAll(listOf("-w", "/root", shell, "-i"))
+            cmd.addAll(listOf("-w", "/root", envBinary, "-i",
+                "HOME=/root", "USER=root", "TERM=xterm-256color", "COLORTERM=truecolor", "LANG=C.UTF-8",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                shell, "-i"))
         }
 
         val pb = ProcessBuilder(cmd).apply {
