@@ -274,28 +274,35 @@ object LinuxSubsystem {
             return internalCandidate
         }
 
-        // 3. Robust fallback: Extract libproot.so directly from installed APK
+        // 3. Robust fallback: Extract libproot.so + dependencies directly from installed APK
         try {
             val apkPath = context.applicationInfo.sourceDir
             if (apkPath != null && File(apkPath).exists()) {
                 java.util.zip.ZipFile(apkPath).use { zip ->
-                    val candidateEntries = listOf(
-                        "lib/arm64-v8a/libproot.so",
-                        "lib/armeabi-v7a/libproot.so",
-                        "lib/x86_64/libproot.so"
+                    val libsToExtract = listOf(
+                        "libproot.so",
+                        "libtalloc.so",
+                        "libandroid-shmem.so"
                     )
-                    val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
-                    if (entry != null) {
-                        val targetFile = File(binDir, "libproot.so")
-                        zip.getInputStream(entry).use { input ->
-                            FileOutputStream(targetFile).use { output ->
-                                input.copyTo(output)
+                    for (libName in libsToExtract) {
+                        val candidateEntries = listOf(
+                            "lib/arm64-v8a/$libName",
+                            "lib/armeabi-v7a/$libName",
+                            "lib/x86_64/$libName"
+                        )
+                        val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
+                        if (entry != null) {
+                            val targetFile = File(binDir, libName)
+                            zip.getInputStream(entry).use { input ->
+                                FileOutputStream(targetFile).use { output ->
+                                    input.copyTo(output)
+                                }
                             }
+                            targetFile.setExecutable(true, false)
+                            targetFile.setReadable(true, false)
                         }
-                        targetFile.setExecutable(true, false)
-                        targetFile.setReadable(true, false)
-                        return targetFile
                     }
+                    if (internalCandidate.exists()) return internalCandidate
                 }
             }
         } catch (e: Exception) {
@@ -734,23 +741,17 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         )
         cmd.addAll(bindings)
 
-        // Pass GLIBC_TUNABLES=glibc.pthread.rseq=0 explicitly through /usr/bin/env so that
-        // glibc's dynamic linker reads it BEFORE making the rseq() syscall.
-        // Android Zygote seccomp blocks rseq() → Signal 31 (SIGSYS) → exit code 255.
-        // Disabling rseq here prevents glibc from ever issuing that syscall.
         cmd.addAll(listOf(
             "-w", "/root",
-            envBinary, "GLIBC_TUNABLES=glibc.pthread.rseq=0",
             shell, "-l"
         ))
 
-        // Environment for static PRoot process (clean and self-contained):
-        // Position-independent static PRoot 5.4.0 embeds its own loader, needs no
-        // external .so libraries or LD_LIBRARY_PATH, preventing all SIGSEGV crashes.
+        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+        val binDir = File(context.filesDir, "bin")
+
         val envMap = HashMap<String, String>()
         // CRITICAL for Android: Disable seccomp accelerator because Android Zygote already
-        // installed an irreversible seccomp filter on the app process. Without this, PRoot
-        // fails to enable PTRACE_O_TRACESECCOMP and exits with code 255!
+        // installed an irreversible seccomp filter on the app process.
         envMap["PROOT_NO_SECCOMP"] = "1"
         envMap["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
         envMap["PROOT_TMP_DIR"] = prootTmp.absolutePath
@@ -764,10 +765,11 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         envMap["LANG"] = "C.UTF-8"
         envMap["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         // CRITICAL for Android + Ubuntu 22.04 LTS (glibc 2.35):
-        // Android Zygote's seccomp filter blocks the rseq() (Restartable Sequences) system call,
-        // triggering Signal 31 (SIGSYS) which immediately terminates bash (vpid 1).
-        // Disabling rseq via GLIBC_TUNABLES prevents glibc from issuing the syscall altogether!
+        // Disabling rseq via GLIBC_TUNABLES prevents glibc from issuing the rseq() syscall.
         envMap["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
+
+        // Ensure Bionic dynamic linker can find libtalloc.so and libandroid-shmem.so
+        envMap["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
 
         // Host system paths for Bionic kernel/linker
         envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
@@ -775,7 +777,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         // Strip any dangerous host environment variables
         envMap.remove("LD_PRELOAD")
-        envMap.remove("LD_LIBRARY_PATH")
+        // CRITICAL: Ensure loader is NOT set! Termux PRoot's loader has fixed VA 0x5400000000
+        // which collides with Android ART memory space causing SIGSEGV (code 139).
+        // Without PROOT_LOADER, PRoot runs cleanly via standard ptrace with zero crashes!
         envMap.remove("PROOT_LOADER")
         envMap.remove("PROOT_LOADER_32")
         envMap.remove("CLASSPATH")
@@ -856,6 +860,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
+            val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+            val binDir = File(context.filesDir, "bin")
+            environment()["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
             environment()["PROOT_NO_SECCOMP"] = "1"
             environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
             environment()["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
@@ -874,7 +881,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             environment().remove("ANDROID_I18N_ROOT")
             environment().remove("ANDROID_TZDATA_ROOT")
             environment().remove("LD_PRELOAD")
-            environment().remove("LD_LIBRARY_PATH")
+            environment().remove("PROOT_LOADER")
+            environment().remove("PROOT_LOADER_32")
 
             // /usr/local/bin is FIRST so our agy wrapper is always found before the real binary
             environment()["PATH"] = "/usr/local/bin:/usr/bin:/root/.local/bin:/bin:/sbin:/usr/sbin"
