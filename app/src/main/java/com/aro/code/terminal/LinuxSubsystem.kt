@@ -261,19 +261,6 @@ object LinuxSubsystem {
         }
     }
 
-    fun getProotLoader(context: Context): File? {
-        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-        val candidate = File(nativeDir, "libproot_loader.so")
-        if (candidate.exists() && candidate.canExecute()) return candidate
-
-        val binDir = File(context.filesDir, "bin")
-        val internalCandidate = File(binDir, "libproot_loader.so")
-        if (internalCandidate.exists() && internalCandidate.canExecute()) return internalCandidate
-
-        if (candidate.exists()) return candidate
-        return null
-    }
-
     fun getProotBinary(context: Context): File? {
         // 1. Check native library directory (extracted by Android package manager)
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
@@ -287,37 +274,28 @@ object LinuxSubsystem {
             return internalCandidate
         }
 
-        // 3. Robust fallback: Extract libproot.so + dependencies directly from installed APK
+        // 3. Robust fallback: Extract libproot.so directly from installed APK
         try {
             val apkPath = context.applicationInfo.sourceDir
             if (apkPath != null && File(apkPath).exists()) {
                 java.util.zip.ZipFile(apkPath).use { zip ->
-                    val libsToExtract = listOf(
-                        "libproot.so",
-                        "libproot_loader.so",
-                        "libproot_loader32.so",
-                        "libtalloc.so",
-                        "libandroid-shmem.so"
+                    val candidateEntries = listOf(
+                        "lib/arm64-v8a/libproot.so",
+                        "lib/armeabi-v7a/libproot.so",
+                        "lib/x86_64/libproot.so"
                     )
-                    for (libName in libsToExtract) {
-                        val candidateEntries = listOf(
-                            "lib/arm64-v8a/$libName",
-                            "lib/armeabi-v7a/$libName",
-                            "lib/x86_64/$libName"
-                        )
-                        val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
-                        if (entry != null) {
-                            val targetFile = File(binDir, libName)
-                            zip.getInputStream(entry).use { input ->
-                                FileOutputStream(targetFile).use { output ->
-                                    input.copyTo(output)
-                                }
+                    val entry = candidateEntries.firstNotNullOfOrNull { zip.getEntry(it) }
+                    if (entry != null) {
+                        val targetFile = File(binDir, "libproot.so")
+                        zip.getInputStream(entry).use { input ->
+                            FileOutputStream(targetFile).use { output ->
+                                input.copyTo(output)
                             }
-                            targetFile.setExecutable(true, false)
-                            targetFile.setReadable(true, false)
                         }
+                        targetFile.setExecutable(true, false)
+                        targetFile.setReadable(true, false)
+                        return targetFile
                     }
-                    if (internalCandidate.exists()) return internalCandidate
                 }
             }
         } catch (e: Exception) {
@@ -747,34 +725,18 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             shell, "-l"
         ))
 
-        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-        val binDir = File(context.filesDir, "bin")
-
-        // Environment for PRoot itself (Bionic process on Android host):
+        // Environment for static PRoot process (clean and self-contained):
+        // Position-independent static PRoot 5.4.0 embeds its own loader, needs no
+        // external .so libraries or LD_LIBRARY_PATH, preventing all SIGSEGV crashes.
         val envMap = HashMap<String, String>()
-        envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
-        envMap["ANDROID_DATA"] = System.getenv("ANDROID_DATA") ?: "/data"
-        envMap["PATH"] = System.getenv("PATH") ?: "/system/bin:/system/xbin"
-        envMap["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
-
-        val loader = getProotLoader(context)
-        if (loader != null && loader.exists()) {
-            envMap["PROOT_LOADER"] = loader.absolutePath
-        }
-        val loader32Candidate = File(loader?.parentFile ?: nativeDir, "libproot_loader32.so")
-        if (loader32Candidate.exists()) {
-            envMap["PROOT_LOADER_32"] = loader32Candidate.absolutePath
-        }
-
         envMap["PROOT_TMP_DIR"] = prootTmp.absolutePath
-        envMap["PROOT_NO_SECCOMP"] = "1"
-        envMap["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
         envMap["TMPDIR"] = prootTmp.absolutePath
         envMap["TEMP"] = prootTmp.absolutePath
         envMap["TMP"] = prootTmp.absolutePath
 
-        // CRITICAL: Strip any dangerous host environment variables that cause SIGSEGV in PRoot/ptrace
+        // Strip any dangerous host environment variables
         envMap.remove("LD_PRELOAD")
+        envMap.remove("LD_LIBRARY_PATH")
         envMap.remove("CLASSPATH")
         envMap.remove("DEX2OATBOOTCLASSPATH")
         envMap.remove("BOOTCLASSPATH")
@@ -853,35 +815,22 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         val pb = ProcessBuilder(cmd).apply {
             redirectErrorStream(true)
-            val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-            val binDir = File(context.filesDir, "bin")
-            environment()["LD_LIBRARY_PATH"] = "${nativeDir.absolutePath}:${binDir.absolutePath}"
-
-            val loader = getProotLoader(context)
-            if (loader != null && loader.exists()) {
-                environment()["PROOT_LOADER"] = loader.absolutePath
-            }
-            val loader32Candidate = File(loader?.parentFile ?: nativeDir, "libproot_loader32.so")
-            if (loader32Candidate.exists()) {
-                environment()["PROOT_LOADER_32"] = loader32Candidate.absolutePath
-            }
-
             environment()["PROOT_TMP_DIR"] = prootTmp.absolutePath
-            environment()["PROOT_NO_SECCOMP"] = "1"
-            environment()["PROOT_IGNORE_MISSING_BINDINGS"] = "1"
             environment()["TMPDIR"] = prootTmp.absolutePath
             environment()["TEMP"] = prootTmp.absolutePath
             environment()["TMP"] = prootTmp.absolutePath
             environment()["TERM"] = "xterm-256color"
             environment()["HOME"] = "/root"
             environment()["USER"] = "root"
-            // Crucial: remove Android host environment variables so Python platformdirs/pip treats environment as Linux
+            // Crucial: remove Android host environment variables
             environment().remove("ANDROID_DATA")
             environment().remove("ANDROID_ROOT")
             environment().remove("ANDROID_STORAGE")
             environment().remove("ANDROID_ART_ROOT")
             environment().remove("ANDROID_I18N_ROOT")
             environment().remove("ANDROID_TZDATA_ROOT")
+            environment().remove("LD_PRELOAD")
+            environment().remove("LD_LIBRARY_PATH")
 
             // /usr/local/bin is FIRST so our agy wrapper is always found before the real binary
             environment()["PATH"] = "/usr/local/bin:/usr/bin:/root/.local/bin:/bin:/sbin:/usr/sbin"
