@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Aro Terminal</title>
+<link rel="stylesheet" href="xterm.css">
 <style>
 @font-face {
   font-family: 'JetBrainsMono';
@@ -140,23 +141,27 @@ const resizeObserver = new ResizeObserver(function() {
 resizeObserver.observe(document.getElementById('terminal'));
 
 // ─── Startup ──────────────────────────────────────────────────────────────────
+let isStarted = false;
 function startup() {
+  if (isStarted) return;
+  isStarted = true;
   try {
     fitAddon.fit();
-  } catch(e) {}
+  } catch(e) {
+    console.warn('fitAddon.fit error:', e);
+  }
   if (window.AroTerminal) {
-    AroTerminal.onReady(term.rows, term.cols);
+    AroTerminal.onReady(term.rows || 24, term.cols || 80);
   }
   // Focus so soft keyboard works immediately
-  term.focus();
+  try { term.focus(); } catch(e) {}
 }
 
-// Give the font time to load
+// Give font a chance to load, but startup within 250ms regardless
 if (document.fonts && document.fonts.ready) {
-  document.fonts.ready.then(startup);
-} else {
-  setTimeout(startup, 200);
+  document.fonts.ready.then(startup).catch(startup);
 }
+setTimeout(startup, 250);
 
 // ─── Extra-key helpers callable from Kotlin ───────────────────────────────────
 window.sendKey = function(seq) {

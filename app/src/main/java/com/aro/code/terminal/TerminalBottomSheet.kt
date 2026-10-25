@@ -1125,23 +1125,146 @@ private fun BashShellTab(
             }
         }
 
-        // ── Real Terminal Emulator Viewport (xterm.js + PTY) ──────────
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(Color(0xFF0D1117))
-        ) {
-            val session = activeSession
-            if (session != null) {
-                XtermView(
-                    session = session.ptySession,
-                    jsInterface = session.ensureJsInterface(context),
-                    modifier = Modifier.fillMaxSize()
+        // ── Real Terminal Emulator Viewport / Live Installer ──────────
+        if (BashShellSession.isInstallingLinux) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D1117))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF161B22)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = Color(0xFF388BFD),
+                                strokeWidth = 2.5.dp
+                            )
+                            Column {
+                                Text(
+                                    "🐧 In-App Ubuntu Linux Installer (22.04 LTS)",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    BashShellSession.installStatusMessage,
+                                    color = Color(0xFF58A6FF),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+
+                        if (BashShellSession.installProgress > 0) {
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                LinearProgressIndicator(
+                                    progress = { BashShellSession.installProgress / 100f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = Color(0xFF238636),
+                                    trackColor = Color(0xFF21262D)
+                                )
+                                Text(
+                                    "Progress: ${BashShellSession.installProgress}%",
+                                    color = Color(0xFF8B949E),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = Color(0xFF388BFD),
+                                trackColor = Color(0xFF21262D)
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    "📜 Live Installation Logs:",
+                    color = Color(0xFF8B949E),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
                 )
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No active terminal session", color = Color(0xFF8B949E))
+
+                val installerListState = rememberLazyListState()
+                LaunchedEffect(BashShellSession.installLogs.size) {
+                    if (BashShellSession.installLogs.isNotEmpty()) {
+                        installerListState.animateScrollToItem(BashShellSession.installLogs.lastIndex)
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    color = Color(0xFF010409),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF21262D))
+                ) {
+                    LazyColumn(
+                        state = installerListState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(BashShellSession.installLogs) { logLine ->
+                            Text(
+                                text = logLine,
+                                color = when {
+                                    logLine.startsWith("✅") || logLine.startsWith("🎉") -> Color(0xFF3FB950)
+                                    logLine.startsWith("❌") || logLine.startsWith("⚠️") -> Color(0xFFF85149)
+                                    logLine.startsWith("📦") || logLine.startsWith("⏳") || logLine.startsWith("🐧") -> Color(0xFF58A6FF)
+                                    else -> Color(0xFFC9D1D9)
+                                },
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D1117))
+            ) {
+                val session = activeSession
+                if (session != null) {
+                    XtermView(
+                        session = session.ptySession,
+                        jsInterface = session.ensureJsInterface(context),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No active terminal session", color = Color(0xFF8B949E))
+                    }
                 }
             }
         }

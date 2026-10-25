@@ -117,6 +117,9 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
     fun installMiniLinux(context: Context) {
         viewModelScope.launch {
             BashShellSession.installMiniLinux(context)
+            while (BashShellSession.isInstallingLinux) {
+                kotlinx.coroutines.delay(500)
+            }
             _isLinuxInstalled.value = LinuxSubsystem.isInstalled(context)
         }
     }

@@ -72,16 +72,19 @@ private fun createTerminalWebView(
     jsInterface.attachWebView(wv)
     wv.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 
+    // Dark terminal background immediately to eliminate any white flashes/lines
+    wv.setBackgroundColor(android.graphics.Color.parseColor("#0D1117"))
+
     // ── Hardware acceleration for canvas rendering ──
     wv.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
     // ── Security-hardened WebSettings ──
     with(wv.settings) {
         javaScriptEnabled = true                     // required for xterm.js
-        domStorageEnabled = false                    // not needed
+        domStorageEnabled = true
         allowFileAccess = true                       // load assets
         allowContentAccess = false
-        allowFileAccessFromFileURLs = false          // no cross-origin local reads
+        allowFileAccessFromFileURLs = true           // REQUIRED: allows index.html to load bundled xterm.js & xterm.css
         allowUniversalAccessFromFileURLs = false     // no external fetching
         @Suppress("DEPRECATION")
         savePassword = false

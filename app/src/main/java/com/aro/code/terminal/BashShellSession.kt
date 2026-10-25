@@ -160,6 +160,12 @@ class ShellSession(
         sendRaw("clear\r")
     }
 
+    /** Direct write to xterm.js viewport without sending through PTY stdin */
+    fun writeDirect(text: String) {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        jsInterface?.sendOutputToJs(bytes)
+    }
+
     fun refocus() {
         jsInterface?.refocus()
     }
@@ -196,8 +202,10 @@ object BashShellSession {
     val isLinuxContainerActive: Boolean get() = activeSession?.isLinuxContainerActive ?: false
     val cwd: String get() = activeSession?.cwd ?: "/storage/emulated/0/Download"
 
-    @Volatile var isInstallingLinux: Boolean = false
-        private set
+    var isInstallingLinux by mutableStateOf(false)
+    var installProgress by mutableIntStateOf(0)
+    var installStatusMessage by mutableStateOf("")
+    val installLogs = mutableStateListOf<String>()
 
     fun setWorkingDirectory(newPath: String) {
         activeSession?.let { session ->
@@ -294,29 +302,47 @@ object BashShellSession {
     fun installMiniLinux(context: Context) {
         if (isInstallingLinux) return
         isInstallingLinux = true
+        installProgress = 0
+        installStatusMessage = "Starting Ubuntu Linux Installer..."
+        installLogs.clear()
         appContext = context.applicationContext
 
         scope.launch {
             try {
-                activeSession?.clear()
-                activeSession?.sendRaw("echo '🚀 Initializing Ubuntu Linux Installer (22.04 LTS ARM64)...'\r")
+                activeSession?.writeDirect("\r\n\u001B[1;36m[Installer]\u001B[0m Initializing Ubuntu Linux (22.04 LTS ARM64)...\r\n")
                 val success = LinuxSubsystem.install(
                     context = context,
                     onLog = { msg ->
-                        activeSession?.sendRaw("echo '[Installer] ${msg.replace("'", "")}'\r")
+                        installStatusMessage = msg
+                        installLogs.add(msg)
+                        if (installLogs.size > 300) installLogs.removeAt(0)
                         TermuxBridgeService.state.addLog("💻 $msg")
+                        activeSession?.writeDirect("\r\n\u001B[32m[Installer]\u001B[0m $msg")
                     },
-                    onProgress = { /* progress */ }
+                    onProgress = { percent ->
+                        installProgress = percent
+                    }
                 )
                 if (success) {
-                    activeSession?.sendRaw("echo '✅ Ubuntu Linux Subsystem installed successfully! Restarting session...'\r")
+                    installStatusMessage = "Ubuntu Linux installed successfully!"
+                    installLogs.add("✅ Setup complete! Launching Ubuntu bash shell...")
+                    activeSession?.writeDirect("\r\n\u001B[1;32m[Installer]\u001B[0m Setup complete! Restarting terminal session...\r\n")
+                    kotlinx.coroutines.delay(1000)
                     stop()
                     kotlinx.coroutines.delay(500)
                     start(context)
                 } else {
-                    activeSession?.sendRaw("echo '❌ Installation failed! Please check internet connection and try again.'\r")
+                    installStatusMessage = "Installation failed!"
+                    installLogs.add("❌ Installation failed! Please check internet connection and try again.")
+                    activeSession?.writeDirect("\r\n\u001B[1;31m[Installer]\u001B[0m Installation failed! Tap Reinstall to try again.\r\n")
                 }
+            } catch (e: Exception) {
+                val err = "Error: ${e.message}"
+                installStatusMessage = err
+                installLogs.add("❌ $err")
+                activeSession?.writeDirect("\r\n\u001B[1;31m[Installer]\u001B[0m $err\r\n")
             } finally {
+                kotlinx.coroutines.delay(2000)
                 isInstallingLinux = false
             }
         }
