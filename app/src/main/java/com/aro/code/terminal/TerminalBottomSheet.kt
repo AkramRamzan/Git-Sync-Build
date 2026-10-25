@@ -1548,8 +1548,10 @@ fun TerminalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = Color(0xFF161B22),
-        dragHandle = if (isMinimized) null else {
-            { BottomSheetDefaults.DragHandle(color = Color(0xFF555555), modifier = Modifier.height(8.dp)) }
+        dragHandle = {
+            if (!isMinimized) {
+                BottomSheetDefaults.DragHandle(color = Color(0xFF555555), modifier = Modifier.height(8.dp))
+            }
         },
         modifier = if (isMinimized) {
             Modifier
@@ -1559,8 +1561,7 @@ fun TerminalBottomSheet(
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-        },
-        windowInsets = WindowInsets(0, 0, 0, 0)
+        }
     ) {
         Column(
             Modifier
