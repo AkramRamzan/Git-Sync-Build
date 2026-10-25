@@ -34,15 +34,150 @@ object LinuxSubsystem {
      * Always overwrites so user always gets the latest version.
      */
     fun deployServerPy(context: Context): Boolean {
-        return try {
+        var success = false
+        try {
             val dest = java.io.File("/storage/emulated/0/Download/server.py")
+            dest.parentFile?.mkdirs()
             context.assets.open("server.py").use { input ->
                 dest.outputStream().use { output -> input.copyTo(output) }
             }
-            true
+            success = true
         } catch (e: Exception) {
-            Log.e(TAG, "deployServerPy failed", e)
-            false
+            Log.w(TAG, "deployServerPy failed for /storage/emulated/0/Download/server.py: ${e.message}")
+        }
+
+        try {
+            val rootfsDir = getRootfsDir(context)
+            if (rootfsDir.exists()) {
+                val targets = listOf(
+                    File(rootfsDir, "root/Download/server.py"),
+                    File(rootfsDir, "storage/Download/server.py")
+                )
+                for (target in targets) {
+                    try {
+                        target.parentFile?.mkdirs()
+                        context.assets.open("server.py").use { input ->
+                            target.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {}
+
+        return success
+    }
+
+    /**
+     * Fixes:
+     * "groups: cannot find name for group ID 3003 groups: cannot find name for group ID 9997 groups: cannot find name for group ID 20458"
+     *
+     * Android assigns supplementary GIDs to the app process (3003 inet, 9997 everybody, app UID + 10000).
+     * Inside PRoot glibc's getgroups() / getgrgid() fails when these GIDs are not defined in /etc/group.
+     * This replicates Termux proot-distro behavior by populating /etc/group and /etc/passwd with all active Android AIDs.
+     */
+    fun fixGroupAndPasswd(rootfsDir: File) {
+        try {
+            val etcDir = File(rootfsDir, "etc").apply { mkdirs() }
+            val groupFile = File(etcDir, "group")
+            val existing = if (groupFile.exists()) groupFile.readText() else ""
+            val sb = StringBuilder()
+
+            // Standard Android AIDs
+            val standardAids = listOf(
+                3001 to "aid_bt",
+                3002 to "aid_bt_net",
+                3003 to "aid_inet",
+                3004 to "aid_net_raw",
+                3005 to "aid_admin",
+                9997 to "aid_everybody"
+            )
+            for ((gid, name) in standardAids) {
+                if (!existing.contains(":$gid:") && !sb.contains(":$gid:")) {
+                    sb.append("$name:x:$gid:root\n")
+                }
+            }
+
+            // Dynamic GIDs from host process (/proc/self/status -> Groups: ...)
+            try {
+                val statusFile = File("/proc/self/status")
+                if (statusFile.exists()) {
+                    val statusText = statusFile.readText()
+                    val groupsLine = statusText.lines().firstOrNull { it.startsWith("Groups:") }
+                    if (groupsLine != null) {
+                        val gids = groupsLine.substringAfter(":").trim().split(Regex("\\s+"))
+                            .mapNotNull { it.toIntOrNull() }
+                        for (gid in gids) {
+                            if (!existing.contains(":$gid:") && !sb.contains(":$gid:")) {
+                                val name = when (gid) {
+                                    3003 -> "aid_inet"
+                                    9997 -> "aid_everybody"
+                                    else -> "aid_$gid"
+                                }
+                                sb.append("$name:x:$gid:root\n")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "fixGroupAndPasswd proc status: ${e.message}")
+            }
+
+            // Android UID/GID variations (myUid, myUid + 10000, myUid + 40000)
+            try {
+                val myUid = android.os.Process.myUid()
+                val extraGids = listOf(myUid, myUid + 10000, myUid + 40000)
+                for (gid in extraGids) {
+                    if (!existing.contains(":$gid:") && !sb.contains(":$gid:")) {
+                        sb.append("aid_$gid:x:$gid:root\n")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "fixGroupAndPasswd myUid: ${e.message}")
+            }
+
+            if (sb.isNotEmpty()) {
+                if (groupFile.exists()) {
+                    groupFile.appendText(sb.toString())
+                } else {
+                    groupFile.writeText("root:x:0:\n" + sb.toString())
+                }
+                Log.i(TAG, "Injected missing Android GIDs into /etc/group:\n$sb")
+            } else if (!groupFile.exists()) {
+                groupFile.writeText("root:x:0:\n")
+            }
+
+            // Ensure root group exists
+            if (!groupFile.readText().contains("root:x:0:")) {
+                groupFile.writeText("root:x:0:\n" + groupFile.readText())
+            }
+
+            // Ensure root user exists in /etc/passwd
+            val passwdFile = File(etcDir, "passwd")
+            val existingPasswd = if (passwdFile.exists()) passwdFile.readText() else ""
+            if (!existingPasswd.contains("root:x:0:0:")) {
+                passwdFile.appendText("root:x:0:0:root:/root:/bin/bash\n")
+            }
+
+            // Disable bracketed paste mode in inputrc (prevents [?2004h / [?2004l artifacts)
+            val rootDir = File(rootfsDir, "root").apply { mkdirs() }
+            val inputrc = File(rootDir, ".inputrc")
+            if (!inputrc.exists() || !inputrc.readText().contains("enable-bracketed-paste")) {
+                inputrc.writeText("set enable-bracketed-paste off\n")
+            }
+            val etcInputrc = File(etcDir, "inputrc")
+            if (!etcInputrc.exists() || !etcInputrc.readText().contains("enable-bracketed-paste")) {
+                etcInputrc.writeText("set enable-bracketed-paste off\n")
+            }
+
+            // Ensure prompt in /root/.bashrc
+            val bashrc = File(rootDir, ".bashrc")
+            if (!bashrc.exists()) bashrc.createNewFile()
+            val bashrcContent = bashrc.readText()
+            if (!bashrcContent.contains("PS1=")) {
+                bashrc.appendText("\nexport PS1='root@arocode:~# '\n")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fixGroupAndPasswd error: ${e.message}")
         }
     }
 
@@ -243,10 +378,11 @@ object LinuxSubsystem {
             extractTarGz(archiveFile, targetDir)
             onLog("✅ Ubuntu rootfs extracted successfully!")
 
-            // 3. Configure DNS (resolv.conf)
+            // 3. Configure DNS (resolv.conf) & Android Group IDs
             val etcDir = File(targetDir, "etc").apply { mkdirs() }
             File(etcDir, "resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
-            onLog("🌐 DNS configured (Google & Cloudflare).")
+            fixGroupAndPasswd(targetDir)
+            onLog("🌐 DNS configured & Android Group IDs mapped.")
 
             // 4. Configure APT Sandbox + Progress + Performance (required for Android PRoot)
             val aptConfDir = File(etcDir, "apt/apt.conf.d").apply { mkdirs() }
@@ -550,6 +686,12 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         File(rootfsDir, "tmp").mkdirs()
         File(rootfsDir, "root").mkdirs()
         File(rootfsDir, "root/.local/bin").mkdirs()
+
+        // Fix group IDs (Android supplementary AIDs 3003, 9997, etc.) and passwd
+        fixGroupAndPasswd(rootfsDir)
+
+        // Ensure latest server.py is synced
+        deployServerPy(context)
 
         // Deploy smart agy & apt wrappers so commands give clear feedback
         setupAgyWrapper(rootfsDir)

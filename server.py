@@ -314,7 +314,9 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
             clean_err = ANSI_ESCAPE.sub('', err_text)
             if clean_err:
                 print(f"[Termux Bridge Stderr] {clean_err}")
-                yield f"data: {json.dumps({'token': f'\\n\\n⚠️ Notice: {clean_err}\\n\\n'})}\n\n"
+                notice_text = f"\n\n⚠️ Notice: {clean_err}\n\n"
+                notice_json = json.dumps({"token": notice_text})
+                yield f"data: {notice_json}\n\n"
 
         await process.wait()
     finally:

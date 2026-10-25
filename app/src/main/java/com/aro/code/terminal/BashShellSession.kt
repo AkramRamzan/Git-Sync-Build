@@ -176,11 +176,14 @@ class ShellSession(
 
     fun sendCommand(rawCmd: String) {
         val cmd = rawCmd.trim()
-        if (cmd.isEmpty()) return
+        if (cmd.isEmpty()) {
+            sendRaw("\r")
+            return
+        }
 
         if (cmd == "clear" || cmd == "cls") {
             logs.clear()
-            addLog("⚡ Screen Cleared")
+            sendRaw("clear\n")
             return
         }
 
@@ -192,15 +195,11 @@ class ShellSession(
             }
         }
 
-        val promptTag = if (isLinuxContainerActive) "root@arocode:~#" else "aro@code$"
-        if (logs.isNotEmpty() && logs.last().trim() == promptTag.trim()) {
-            logs[logs.lastIndex] = "$promptTag $cmd"
-        } else if (!isLinuxContainerActive) {
-            addLog("$promptTag $cmd")
-        }
         try {
-            writer?.write(cmd)
-            writer?.newLine()
+            if (!isLinuxContainerActive) {
+                addLog("aro@code$ $cmd")
+            }
+            writer?.write(cmd + "\n")
             writer?.flush()
         } catch (e: Exception) {
             addLog("[Command error: ${e.message}]")
