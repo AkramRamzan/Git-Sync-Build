@@ -258,7 +258,7 @@ class ShellSession(
                    .replace(Regex("\u001B\\][^\u0007]*(\u0007|\\\\)"), "")                         // OSC sequences
     }
 
-    private fun addLog(line: String) {
+    fun addLog(line: String) {
         val cleanLine = line.removePrefix("💻 ")
         logs.add(cleanLine)
         if (logs.size > 800) logs.removeAt(0)
@@ -354,6 +354,10 @@ object BashShellSession {
 
     fun sendCtrlC() {
         activeSession?.sendCtrlC()
+    }
+
+    fun addLog(line: String) {
+        activeSession?.addLog(line)
     }
 
     /** Send raw escape sequence to active session's stdin (for TUI navigation). */
