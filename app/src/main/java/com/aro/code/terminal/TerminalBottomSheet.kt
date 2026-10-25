@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -628,7 +629,7 @@ private fun BashShellTab(
                         val isSelected = currentModel.contains(modelId, ignoreCase = true)
                         Surface(
                             onClick = {
-                                LinuxSubsystem.setSelectedModel(context, modelId)
+                                LinuxSubsystem.updateSelectedModel(context, modelId)
                                 BashShellSession.activeSession?.addLog("🧠 [System] Model set to: $modelName")
                                 showModelDialog = false
                             },
@@ -689,7 +690,7 @@ private fun BashShellTab(
 
                     Surface(
                         onClick = {
-                            LinuxSubsystem.logout(context)
+                            LinuxSubsystem.resetAuth(context)
                             Toast.makeText(context, "Logged out from Antigravity CLI", Toast.LENGTH_SHORT).show()
                             showSettingsDialog = false
                         },
