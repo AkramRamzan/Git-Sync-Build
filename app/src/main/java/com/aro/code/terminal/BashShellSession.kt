@@ -161,6 +161,46 @@ class ShellSession(
             return
         }
 
+        // Native Termux-style /model command (displays and switches models inline without hiding UI)
+        if (cmd == "/model" || cmd.startsWith("/model ") || cmd == "model" || cmd.startsWith("model ")) {
+            val arg = cmd.removePrefix("/model").removePrefix("model").trim()
+            val ctx = BashShellSession.appContext
+            if (arg.isEmpty()) {
+                val currentModel = if (ctx != null) LinuxSubsystem.getSelectedModel(ctx) else "Gemini 3.8 Flash (High)"
+                val modelDisplay = buildString {
+                    append("\r\n\u001B[1;36m╔══════════════════════════════════════════════════════╗\u001B[0m\r\n")
+                    append("\u001B[1;36m║\u001B[0m             \u001B[1;35m🧠 Available AI Models\u001B[0m                   \u001B[1;36m║\u001B[0m\r\n")
+                    append("\u001B[1;36m╚══════════════════════════════════════════════════════╝\u001B[0m\r\n")
+                    append(" Current Active Model: \u001B[1;32m● $currentModel\u001B[0m\r\n\r\n")
+                    append(" [1] \u001B[1;33mGemini 3.8 Flash (High)\u001B[0m   - Ultra-fast & Advanced (Recommended)\r\n")
+                    append(" [2] \u001B[1;34mgemini-2.5-pro\u001B[0m            - Deep Reasoning & Complex Coding\r\n")
+                    append(" [3] \u001B[1;36mgemini-2.5-flash\u001B[0m          - Ultra Fast & Responsive\r\n")
+                    append(" [4] \u001B[1;32mgemini-2.0-flash\u001B[0m          - Stable Generation\r\n")
+                    append(" [5] \u001B[1;35mClaude 3.5 Sonnet\u001B[0m         - High-Precision Coding\r\n\r\n")
+                    append("\u001B[0;37mTip: To switch model, type:\u001B[0m \u001B[1;32m/model <1-5 or name>\u001B[0m\r\n")
+                    append("\u001B[0;37mExample:\u001B[0m \u001B[1;36m/model 2\u001B[0m  or  \u001B[1;36m/model gemini-2.5-pro\u001B[0m\r\n\r\n")
+                }
+                writeDirect(modelDisplay)
+                sendRaw("\r")
+                return
+            } else {
+                val newModel = when (arg) {
+                    "1", "3.8", "flash-high" -> "Gemini 3.8 Flash (High)"
+                    "2", "2.5-pro", "pro"    -> "gemini-2.5-pro"
+                    "3", "2.5-flash", "flash"-> "gemini-2.5-flash"
+                    "4", "2.0-flash"         -> "gemini-2.0-flash"
+                    "5", "claude", "sonnet"  -> "Claude 3.5 Sonnet"
+                    else                     -> arg
+                }
+                if (ctx != null) {
+                    LinuxSubsystem.updateSelectedModel(ctx, newModel)
+                }
+                writeDirect("\r\n\u001B[1;32m✅ Active Model updated to:\u001B[0m \u001B[1;36m$newModel\u001B[0m\r\n\r\n")
+                sendRaw("\r")
+                return
+            }
+        }
+
         if (title.contains("Shell") || title.contains("Linux") || title.contains("Session")) {
             val shortName = cmd.substringBefore(" ").removePrefix("./").take(12)
             if (shortName.isNotBlank()) title = "$id: $shortName"

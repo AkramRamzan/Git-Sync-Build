@@ -985,6 +985,48 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             wrapper.writeText(script)
             wrapper.setExecutable(true, false)
 
+            // Native Termux-style /model command script
+            val modelScript = File(wrapperDir, "model")
+            modelScript.writeText("""
+                #!/bin/sh
+                SETTINGS="${'$'}HOME/.gemini/antigravity-cli/settings.json"
+                CURRENT=${'$'}(grep -o '"model"[^,]*' "${'$'}SETTINGS" 2>/dev/null | cut -d'"' -f4)
+                [ -z "${'$'}CURRENT" ] && CURRENT="Gemini 3.8 Flash (High)"
+
+                if [ -n "${'$'}1" ]; then
+                    case "${'$'}1" in
+                        1|*3.8*|*flash-high*) NEW_MODEL="Gemini 3.8 Flash (High)" ;;
+                        2|*2.5-pro*|*pro*)   NEW_MODEL="gemini-2.5-pro" ;;
+                        3|*2.5-flash*|*flash*) NEW_MODEL="gemini-2.5-flash" ;;
+                        4|*2.0-flash*)       NEW_MODEL="gemini-2.0-flash" ;;
+                        5|*claude*|*sonnet*) NEW_MODEL="Claude 3.5 Sonnet" ;;
+                        *)                   NEW_MODEL="${'$'}1" ;;
+                    esac
+                    mkdir -p "${'$'}HOME/.gemini/antigravity-cli"
+                    echo "{\"model\":\"${'$'}NEW_MODEL\",\"trustedWorkspaces\":[\"/root\",\"/storage\",\"/storage/Download\"]}" > "${'$'}SETTINGS"
+                    printf "\033[1;32m✅ Active Model updated to:\033[0m \033[1;36m%s\033[0m\n\n" "${'$'}NEW_MODEL"
+                    exit 0
+                fi
+
+                printf "\033[1;36m╔══════════════════════════════════════════════════════╗\033[0m\n"
+                printf "\033[1;36m║\033[0m             \033[1;35m🧠 Available AI Models\033[0m                   \033[1;36m║\033[0m\n"
+                printf "\033[1;36m╚══════════════════════════════════════════════════════╝\033[0m\n"
+                printf " Current Active Model: \033[1;32m● %s\033[0m\n\n" "${'$'}CURRENT"
+                printf " [1] \033[1;33mGemini 3.8 Flash (High)\033[0m   - Ultra-fast & Advanced (Recommended)\n"
+                printf " [2] \033[1;34mgemini-2.5-pro\033[0m            - Deep Reasoning & Complex Coding\n"
+                printf " [3] \033[1;36mgemini-2.5-flash\033[0m          - Ultra Fast & Responsive\n"
+                printf " [4] \033[1;32mgemini-2.0-flash\033[0m          - Stable Generation\n"
+                printf " [5] \033[1;35mClaude 3.5 Sonnet\033[0m         - High-Precision Coding\n\n"
+                printf "\033[0;37mTip: To switch model, type:\033[0m \033[1;32m/model <1-5 or name>\033[0m\n"
+                printf "\033[0;37mExample:\033[0m \033[1;36m/model 2\033[0m  or  \033[1;36m/model gemini-2.5-pro\033[0m\n\n"
+            """.trimIndent() + "\n")
+            modelScript.setExecutable(true, false)
+            try {
+                val rootModel = File(rootfsDir, "model")
+                rootModel.writeText(modelScript.readText())
+                rootModel.setExecutable(true, false)
+            } catch (_: Exception) {}
+
             val loginHelper = File(wrapperDir, "agy_login.py")
             val pyScript = """
                 import pty, os, time, sys, select, re
@@ -1206,6 +1248,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 alias top='htop 2>/dev/null || top'
                 alias ports='ss -tulnp'
                 alias myip='curl -s ifconfig.me 2>/dev/null || echo "No network"'
+                alias /model='model'
+                alias model='/usr/local/bin/model'
 
                 # ── History ──
                 HISTSIZE=2000

@@ -130,9 +130,16 @@ private fun ControlButtons(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text("📲 Termux", style = TextStyle(fontSize = 9.sp, color = Color.White))
+                Text("📲 Termux", style = TextStyle(fontSize = 8.5.sp, color = Color.White))
             }
         }
+
+        // Storage / Download path next to Termux
+        Text(
+            "📁 /storage/…/Download",
+            style = TextStyle(fontSize = 8.sp, color = Color(0xFF8B949E)),
+            modifier = Modifier.padding(end = 2.dp)
+        )
 
         // Start
         Surface(
@@ -443,8 +450,8 @@ private fun BashShellTab(
             onDismissRequest = { showAgyPromptDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("🤖", fontSize = 14.sp)
-                    Text("Agy Agent Task Prompt", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text("🤖", fontSize = 9.sp)
+                    Text("Agy Agent Task Prompt", color = Color.White, fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.5.sp))
                 }
             },
             text = {
@@ -502,8 +509,8 @@ private fun BashShellTab(
             onDismissRequest = { showCommandsDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("⚡", fontSize = 14.sp)
-                    Text("Quick Command Shortcuts", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text("⚡", fontSize = 9.sp)
+                    Text("Quick Command Shortcuts", color = Color.White, fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.5.sp))
                 }
             },
             text = {
@@ -641,8 +648,8 @@ private fun BashShellTab(
             onDismissRequest = { showModelDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("🧠", fontSize = 14.sp)
-                    Text("AI Model Selection", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text("🧠", fontSize = 9.sp)
+                    Text("AI Model Selection", color = Color.White, fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.5.sp))
                 }
             },
             text = {
@@ -689,8 +696,8 @@ private fun BashShellTab(
             onDismissRequest = { showSettingsDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("⚙️", fontSize = 14.sp)
-                    Text("Terminal Settings & Health", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text("⚙️", fontSize = 9.sp)
+                    Text("Terminal Settings & Health", color = Color.White, fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.5.sp))
                 }
             },
             text = {
@@ -1016,7 +1023,7 @@ private fun BashShellTab(
                     }
                 }
 
-                // 🔑 1-Tap Google Login Button (Relocated right beside New Session button!)
+                // 🔑 1-Tap Google Login Button with active/inactive dot (replaces 'Connected' text)
                 Surface(
                     onClick = {
                         if (oauthUrl != null) {
@@ -1036,17 +1043,61 @@ private fun BashShellTab(
                     color = if (oauthUrl != null) Color(0xFF1A73E8) else if (isAuthNow) Color(0xFF1B5E20) else Color(0xFF21262D)
                 ) {
                     Row(
-                        Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Text("🔑", fontSize = 9.sp)
+                        Text("🔑", fontSize = 8.5.sp)
                         Text(
-                            text = if (oauthUrl != null) "Google Login" else if (isAuthNow) "Google (Active)" else "Google Login",
-                            fontSize = 9.5.sp,
+                            text = if (oauthUrl != null) "Login" else "Google",
+                            fontSize = 8.5.sp,
                             color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
+                        // Status indicator dot: Green when active, Red when inactive
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149))
+                        )
+                    }
+                }
+
+                // ── Top Bar Action Monograms (Settings, Resume, Clear - Icons Only without text) ──
+                // ⚙️ Settings
+                Surface(
+                    onClick = { showSettingsDialog = true },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D),
+                    modifier = Modifier.size(22.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("⚙️", fontSize = 9.sp)
+                    }
+                }
+
+                // 🔄 Quick Resume (agy --continue)
+                Surface(
+                    onClick = { onSend("agy --continue") },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D),
+                    modifier = Modifier.size(22.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("🔄", fontSize = 9.sp)
+                    }
+                }
+
+                // 🧹 Clear Terminal
+                Surface(
+                    onClick = { onSend("clear") },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D),
+                    modifier = Modifier.size(22.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("🧹", fontSize = 9.sp)
                     }
                 }
 
@@ -1061,10 +1112,10 @@ private fun BashShellTab(
                         color = Color(0xFF0D47A1)
                     ) {
                         Row(
-                            Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("📋 Copy", fontSize = 9.sp, color = Color.White)
+                            Text("📋 Copy", fontSize = 8.sp, color = Color.White)
                         }
                     }
                 }
@@ -1295,171 +1346,6 @@ private fun BashShellTab(
                 }
             }
 
-            // ── Termux-Style Interactive Menu Bar (Compact UI scaling) ───────
-            val activeModelName = remember(shellLogs.size, showModelDialog, refreshTrigger) { LinuxSubsystem.getSelectedModel(context) }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF161B22))
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // ⚡ Commands Menu
-                Surface(
-                    onClick = { showCommandsDialog = true },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF21262D)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text("⚡", fontSize = 10.sp)
-                        Text("Commands", color = Color(0xFF58A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // 🧠 Model Menu
-                Surface(
-                    onClick = { showModelDialog = true },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF21262D)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text("🧠", fontSize = 10.sp)
-                        val shortModel = when {
-                            activeModelName.contains("3.8", true) -> "3.8 Flash"
-                            activeModelName.contains("2.5", true) -> "2.5 Pro"
-                            activeModelName.contains("2.0", true) -> "2.0 Flash"
-                            activeModelName.contains("Claude", true) -> "Claude"
-                            else -> "Model"
-                        }
-                        Text("Model ($shortModel)", color = Color(0xFFD29922), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // ⚙️ Settings Menu
-                Surface(
-                    onClick = { showSettingsDialog = true },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF21262D)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text("⚙️", fontSize = 10.sp)
-                        Text("Settings", color = Color(0xFF3FB950), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // 🚀 Run server.py
-                if (isLinuxInstalled) {
-                    Surface(
-                        onClick = {
-                            LinuxSubsystem.deployServerPy(context)
-                            onSend("python3 /storage/Download/server.py")
-                        },
-                        shape = RoundedCornerShape(5.dp),
-                        color = Color(0xFF238636)
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text("🚀", fontSize = 9.5.sp)
-                            Text("server.py", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                // 🤖 Quick Run agy
-                Surface(
-                    onClick = { onSend("agy") },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF1F6FEB)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text("🤖", fontSize = 9.5.sp)
-                        Text("agy", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // 🔄 Quick Resume
-                Surface(
-                    onClick = { onSend("agy --continue") },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF21262D)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text("🔄", fontSize = 9.5.sp)
-                        Text("Resume", color = Color(0xFFC9D1D9), fontSize = 10.sp)
-                    }
-                }
-
-                // 🧹 Clear
-                Surface(
-                    onClick = { onSend("clear") },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF21262D)
-                ) {
-                    Text("🧹 Clear", color = Color(0xFF8B949E), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
-                }
-
-                // 🟢 Status Pill
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isAuthNow) Color(0xFF1A3B1A) else Color(0xFF3B1A1A)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Box(Modifier.size(5.dp).clip(CircleShape).background(if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149)))
-                        Text(if (isAuthNow) "Connected" else "Login", color = if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149), fontSize = 9.sp)
-                    }
-                }
-
-                // ➕ Add New Session Button at the very end of footer controls
-                Surface(
-                    onClick = {
-                        val s = BashShellSession.createSession(context)
-                        Toast.makeText(context, "Session ${s.id} created", Toast.LENGTH_SHORT).show()
-                        activeSession?.refocus()
-                    },
-                    shape = RoundedCornerShape(5.dp),
-                    color = Color(0xFF238636)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Session", tint = Color.White, modifier = Modifier.size(11.dp))
-                        Text("New Session", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
             // Mobile key shortcuts (Termux-style) with + button at the end
             MobileKeyBar(
                 onKey = { key ->
@@ -1603,25 +1489,6 @@ fun TerminalBottomSheet(
             }
 
             if (!isMinimized) {
-                // ── Bridge Info Row ────────────────────────────────────────────
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0D1117))
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "📍 ${TermuxBridgeService.state.activeUrl.value}",
-                        style = TextStyle(fontSize = 8.5.sp, color = Color(0xFF29B6F6))
-                    )
-                    Text(
-                        "📁 /storage/…/Download",
-                        style = TextStyle(fontSize = 8.5.sp, color = Color(0xFF9E9E9E))
-                    )
-                }
-
                 // ── Tab Bar (Compact Termux) ──────────────────────────────────
                 TabRow(
                     selectedTabIndex = selectedTab,
