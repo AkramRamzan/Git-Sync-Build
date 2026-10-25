@@ -281,7 +281,7 @@ class ShellSession(
 object BashShellSession {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    @Volatile private var appContext: Context? = null
+    @Volatile var appContext: Context? = null
 
     val sessions = mutableStateListOf<ShellSession>()
     var activeSessionIndex by mutableIntStateOf(0)
