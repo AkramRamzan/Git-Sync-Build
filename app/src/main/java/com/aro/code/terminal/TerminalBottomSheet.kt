@@ -5,13 +5,14 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -29,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -36,11 +39,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import java.io.File
 import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Color helpers for log lines
+// Color helpers for log lines (Compact Termux-style)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -63,7 +68,7 @@ private fun logLineColor(line: String): Color = when {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Status Badge
+// Status Badge (Compact UI scaling)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -79,20 +84,20 @@ private fun StatusBadge(status: BridgeStatus, pid: Int?) {
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Box(
             Modifier
-                .size(10.dp)
+                .size(7.dp)
                 .clip(CircleShape)
                 .background(animColor)
         )
-        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White)
+        Text(label, style = TextStyle(fontSize = 10.sp, color = Color.White))
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Control Buttons
+// Control Buttons (Compact mobile scaling)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -108,73 +113,106 @@ private fun ControlButtons(
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         // 1-tap Open Termux button
         Surface(
             onClick = onOpenTermux,
-            shape = RoundedCornerShape(6.dp),
+            shape = RoundedCornerShape(5.dp),
             color = Color(0xFF1F6FEB),
-            modifier = Modifier.padding(end = 4.dp)
+            modifier = Modifier.padding(end = 2.dp)
         ) {
             Row(
-                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                Text("📲 Termux", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                Text("📲 Termux", style = TextStyle(fontSize = 9.5.sp, color = Color.White))
             }
         }
 
         // Start
-        IconButton(onClick = onStart, enabled = !isRunning) {
-            Icon(
-                Icons.Default.PlayArrow,
-                contentDescription = "Start Bridge",
-                tint = if (!isRunning) Color(0xFF4CAF50) else Color.Gray
-            )
+        Surface(
+            onClick = onStart,
+            shape = RoundedCornerShape(5.dp),
+            color = Color(0xFF21262D),
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "Start Bridge",
+                    tint = if (!isRunning) Color(0xFF4CAF50) else Color.Gray,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
         }
         // Restart
-        IconButton(onClick = onRestart) {
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription = "Restart Bridge",
-                tint = Color(0xFF29B6F6)
-            )
+        Surface(
+            onClick = onRestart,
+            shape = RoundedCornerShape(5.dp),
+            color = Color(0xFF21262D),
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "Restart Bridge",
+                    tint = Color(0xFF29B6F6),
+                    modifier = Modifier.size(13.dp)
+                )
+            }
         }
         // Stop
-        IconButton(onClick = onStop, enabled = isRunning) {
-            Icon(
-                Icons.Default.Stop,
-                contentDescription = "Stop Bridge",
-                tint = if (isRunning) Color(0xFFEF5350) else Color.Gray
-            )
+        Surface(
+            onClick = onStop,
+            shape = RoundedCornerShape(5.dp),
+            color = Color(0xFF21262D),
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.Stop,
+                    contentDescription = "Stop Bridge",
+                    tint = if (isRunning) Color(0xFFEF5350) else Color.Gray,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
         }
         // Clear logs
-        IconButton(onClick = onClear) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "Clear Logs",
-                tint = Color(0xFF9E9E9E)
-            )
+        Surface(
+            onClick = onClear,
+            shape = RoundedCornerShape(5.dp),
+            color = Color(0xFF21262D),
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Clear Logs",
+                    tint = Color(0xFF9E9E9E),
+                    modifier = Modifier.size(13.dp)
+                )
+            }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Keyboard Shortcuts Bar  (Termux-style)
+// Mobile Keyboard Shortcuts Bar (Termux-style compact with + button)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun MobileKeyBar(
     onKey: (String) -> Unit,
-    onPaste: () -> Unit
+    onPaste: () -> Unit,
+    onNewSession: () -> Unit
 ) {
     var isCtrlSticky by remember { mutableStateOf(false) }
     var isAltSticky by remember { mutableStateOf(false) }
 
-    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, Enter)
-    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ENTER", "PASTE")
+    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, Enter, PASTE, and + button at very end)
+    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ENTER", "PASTE", "+")
     // Row 2 — Shell & symbols
     val shellKeys = listOf("clear", "-", "/", "~", "|", "&&", "\"", "ls -la")
 
@@ -182,15 +220,15 @@ private fun MobileKeyBar(
         Modifier
             .fillMaxWidth()
             .background(Color(0xFF0D1117))
-            .padding(vertical = 2.dp)
+            .padding(vertical = 1.dp)
     ) {
         // ── Row 1: Termux Navigation Keys ────────────────────────────────────
         Row(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             navKeys.forEach { key ->
@@ -201,6 +239,7 @@ private fun MobileKeyBar(
                 val isCtrl = key == "CTRL"
                 val isAlt = key == "ALT"
                 val isPaste = key == "PASTE"
+                val isPlus = key == "+"
                 val isAccent = key == "ESC" || key == "TAB"
                 val isHighlighted = (isCtrl && isCtrlSticky) || (isAlt && isAltSticky)
 
@@ -210,6 +249,7 @@ private fun MobileKeyBar(
                             "CTRL" -> isCtrlSticky = !isCtrlSticky
                             "ALT"  -> isAltSticky = !isAltSticky
                             "PASTE" -> onPaste()
+                            "+" -> onNewSession()
                             else -> {
                                 if (isCtrlSticky) {
                                     isCtrlSticky = false
@@ -227,44 +267,44 @@ private fun MobileKeyBar(
                             }
                         }
                     },
-                    shape = RoundedCornerShape(6.dp),
+                    shape = RoundedCornerShape(5.dp),
                     color = when {
                         isHighlighted -> Color(0xFF388BFD)
+                        isPlus -> Color(0xFF238636)    // Termux green for add session
                         isEnter -> Color(0xFF238636)   // GitHub green
                         isArrow -> Color(0xFF1F6FEB)   // Termux / VS Code blue
                         isCtrlC || isCtrlD -> Color(0xFF4E1010)   // Red
                         isPaste -> Color(0xFF382554)   // Purple
                         isCtrl || isAlt -> Color(0xFF21262D)
-                        isAccent -> Color(0xFF21262D)  // Dark slate
+                        isAccent -> Color(0xFF21262D)
                         else -> Color(0xFF21262D)
                     },
-                    border = androidx.compose.foundation.BorderStroke(
+                    border = BorderStroke(
                         1.dp,
                         when {
                             isHighlighted -> Color(0xFF58A6FF)
+                            isPlus -> Color(0xFF2EA043)
                             isEnter -> Color(0xFF2EA043)
                             isArrow -> Color(0xFF388BFD)
                             isPaste -> Color(0xFF8957E5)
                             else -> Color(0xFF30363D)
                         }
                     ),
-                    modifier = Modifier.height(36.dp)
+                    modifier = Modifier.height(27.dp)
                 ) {
                     Box(
-                        Modifier.padding(horizontal = if (isEnter || isArrow) 12.dp else 9.dp),
+                        Modifier.padding(horizontal = if (isEnter) 9.dp else if (isPlus) 8.dp else 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isEnter) "⏎ ENTER" else key,
+                            text = if (isEnter) "⏎ ENTER" else if (isPlus) "＋" else key,
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = if (isEnter || isArrow) 13.sp else 12.sp,
-                                fontWeight = if (isEnter || isArrow || isPaste || isHighlighted) FontWeight.Bold else FontWeight.Medium
+                                fontSize = if (isPlus) 12.sp else 10.sp,
+                                fontWeight = if (isEnter || isArrow || isPaste || isHighlighted || isPlus) FontWeight.Bold else FontWeight.Medium
                             ),
                             color = when {
-                                isHighlighted -> Color.White
-                                isEnter -> Color.White
-                                isArrow -> Color.White
+                                isHighlighted || isEnter || isArrow || isPlus -> Color.White
                                 isCtrlC || isCtrlD -> Color(0xFFFF7B72)
                                 isPaste -> Color(0xFFD2A8FF)
                                 isAccent -> Color(0xFF58A6FF)
@@ -281,22 +321,22 @@ private fun MobileKeyBar(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                .padding(horizontal = 4.dp, vertical = 1.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             shellKeys.forEach { key ->
                 Surface(
                     onClick = { onKey(key) },
-                    shape = RoundedCornerShape(6.dp),
+                    shape = RoundedCornerShape(5.dp),
                     color = Color(0xFF161B22),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D)),
-                    modifier = Modifier.height(28.dp)
+                    border = BorderStroke(1.dp, Color(0xFF30363D)),
+                    modifier = Modifier.height(23.dp)
                 ) {
-                    Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.padding(horizontal = 7.dp), contentAlignment = Alignment.Center) {
                         Text(
                             text = key,
-                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.5.sp),
                             color = Color(0xFF8B949E)
                         )
                     }
@@ -315,7 +355,6 @@ private fun BridgeLogsTab(logs: List<String>) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Auto-scroll to bottom whenever logs change
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
             coroutineScope.launch {
@@ -326,7 +365,7 @@ private fun BridgeLogsTab(logs: List<String>) {
 
     if (logs.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No logs yet…", color = Color(0xFF9E9E9E), style = MaterialTheme.typography.bodySmall)
+            Text("No logs yet…", color = Color(0xFF9E9E9E), style = TextStyle(fontSize = 10.sp))
         }
     } else {
         LazyColumn(
@@ -334,7 +373,7 @@ private fun BridgeLogsTab(logs: List<String>) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0D1117))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 6.dp, vertical = 3.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
             items(logs) { line ->
@@ -342,7 +381,7 @@ private fun BridgeLogsTab(logs: List<String>) {
                     text = line,
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         color = logLineColor(line)
                     ),
                     maxLines = 6
@@ -353,7 +392,7 @@ private fun BridgeLogsTab(logs: List<String>) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bash Shell Tab (VS Code Mode)
+// Bash Shell Tab (Termux-style Navigation Drawer + Full Viewport)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -361,7 +400,8 @@ private fun BashShellTab(
     logs: List<String>,
     onSend: (String) -> Unit,
     onSetupLinux: () -> Unit,
-    isLinuxInstalled: Boolean
+    isLinuxInstalled: Boolean,
+    refreshTrigger: Int = 0
 ) {
     var showAgyPromptDialog by remember { mutableStateOf(false) }
     var agyPromptInput by remember { mutableStateOf("") }
@@ -370,52 +410,62 @@ private fun BashShellTab(
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     // ── Dialog 1: Agy Custom Prompt Task Runner ─────────────────────────────
     if (showAgyPromptDialog) {
         AlertDialog(
             onDismissRequest = { showAgyPromptDialog = false },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("🤖", fontSize = 22.sp)
-                    Text("Antigravity AI Task", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("🤖", fontSize = 14.sp)
+                    Text("Agy Agent Task Prompt", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                 }
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Task / Prompt darj karein jo agy execute karega:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF8B949E)
+                        "Google Antigravity CLI ko direct instruction dein. Agent background mein file create aur terminal commands run karega:",
+                        color = Color(0xFFC9D1D9),
+                        style = TextStyle(fontSize = 11.sp)
                     )
                     OutlinedTextField(
                         value = agyPromptInput,
                         onValueChange = { agyPromptInput = it },
-                        placeholder = { Text("e.g. build a fastapi server in server.py", color = Color.Gray, fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 4,
-                        textStyle = TextStyle(color = Color.White, fontSize = 13.sp)
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        placeholder = { Text("e.g. create a python web scraper for tech news...", color = Color(0xFF8B949E), style = TextStyle(fontSize = 11.sp)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF58A6FF),
+                            unfocusedBorderColor = Color(0xFF30363D),
+                            focusedContainerColor = Color(0xFF0D1117),
+                            unfocusedContainerColor = Color(0xFF0D1117)
+                        ),
+                        textStyle = TextStyle(fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (agyPromptInput.isNotBlank()) {
-                            onSend("agy -p \"${agyPromptInput.trim()}\" --dangerously-skip-permissions")
-                            agyPromptInput = ""
+                        val prompt = agyPromptInput.trim()
+                        if (prompt.isNotBlank()) {
+                            onSend("agy \"$prompt\"")
                         }
+                        agyPromptInput = ""
                         showAgyPromptDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                    shape = RoundedCornerShape(6.dp)
                 ) {
-                    Text("Run agy 🚀", color = Color.White)
+                    Text("Run Agent 🚀", color = Color.White, style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAgyPromptDialog = false }) {
-                    Text("Cancel", color = Color(0xFF8B949E))
+                    Text("Cancel", color = Color(0xFF8B949E), style = TextStyle(fontSize = 11.sp))
                 }
             },
             containerColor = Color(0xFF161B22)
@@ -427,168 +477,126 @@ private fun BashShellTab(
         AlertDialog(
             onDismissRequest = { showCommandsDialog = false },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("⚡", fontSize = 20.sp)
-                    Text("Interactive Commands", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("⚡", fontSize = 14.sp)
+                    Text("Quick Command Shortcuts", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                 }
             },
             text = {
                 Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text("🤖 Antigravity AI Agent", color = Color(0xFF58A6FF), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Text("Google Antigravity CLI (agy)", color = Color(0xFF58A6FF), fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.sp))
+
+                    Surface(
+                        onClick = {
+                            onSend("agy")
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Surface(
-                            onClick = {
-                                onSend("agy")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF1F6FEB)
-                        ) {
-                            Text("🤖 Start agy", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
-                        }
-                        Surface(
-                            onClick = {
-                                showCommandsDialog = false
-                                showAgyPromptDialog = true
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF238636)
-                        ) {
-                            Text("💬 Task Prompt...", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSend("agy --continue")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("🔄 Resume Chat", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                BashShellSession.sendCtrlC()
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF4E1010)
-                        ) {
-                            Text("🛑 Stop (^C)", color = Color(0xFFFF7B72), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
+                        Text("🤖 agy (Start Interactive Session)", color = Color.White, style = TextStyle(fontSize = 10.sp), modifier = Modifier.padding(8.dp))
                     }
 
-                    Text("🐍 Python & Development", color = Color(0xFF3FB950), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Surface(
+                        onClick = {
+                            showCommandsDialog = false
+                            showAgyPromptDialog = true
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF1F6FEB),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Surface(
-                            onClick = {
-                                LinuxSubsystem.deployServerPy(context)
-                                onSend("python3 /storage/Download/server.py")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF238636)
-                        ) {
-                            Text("🚀 server.py", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSend("pip install fastapi uvicorn pydantic sse-starlette")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("📦 Pip Reqs", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSend("pip list")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("📋 Pip List", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
+                        Text("💬 agy \"<prompt>\" (Custom Task Prompt)", color = Color.White, style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold), modifier = Modifier.padding(8.dp))
                     }
 
-                    Text("🛠️ Linux Shell & Git", color = Color(0xFFD29922), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Surface(
+                        onClick = {
+                            onSend("agy --continue")
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Surface(
-                            onClick = {
-                                onSend("git status")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("🔍 git status", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSend("ls -la")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("📂 ls -la", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSend("pwd")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("📍 pwd", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSend("clear")
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF21262D)
-                        ) {
-                            Text("🧹 clear", color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
-                        }
-                        Surface(
-                            onClick = {
-                                onSetupLinux()
-                                showCommandsDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF6E40C9)
-                        ) {
-                            Text(
-                                if (isLinuxInstalled) "🔄 Reinstall Ubuntu" else "📦 Install Ubuntu",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                            )
-                        }
+                        Text("🔄 agy --continue (Resume last session)", color = Color.White, style = TextStyle(fontSize = 10.sp), modifier = Modifier.padding(8.dp))
+                    }
+
+                    Surface(
+                        onClick = {
+                            BashShellSession.sendCtrlC()
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF4E1010),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🛑 Cancel/Interrupt (^C)", color = Color(0xFFFF7B72), style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold), modifier = Modifier.padding(8.dp))
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Text("Python & Bridge Server", color = Color(0xFF3FB950), fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.sp))
+
+                    Surface(
+                        onClick = {
+                            LinuxSubsystem.deployServerPy(context)
+                            onSend("python3 /storage/Download/server.py")
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF238636),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🚀 python3 /storage/Download/server.py", color = Color.White, style = TextStyle(fontSize = 10.sp), modifier = Modifier.padding(8.dp))
+                    }
+
+                    Surface(
+                        onClick = {
+                            onSend("python3 --version && pip list")
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🐍 Check Python3 & Pip packages", color = Color.White, style = TextStyle(fontSize = 10.sp), modifier = Modifier.padding(8.dp))
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Text("System & Diagnostics", color = Color(0xFFD29922), fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.sp))
+
+                    Surface(
+                        onClick = {
+                            onSend("clear")
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🧹 clear", color = Color.White, style = TextStyle(fontSize = 10.sp), modifier = Modifier.padding(8.dp))
+                    }
+
+                    Surface(
+                        onClick = {
+                            onSend("uname -a && id")
+                            showCommandsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF21262D),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🐧 Kernel & User Info", color = Color.White, style = TextStyle(fontSize = 10.sp), modifier = Modifier.padding(8.dp))
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showCommandsDialog = false }) {
-                    Text("Close", color = Color(0xFF8B949E))
+                    Text("Close", color = Color(0xFF8B949E), style = TextStyle(fontSize = 10.sp))
                 }
             },
             containerColor = Color(0xFF161B22)
@@ -599,48 +607,42 @@ private fun BashShellTab(
     if (showModelDialog) {
         val currentModel = remember(showModelDialog) { LinuxSubsystem.getSelectedModel(context) }
         val models = listOf(
-            "Gemini 3.8 Flash (High)" to "Fastest reasoning, large context window (Recommended)",
-            "Gemini 2.5 Pro" to "Advanced problem solving & complex coding",
-            "Gemini 2.0 Flash" to "Ultra low-latency, lightweight tasks",
-            "Claude 3.5 Sonnet" to "High-level agentic tools and reasoning"
+            "gemini-2.5-flash" to "⚡ Gemini 2.5 Flash (Ultra Fast & Responsive)",
+            "gemini-2.5-pro" to "🧠 Gemini 2.5 Pro (Deep Reasoning & Complex Code)",
+            "gemini-2.0-flash" to "🚀 Gemini 2.0 Flash (Stable)",
+            "claude-3-5-sonnet" to "🎭 Claude 3.5 Sonnet (Advanced Coding)"
         )
 
         AlertDialog(
             onDismissRequest = { showModelDialog = false },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("🧠", fontSize = 20.sp)
-                    Text("Change AI Model", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("🧠", fontSize = 14.sp)
+                    Text("AI Model Selection", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                 }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Select default model for Antigravity CLI:", style = MaterialTheme.typography.bodySmall, color = Color(0xFF8B949E))
-                    models.forEach { (modelName, desc) ->
-                        val isSelected = currentModel.equals(modelName, ignoreCase = true) ||
-                                (modelName.contains("Flash (High)") && currentModel.contains("Flash", true))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Antigravity CLI ke liye default AI model select karein:", color = Color(0xFF8B949E), style = TextStyle(fontSize = 10.sp))
+                    models.forEach { (modelId, modelName) ->
+                        val isSelected = currentModel.contains(modelId, ignoreCase = true)
                         Surface(
                             onClick = {
-                                LinuxSubsystem.updateSelectedModel(context, modelName)
-                                Toast.makeText(context, "Model switched to: $modelName", Toast.LENGTH_SHORT).show()
+                                LinuxSubsystem.setSelectedModel(context, modelId)
                                 BashShellSession.activeSession?.addLog("🧠 [System] Model set to: $modelName")
                                 showModelDialog = false
                             },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) Color(0xFF1F3A24) else Color(0xFF21262D),
-                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3FB950)) else null,
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF21262D),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.padding(10.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(if (isSelected) "🟢" else "⚪", fontSize = 14.sp)
-                                Column {
-                                    Text(modelName, color = if (isSelected) Color(0xFF3FB950) else Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                    Text(desc, color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall)
-                                }
+                                Text(modelName, color = Color.White, style = TextStyle(fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal))
+                                if (isSelected) Text("✔", color = Color.White, fontSize = 10.sp)
                             }
                         }
                     }
@@ -649,7 +651,7 @@ private fun BashShellTab(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showModelDialog = false }) {
-                    Text("Cancel", color = Color(0xFF8B949E))
+                    Text("Close", color = Color(0xFF8B949E), style = TextStyle(fontSize = 10.sp))
                 }
             },
             containerColor = Color(0xFF161B22)
@@ -659,96 +661,58 @@ private fun BashShellTab(
     // ── Dialog 4: Termux-Style Settings Dialog ─────────────────────────────
     if (showSettingsDialog) {
         val isAuth = remember(showSettingsDialog) { LinuxSubsystem.isLoggedIn(context) }
-
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("⚙️", fontSize = 20.sp)
-                    Text("Terminal & agy Settings", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("⚙️", fontSize = 14.sp)
+                    Text("Terminal Settings & Health", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                 }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Subsystem Status", color = Color(0xFF58A6FF), fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.sp))
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF21262D),
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF0D1117),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Google Authentication", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                                Text(if (isAuth) "🟢 Connected" else "🔴 Login Needed", color = if (isAuth) Color(0xFF3FB950) else Color(0xFFF85149), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            }
-                            if (isAuth) {
-                                Button(
-                                    onClick = {
-                                        LinuxSubsystem.resetAuth(context)
-                                        Toast.makeText(context, "Logged out! Re-authenticating...", Toast.LENGTH_SHORT).show()
-                                        onSend("agy")
-                                        showSettingsDialog = false
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B1A1A)),
-                                    shape = RoundedCornerShape(6.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text("🔑 Re-authenticate / Logout", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
+                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Ubuntu 22.04 LTS: ${if (isLinuxInstalled) "✅ Installed" else "❌ Not Installed"}", color = Color.White, style = TextStyle(fontSize = 10.sp))
+                            Text("Google OAuth: ${if (isAuth) "✅ Logged in" else "⚠️ Not Logged in"}", color = Color.White, style = TextStyle(fontSize = 10.sp))
+                            Text("Active Sessions: ${BashShellSession.sessions.size}", color = Color.White, style = TextStyle(fontSize = 10.sp))
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Text("Actions", color = Color(0xFFD29922), fontWeight = FontWeight.Bold, style = TextStyle(fontSize = 10.sp))
+
+                    Surface(
+                        onClick = {
+                            LinuxSubsystem.logout(context)
+                            Toast.makeText(context, "Logged out from Antigravity CLI", Toast.LENGTH_SHORT).show()
+                            showSettingsDialog = false
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF3E1F1F),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🚪 Logout Google Session", color = Color(0xFFFF7B72), style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold))
                         }
                     }
 
                     Surface(
                         onClick = {
-                            onSend("clear")
+                            BashShellSession.activeSession?.restart(context)
                             showSettingsDialog = false
                         },
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = Color(0xFF21262D),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("🧹", fontSize = 16.sp)
-                            Text("Clear Screen & History", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    Surface(
-                        onClick = {
-                            TermuxBridgeService.openTermuxSetup(context)
-                            showSettingsDialog = false
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF21262D),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("📲", fontSize = 16.sp)
-                            Text("Fix Termux Config (External Apps)", color = Color.White, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    Surface(
-                        onClick = {
-                            onSetupLinux()
-                            showSettingsDialog = false
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isLinuxInstalled) Color(0xFF21262D) else Color(0xFF6E40C9),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(if (isLinuxInstalled) "🔄" else "📦", fontSize = 16.sp)
-                            Text(
-                                if (isLinuxInstalled) "Reinstall Ubuntu Linux Container" else "Install In-App Ubuntu Linux Subsystem (22.04 LTS)",
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = if (!isLinuxInstalled) FontWeight.Bold else FontWeight.Normal
-                            )
+                        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔄 Restart Active Session", color = Color.White, style = TextStyle(fontSize = 10.sp))
                         }
                     }
                 }
@@ -756,7 +720,7 @@ private fun BashShellTab(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showSettingsDialog = false }) {
-                    Text("Close", color = Color(0xFF8B949E))
+                    Text("Close", color = Color(0xFF8B949E), style = TextStyle(fontSize = 10.sp))
                 }
             },
             containerColor = Color(0xFF161B22)
@@ -770,740 +734,748 @@ private fun BashShellTab(
         BashShellSession.start(context)
     }
 
-    val submitCommand: (String) -> Unit = { raw ->
-        val trimmed = raw.trim()
-        if (trimmed.isNotBlank()) {
-            onSend(trimmed)
-        } else {
-            BashShellSession.sendRaw("\r")
+    val sessions = BashShellSession.sessions
+    val activeIdx = BashShellSession.activeSessionIndex
+
+    // ── 1-Tap Google OAuth Login URL (Scanned from active logs) ───────────────
+    val oauthUrl = remember(shellLogs.size, activeSession?.id, refreshTrigger) {
+        val urlRegex = Regex("https://accounts\\.google\\.com/o/oauth2/auth\\?[A-Za-z0-9_.~%!$&'()*+,;=:@/?#\\-]+")
+        shellLogs.asReversed().firstNotNullOfOrNull { line ->
+            urlRegex.find(line)?.value
+        } ?: run {
+            val allText = shellLogs.joinToString("\n")
+            val start = allText.indexOf("https://accounts.google.com/o/oauth2/auth?")
+            if (start != -1) {
+                val sb = StringBuilder()
+                for (ch in allText.substring(start).take(2500)) {
+                    if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "_-.~%!$&'()*+,;=:@/?#") {
+                        sb.append(ch)
+                    } else if (ch == '\r' || ch == '\n' || ch == ' ') {
+                        continue
+                    } else {
+                        break
+                    }
+                }
+                val url = sb.toString()
+                if (url.contains("client_id") && url.contains("code_challenge")) url else null
+            } else null
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    val isAuthNow = remember(shellLogs.size, refreshTrigger) { LinuxSubsystem.isLoggedIn(context) }
+    val clipboardManager = LocalClipboardManager.current
 
-        // ── Multi-Session Tabs Bar (VS Code / Termux Style) ─────────────────
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .background(Color(0xFF0D1117))
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            val sessions = BashShellSession.sessions
-            val activeIdx = BashShellSession.activeSessionIndex
-
-            sessions.forEachIndexed { idx, session ->
-                val isSelected = idx == activeIdx
-                Surface(
-                    onClick = { BashShellSession.switchSession(idx) },
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF21262D),
-                    tonalElevation = if (isSelected) 4.dp else 0.dp
+    // ── Navigation Drawer for Sessions (Swipe from left side or tap ☰) ─────────
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = true,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = Color(0xFF161B22),
+                drawerContentColor = Color.White,
+                modifier = Modifier.width(280.dp)
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxHeight()
+                        .padding(12.dp)
                 ) {
+                    // Drawer Header
                     Row(
-                        Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 8.dp)
                     ) {
-                        Text(
-                            text = session.title,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isSelected) Color.White else Color(0xFF8B949E),
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                        )
-                        if (sessions.size > 1) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close Tab",
-                                tint = if (isSelected) Color.White else Color(0xFF8B949E),
-                                modifier = Modifier
-                                    .size(13.dp)
-                                    .clickable { BashShellSession.closeSession(idx) }
-                            )
+                        Text("💻", fontSize = 16.sp)
+                        Column {
+                            Text("AroCode Termux", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Active Terminal Sessions", color = Color(0xFF8B949E), fontSize = 10.sp)
                         }
                     }
-                }
-            }
 
-            // [+] New Session Button
-            Surface(
-                onClick = { BashShellSession.createSession(context) },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF238636)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "New Session",
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text("+ New Session", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                }
-            }
+                    HorizontalDivider(color = Color(0xFF30363D), thickness = 1.dp)
+                    Spacer(Modifier.height(8.dp))
 
-            // [Restart] & [Host Shell] Buttons if active session has exited
-            if (activeSession?.isRunning == false) {
-                Surface(
-                    onClick = { activeSession.restart(context) },
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF1F6FEB)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Restart Session",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text("Restart", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                    }
-                }
-
-                Surface(
-                    onClick = { activeSession.startHost(context) },
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF30363D)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text("Host Shell", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                    }
-                }
-            }
-        }
-
-        // ── In-App Ubuntu Linux Subsystem Installation Banner (When not installed) ──
-        if (!isLinuxInstalled) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                color = Color(0xFF6E40C9),
-                shape = RoundedCornerShape(8.dp),
-                onClick = onSetupLinux
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "📦 In-App Ubuntu Linux Subsystem",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            "Ubuntu 22.04 LTS (Git, Python3, Pip, agy CLI) install karein",
-                            color = Color(0xFFE1D5F5),
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                    Button(
-                        onClick = onSetupLinux,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text("📥 Install", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // ── 1-Tap Google OAuth Login Button (Direct Chrome Launch & Multi-line Stitched) ─
-        val oauthUrl = remember(shellLogs.size) {
-            val urlRegex = Regex("https://accounts\\.google\\.com/o/oauth2/auth\\?[A-Za-z0-9_.~%!$&'()*+,;=:@/?#\\-]+")
-            // 1. Check each log line from newest to oldest for clean full URL
-            shellLogs.asReversed().firstNotNullOfOrNull { line ->
-                urlRegex.find(line)?.value
-            } ?: run {
-                // 2. Fallback: Scan across all logs taking only valid URL characters (stops at box-drawing '─', emoji, or text)
-                val allText = shellLogs.joinToString("\n")
-                val start = allText.indexOf("https://accounts.google.com/o/oauth2/auth?")
-                if (start != -1) {
-                    val sb = StringBuilder()
-                    for (ch in allText.substring(start).take(2500)) {
-                        if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "_-.~%!$&'()*+,;=:@/?#") {
-                            sb.append(ch)
-                        } else if (ch == '\r' || ch == '\n' || ch == ' ') {
-                            continue // Skip wrapping whitespace
-                        } else {
-                            break // Stop at any decorative/emoji/boundary character like ─ or 💻
-                        }
-                    }
-                    val url = sb.toString()
-                    if (url.contains("client_id") && url.contains("code_challenge")) url else null
-                } else null
-            }
-        }
-
-        // ── 1-Tap Google OAuth Login Method Selector (Agy TUI Helper) ─────────
-        val isAgyMenu = remember(shellLogs.size) {
-            val recent = shellLogs.takeLast(12).joinToString("\n")
-            recent.contains("Select login method", ignoreCase = true) ||
-            (recent.contains("Antigravity CLI", ignoreCase = true) && recent.contains("Google OAuth"))
-        }
-
-        if (isAgyMenu && oauthUrl == null) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                color = Color(0xFF161B22),
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF238636))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
                     Text(
-                        "👇 Agy Menu Select:",
+                        "SESSIONS (${sessions.size})",
                         color = Color(0xFF58A6FF),
                         fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelMedium
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(vertical = 4.dp)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text("1. 🔑 Google OAuth (Enter)", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        }
-                        Button(
-                            onClick = { BashShellSession.sendRaw("\u001B[B\r") },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                            shape = RoundedCornerShape(6.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                        ) {
-                            Text("2. GCP", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
-        }
 
-        if (oauthUrl != null) {
-            val clipboardManager = LocalClipboardManager.current
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                color = Color(0xFF1A73E8),
-                shape = RoundedCornerShape(8.dp),
-                onClick = {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(oauthUrl)).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "🔑 1-Tap Google Login (Open in Chrome)",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Button(
-                        onClick = {
-                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(oauthUrl))
-                            Toast.makeText(context, "Full URL Copied! 📋", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        Text("📋 Copy Link", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        }
-
-        // ── 1-Tap Auth Code Paste Helper ────────────────────────────────────
-        val isWaitingAuthCode = remember(shellLogs.size) {
-            val recent = shellLogs.takeLast(10).joinToString("\n")
-            recent.contains("authorization code", ignoreCase = true) ||
-            (recent.contains("paste", ignoreCase = true) && recent.contains("code", ignoreCase = true))
-        }
-
-        if (isWaitingAuthCode) {
-            val clipboardManager = LocalClipboardManager.current
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                color = Color(0xFF261C38),
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF8957E5))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "📋 Code Copy Kar Liya?",
-                        color = Color(0xFFD2A8FF),
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Button(
-                        onClick = {
-                            val clip = clipboardManager.getText()?.text?.trim()
-                            if (!clip.isNullOrBlank()) {
-                                BashShellSession.sendRaw(clip + "\r")
-                                Toast.makeText(context, "Code paste ho gaya! 🚀", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Pehle Chrome se code copy karein!", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8957E5)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text("📋 1-Tap Paste & Connect", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // ── Agy Interactive Approval Strip (Only when Agy is asking for input) ──
-        val isAgyInteractive = remember(shellLogs.size) {
-            val recent = shellLogs.takeLast(8).joinToString("\n")
-            recent.contains("you:", ignoreCase = true) ||
-            recent.contains("Thought Process", ignoreCase = true) ||
-            (recent.contains("Navigate", ignoreCase = true) && recent.contains("Confirm", ignoreCase = true)) ||
-            recent.contains("tool:", ignoreCase = true)
-        }
-
-        if (isAgyInteractive) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                color = Color(0xFF0D2137),
-                shape = RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1F6FEB))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { BashShellSession.sendRaw("\r") },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("⏎ Confirm", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                    Button(
-                        onClick = { BashShellSession.sendRaw("\u001B[B\r") },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("[Next]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                    Button(
-                        onClick = { BashShellSession.sendRaw("s\r") },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21262D)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("[Skip]", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall) }
-                    Button(
-                        onClick = { BashShellSession.sendRaw("continue\r") },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F6FEB)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Continue→", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                    Button(
-                        onClick = { BashShellSession.sendCtrlC() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4E1010)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
-                    ) { Text("^C", color = Color(0xFFFF7B72), style = MaterialTheme.typography.labelSmall) }
-                }
-            }
-        }
-
-        // ── Real Terminal Emulator Viewport / Live Installer ──────────
-        if (BashShellSession.isInstallingLinux) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(Color(0xFF0D1117))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF161B22)),
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF30363D))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = Color(0xFF388BFD),
-                                strokeWidth = 2.5.dp
-                            )
-                            Column {
-                                Text(
-                                    "🐧 In-App Ubuntu Linux Installer (22.04 LTS)",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                Text(
-                                    BashShellSession.installStatusMessage,
-                                    color = Color(0xFF58A6FF),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 2
-                                )
-                            }
-                        }
-
-                        if (BashShellSession.installProgress > 0) {
-                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                LinearProgressIndicator(
-                                    progress = { BashShellSession.installProgress / 100f },
+                        itemsIndexed(sessions) { idx, session ->
+                            val isSelected = idx == activeIdx
+                            Surface(
+                                onClick = {
+                                    BashShellSession.switchSession(idx)
+                                    coroutineScope.launch { drawerState.close() }
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF21262D),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(3.dp)),
+                                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            Modifier
+                                                .size(7.dp)
+                                                .clip(CircleShape)
+                                                .background(if (session.isRunning) Color(0xFF3FB950) else Color(0xFFF85149))
+                                        )
+                                        Column {
+                                            Text(
+                                                session.title,
+                                                color = Color.White,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 11.sp
+                                            )
+                                            Text(
+                                                session.cwd,
+                                                color = if (isSelected) Color(0xFFE1D5F5) else Color(0xFF8B949E),
+                                                fontSize = 9.sp,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                    if (sessions.size > 1) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Close Tab",
+                                            tint = if (isSelected) Color.White else Color(0xFF8B949E),
+                                            modifier = Modifier
+                                                .size(13.dp)
+                                                .clickable { BashShellSession.closeSession(idx) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(color = Color(0xFF30363D), thickness = 1.dp)
+                    Spacer(Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            val s = BashShellSession.createSession(context)
+                            coroutineScope.launch { drawerState.close() }
+                            Toast.makeText(context, "Session ${s.id} created", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                        contentPadding = PaddingValues(vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("+ New Session", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            val s = BashShellSession.createSession(context, "${sessions.size + 1}: Host Shell")
+                            s.startHost(context)
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC9D1D9)),
+                        border = BorderStroke(1.dp, Color(0xFF30363D)),
+                        contentPadding = PaddingValues(vertical = 6.dp)
+                    ) {
+                        Text("⚡ Fail-safe Host Shell", fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    ) {
+        Column(Modifier.fillMaxSize()) {
+
+            // ── Top Bar: Drawer Toggle + Session Tabs + New Session + Google Login ─
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .background(Color(0xFF0D1117))
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // ☰ Side Drawer Button (Swipe or Tap)
+                Surface(
+                    onClick = { coroutineScope.launch { drawerState.open() } },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.Default.Menu, contentDescription = "Sessions Menu", tint = Color(0xFF58A6FF), modifier = Modifier.size(12.dp))
+                        Text("${sessions.size}", fontSize = 9.5.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Multi-Session Tabs (Compact)
+                sessions.forEachIndexed { idx, session ->
+                    val isSelected = idx == activeIdx
+                    Surface(
+                        onClick = { BashShellSession.switchSession(idx) },
+                        shape = RoundedCornerShape(5.dp),
+                        color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF21262D)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = session.title,
+                                fontSize = 9.5.sp,
+                                color = if (isSelected) Color.White else Color(0xFF8B949E),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            if (sessions.size > 1) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Tab",
+                                    tint = if (isSelected) Color.White else Color(0xFF8B949E),
+                                    modifier = Modifier
+                                        .size(11.dp)
+                                        .clickable { BashShellSession.closeSession(idx) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // [+] New Session Button
+                Surface(
+                    onClick = {
+                        val s = BashShellSession.createSession(context)
+                        Toast.makeText(context, "Session ${s.id} created", Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF238636)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Session",
+                            tint = Color.White,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Text("+ New", fontSize = 9.5.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // 🔑 1-Tap Google Login Button (Relocated right beside New Session button!)
+                Surface(
+                    onClick = {
+                        if (oauthUrl != null) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(oauthUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            BashShellSession.sendCommand("agy")
+                        }
+                    },
+                    shape = RoundedCornerShape(5.dp),
+                    color = if (oauthUrl != null) Color(0xFF1A73E8) else if (isAuthNow) Color(0xFF1B5E20) else Color(0xFF21262D)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("🔑", fontSize = 9.sp)
+                        Text(
+                            text = if (oauthUrl != null) "Google Login" else if (isAuthNow) "Google (Active)" else "Google Login",
+                            fontSize = 9.5.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // [📋 Copy Link] button (if OAuth URL present)
+                if (oauthUrl != null) {
+                    Surface(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(oauthUrl))
+                            Toast.makeText(context, "Full URL Copied! 📋", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(5.dp),
+                        color = Color(0xFF0D47A1)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📋 Copy", fontSize = 9.sp, color = Color.White)
+                        }
+                    }
+                }
+
+                // [Restart] & [Host Shell] if active session has exited
+                if (activeSession?.isRunning == false) {
+                    Surface(
+                        onClick = { activeSession.restart(context) },
+                        shape = RoundedCornerShape(5.dp),
+                        color = Color(0xFF1F6FEB)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Restart", tint = Color.White, modifier = Modifier.size(11.dp))
+                            Text("Restart", fontSize = 9.5.sp, color = Color.White)
+                        }
+                    }
+
+                    Surface(
+                        onClick = { activeSession.startHost(context) },
+                        shape = RoundedCornerShape(5.dp),
+                        color = Color(0xFF30363D)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Host Shell", fontSize = 9.5.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            // ── In-App Ubuntu Linux Subsystem Installation Banner (When not installed) ──
+            if (!isLinuxInstalled) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    color = Color(0xFF6E40C9),
+                    shape = RoundedCornerShape(6.dp),
+                    onClick = onSetupLinux
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "📦 Ubuntu Subsystem (Install)",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = TextStyle(fontSize = 10.sp)
+                            )
+                            Text(
+                                "Ubuntu 22.04 LTS (Git, Python3, Pip, agy CLI)",
+                                color = Color(0xFFE1D5F5),
+                                style = TextStyle(fontSize = 9.sp)
+                            )
+                        }
+                        Button(
+                            onClick = onSetupLinux,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text("📥 Install", color = Color.White, style = TextStyle(fontSize = 9.5.sp, fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+
+            // ── 1-Tap Auth Code Paste Helper (Compact 1-line strip) ───────────
+            val isWaitingAuthCode = remember(shellLogs.size, refreshTrigger) {
+                val recent = shellLogs.takeLast(10).joinToString("\n")
+                recent.contains("authorization code", ignoreCase = true) ||
+                (recent.contains("paste", ignoreCase = true) && recent.contains("code", ignoreCase = true))
+            }
+
+            if (isWaitingAuthCode) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    color = Color(0xFF261C38),
+                    shape = RoundedCornerShape(5.dp),
+                    border = BorderStroke(1.dp, Color(0xFF8957E5))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "📋 Code Copy Kar Liya?",
+                            color = Color(0xFFD2A8FF),
+                            fontWeight = FontWeight.Bold,
+                            style = TextStyle(fontSize = 10.sp)
+                        )
+                        Button(
+                            onClick = {
+                                val clip = clipboardManager.getText()?.text?.trim()
+                                if (!clip.isNullOrBlank()) {
+                                    BashShellSession.sendRaw(clip + "\r")
+                                    Toast.makeText(context, "Code paste ho gaya! 🚀", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Pehle Chrome se code copy karein!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8957E5)),
+                            shape = RoundedCornerShape(5.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text("📋 1-Tap Paste & Connect", color = Color.White, style = TextStyle(fontSize = 9.5.sp, fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+
+            // ── Real Terminal Emulator Viewport / Live Installer ──────────────
+            if (BashShellSession.isInstallingLinux) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color(0xFF0D1117))
+                        .padding(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF161B22)),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFF30363D))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "🐧 In-App Ubuntu Linux 22.04 Setup",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = TextStyle(fontSize = 11.sp)
+                            )
+                            Text(
+                                text = BashShellSession.installStatusMessage,
+                                color = Color(0xFF58A6FF),
+                                style = TextStyle(fontSize = 9.5.sp)
+                            )
+                            if (BashShellSession.installProgress > 0) {
+                                LinearProgressIndicator(
+                                    progress = { BashShellSession.installProgress / 100f },
+                                    modifier = Modifier.fillMaxWidth().height(4.dp),
                                     color = Color(0xFF238636),
                                     trackColor = Color(0xFF21262D)
                                 )
                                 Text(
-                                    "Progress: ${BashShellSession.installProgress}%",
+                                    text = "Progress: ${BashShellSession.installProgress}%",
                                     color = Color(0xFF8B949E),
-                                    style = MaterialTheme.typography.labelSmall
+                                    style = TextStyle(fontSize = 9.sp)
                                 )
                             }
-                        } else {
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
-                                color = Color(0xFF388BFD),
-                                trackColor = Color(0xFF21262D)
-                            )
                         }
                     }
-                }
 
-                Text(
-                    "📜 Live Installation Logs:",
-                    color = Color(0xFF8B949E),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                val installerListState = rememberLazyListState()
-                LaunchedEffect(BashShellSession.installLogs.size) {
-                    if (BashShellSession.installLogs.isNotEmpty()) {
-                        installerListState.animateScrollToItem(BashShellSession.installLogs.lastIndex)
+                    val installerListState = rememberLazyListState()
+                    LaunchedEffect(BashShellSession.installLogs.size) {
+                        if (BashShellSession.installLogs.isNotEmpty()) {
+                            installerListState.animateScrollToItem(BashShellSession.installLogs.lastIndex)
+                        }
                     }
-                }
 
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    color = Color(0xFF010409),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF21262D))
-                ) {
-                    LazyColumn(
-                        state = installerListState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    Surface(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        color = Color(0xFF0D1117),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Color(0xFF21262D))
                     ) {
-                        items(BashShellSession.installLogs) { logLine ->
-                            Text(
-                                text = logLine,
-                                color = when {
-                                    logLine.startsWith("✅") || logLine.startsWith("🎉") -> Color(0xFF3FB950)
-                                    logLine.startsWith("❌") || logLine.startsWith("⚠️") -> Color(0xFFF85149)
-                                    logLine.startsWith("📦") || logLine.startsWith("⏳") || logLine.startsWith("🐧") -> Color(0xFF58A6FF)
-                                    else -> Color(0xFFC9D1D9)
-                                },
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp
+                        LazyColumn(
+                            state = installerListState,
+                            modifier = Modifier.fillMaxSize().padding(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(1.dp)
+                        ) {
+                            items(BashShellSession.installLogs) { logLine ->
+                                Text(
+                                    text = logLine,
+                                    color = when {
+                                        logLine.startsWith("✅") || logLine.startsWith("🎉") -> Color(0xFF3FB950)
+                                        logLine.startsWith("❌") || logLine.startsWith("⚠️") -> Color(0xFFF85149)
+                                        logLine.startsWith("📦") || logLine.startsWith("⏳") || logLine.startsWith("🐧") -> Color(0xFF58A6FF)
+                                        else -> Color(0xFFC9D1D9)
+                                    },
+                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.5.sp)
                                 )
-                            )
+                            }
                         }
-                    }
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .background(Color(0xFF0D1117))
-            ) {
-                val session = activeSession
-                if (session != null) {
-                    XtermView(
-                        session = session.ptySession,
-                        jsInterface = session.ensureJsInterface(context),
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No active terminal session", color = Color(0xFF8B949E))
-                    }
-                }
-            }
-        }
-
-        // ── Termux-Style Interactive Menu Bar (Commands, Model, Settings) ───
-        val isAuthNow = remember(shellLogs.size) { LinuxSubsystem.isLoggedIn(context) }
-        val activeModelName = remember(shellLogs.size, showModelDialog) { LinuxSubsystem.getSelectedModel(context) }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF161B22))
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // ⚡ Commands Menu
-            Surface(
-                onClick = { showCommandsDialog = true },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF21262D)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text("⚡", fontSize = 12.sp)
-                    Text("Commands", color = Color(0xFF58A6FF), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // 🧠 Model Menu
-            Surface(
-                onClick = { showModelDialog = true },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF21262D)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text("🧠", fontSize = 12.sp)
-                    val shortModel = when {
-                        activeModelName.contains("3.8", true) -> "3.8 Flash"
-                        activeModelName.contains("2.5", true) -> "2.5 Pro"
-                        activeModelName.contains("2.0", true) -> "2.0 Flash"
-                        activeModelName.contains("Claude", true) -> "Claude"
-                        else -> "Model"
-                    }
-                    Text("Model ($shortModel)", color = Color(0xFFD29922), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // ⚙️ Settings Menu
-            Surface(
-                onClick = { showSettingsDialog = true },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF21262D)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text("⚙️", fontSize = 12.sp)
-                    Text("Settings", color = Color(0xFF3FB950), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // 📦 Install Ubuntu (if not installed)
-            if (!isLinuxInstalled) {
-                Surface(
-                    onClick = onSetupLinux,
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF6E40C9)
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text("📦", fontSize = 11.sp)
-                        Text("Install Ubuntu", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                     }
                 }
             } else {
-                // 🚀 Run server.py (when installed)
-                Surface(
-                    onClick = {
-                        LinuxSubsystem.deployServerPy(context)
-                        onSend("python3 /storage/Download/server.py")
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF238636)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(Color(0xFF0D1117))
                 ) {
-                    Row(
-                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text("🚀", fontSize = 11.sp)
-                        Text("server.py", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    val session = activeSession
+                    if (session != null) {
+                        XtermView(
+                            session = session.ptySession,
+                            jsInterface = session.ensureJsInterface(context),
+                            modifier = Modifier.fillMaxSize(),
+                            refreshTrigger = refreshTrigger
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No active terminal session", color = Color(0xFF8B949E), style = TextStyle(fontSize = 11.sp))
+                        }
                     }
                 }
             }
 
-            // 🤖 Quick Run agy
-            Surface(
-                onClick = { onSend("agy") },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF1F6FEB)
+            // ── Termux-Style Interactive Menu Bar (Compact UI scaling) ───────
+            val activeModelName = remember(shellLogs.size, showModelDialog, refreshTrigger) { LinuxSubsystem.getSelectedModel(context) }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF161B22))
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // ⚡ Commands Menu
+                Surface(
+                    onClick = { showCommandsDialog = true },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D)
                 ) {
-                    Text("🤖", fontSize = 11.sp)
-                    Text("agy", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("⚡", fontSize = 10.sp)
+                        Text("Commands", color = Color(0xFF58A6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-            }
 
-            // 🔄 Quick Resume
-            Surface(
-                onClick = { onSend("agy --continue") },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF21262D)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // 🧠 Model Menu
+                Surface(
+                    onClick = { showModelDialog = true },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D)
                 ) {
-                    Text("🔄", fontSize = 11.sp)
-                    Text("Resume", color = Color(0xFFC9D1D9), style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("🧠", fontSize = 10.sp)
+                        val shortModel = when {
+                            activeModelName.contains("3.8", true) -> "3.8 Flash"
+                            activeModelName.contains("2.5", true) -> "2.5 Pro"
+                            activeModelName.contains("2.0", true) -> "2.0 Flash"
+                            activeModelName.contains("Claude", true) -> "Claude"
+                            else -> "Model"
+                        }
+                        Text("Model ($shortModel)", color = Color(0xFFD29922), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-            }
 
-            // 🧹 Clear
-            Surface(
-                onClick = { onSend("clear") },
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF21262D)
-            ) {
-                Text("🧹 Clear", color = Color(0xFF8B949E), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
-            }
-
-            // 🟢 Status Pill
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = if (isAuthNow) Color(0xFF1A3B1A) else Color(0xFF3B1A1A)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // ⚙️ Settings Menu
+                Surface(
+                    onClick = { showSettingsDialog = true },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D)
                 ) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149)))
-                    Text(if (isAuthNow) "Connected" else "Login", color = if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149), style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("⚙️", fontSize = 10.sp)
+                        Text("Settings", color = Color(0xFF3FB950), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // 🚀 Run server.py
+                if (isLinuxInstalled) {
+                    Surface(
+                        onClick = {
+                            LinuxSubsystem.deployServerPy(context)
+                            onSend("python3 /storage/Download/server.py")
+                        },
+                        shape = RoundedCornerShape(5.dp),
+                        color = Color(0xFF238636)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text("🚀", fontSize = 9.5.sp)
+                            Text("server.py", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // 🤖 Quick Run agy
+                Surface(
+                    onClick = { onSend("agy") },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF1F6FEB)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("🤖", fontSize = 9.5.sp)
+                        Text("agy", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // 🔄 Quick Resume
+                Surface(
+                    onClick = { onSend("agy --continue") },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text("🔄", fontSize = 9.5.sp)
+                        Text("Resume", color = Color(0xFFC9D1D9), fontSize = 10.sp)
+                    }
+                }
+
+                // 🧹 Clear
+                Surface(
+                    onClick = { onSend("clear") },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF21262D)
+                ) {
+                    Text("🧹 Clear", color = Color(0xFF8B949E), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp))
+                }
+
+                // 🟢 Status Pill
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isAuthNow) Color(0xFF1A3B1A) else Color(0xFF3B1A1A)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Box(Modifier.size(5.dp).clip(CircleShape).background(if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149)))
+                        Text(if (isAuthNow) "Connected" else "Login", color = if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149), fontSize = 9.sp)
+                    }
+                }
+
+                // ➕ Add New Session Button at the very end of footer controls
+                Surface(
+                    onClick = {
+                        val s = BashShellSession.createSession(context)
+                        Toast.makeText(context, "Session ${s.id} created", Toast.LENGTH_SHORT).show()
+                        activeSession?.refocus()
+                    },
+                    shape = RoundedCornerShape(5.dp),
+                    color = Color(0xFF238636)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add Session", tint = Color.White, modifier = Modifier.size(11.dp))
+                        Text("New Session", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
-        }
 
-        val clipboardManager = LocalClipboardManager.current
-
-        // Mobile key shortcuts (Termux-style)
-        MobileKeyBar(
-            onKey = { key ->
-                when (key) {
-                    "CTRL+C" -> { BashShellSession.sendCtrlC(); activeSession?.refocus() }
-                    "CTRL+D" -> { BashShellSession.sendCtrlD(); activeSession?.refocus() }
-                    "CTRL+Z" -> { BashShellSession.sendCtrlZ(); activeSession?.refocus() }
-                    "ESC"    -> { BashShellSession.sendRaw("\u001B"); activeSession?.refocus() }
-                    "TAB"    -> { BashShellSession.sendRaw("\t"); activeSession?.refocus() }
-                    "↑"      -> { BashShellSession.sendRaw("\u001B[A"); activeSession?.refocus() }
-                    "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
-                    "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
-                    "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
-                    "ENTER"  -> { BashShellSession.sendRaw("\r"); activeSession?.refocus() }
-                    "clear"  -> { BashShellSession.clear(); activeSession?.refocus() }
-                    "ls -la" -> { BashShellSession.sendCommand("ls -la"); activeSession?.refocus() }
-                    else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
-                }
-            },
-            onPaste = {
-                val clip = clipboardManager.getText()?.text
-                if (!clip.isNullOrBlank()) {
-                    activeSession?.pasteText(clip)
+            // Mobile key shortcuts (Termux-style) with + button at the end
+            MobileKeyBar(
+                onKey = { key ->
+                    when (key) {
+                        "CTRL+C" -> { BashShellSession.sendCtrlC(); activeSession?.refocus() }
+                        "CTRL+D" -> { BashShellSession.sendCtrlD(); activeSession?.refocus() }
+                        "CTRL+Z" -> { BashShellSession.sendCtrlZ(); activeSession?.refocus() }
+                        "ESC"    -> { BashShellSession.sendRaw("\u001B"); activeSession?.refocus() }
+                        "TAB"    -> { BashShellSession.sendRaw("\t"); activeSession?.refocus() }
+                        "↑"      -> { BashShellSession.sendRaw("\u001B[A"); activeSession?.refocus() }
+                        "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
+                        "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
+                        "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
+                        "ENTER"  -> { BashShellSession.sendRaw("\r"); activeSession?.refocus() }
+                        "clear"  -> { BashShellSession.clear(); activeSession?.refocus() }
+                        "ls -la" -> { BashShellSession.sendCommand("ls -la"); activeSession?.refocus() }
+                        else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
+                    }
+                },
+                onPaste = {
+                    val clip = clipboardManager.getText()?.text
+                    if (!clip.isNullOrBlank()) {
+                        activeSession?.pasteText(clip)
+                        activeSession?.refocus()
+                    } else {
+                        Toast.makeText(context, "Clipboard empty!", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onNewSession = {
+                    val s = BashShellSession.createSession(context)
+                    Toast.makeText(context, "Session ${s.id} created", Toast.LENGTH_SHORT).show()
                     activeSession?.refocus()
-                } else {
-                    Toast.makeText(context, "Clipboard empty!", Toast.LENGTH_SHORT).show()
                 }
-            }
-        )
+            )
+        }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main TerminalBottomSheet
+// Main TerminalBottomSheet (Lifecycle State-Restored & High Performance)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1513,6 +1485,8 @@ fun TerminalBottomSheet(
     viewModel: TerminalViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     val status by viewModel.status.collectAsState()
     val logs by viewModel.logs.collectAsState()
     val pid by viewModel.pid.collectAsState()
@@ -1523,6 +1497,23 @@ fun TerminalBottomSheet(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
+    // Lifecycle state management: refresh UI and repaint canvas immediately on ON_RESUME
+    var lifecycleRefreshKey by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                lifecycleRefreshKey++
+                BashShellSession.activeSession?.refocus()
+                BashShellSession.activeSession?.jsInterface?.refresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.startShell(context)
     }
@@ -1532,7 +1523,7 @@ fun TerminalBottomSheet(
         sheetState = sheetState,
         containerColor = Color(0xFF161B22),
         dragHandle = { BottomSheetDefaults.DragHandle(color = Color(0xFF555555)) },
-        modifier = Modifier.fillMaxHeight(0.92f)
+        modifier = Modifier.fillMaxHeight(0.95f)
     ) {
         Column(
             Modifier
@@ -1540,12 +1531,12 @@ fun TerminalBottomSheet(
                 .imePadding()
         ) {
 
-            // ── Header: Status + Controls ──────────────────────────────────
+            // ── Header: Status + Controls (Compact) ───────────────────────
             Row(
                 Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF0D1117))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -1568,23 +1559,21 @@ fun TerminalBottomSheet(
                 Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF0D1117))
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     "📍 ${TermuxBridgeService.state.activeUrl.value}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF29B6F6)
+                    style = TextStyle(fontSize = 9.sp, color = Color(0xFF29B6F6))
                 )
                 Text(
                     "📁 /storage/…/Download",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF9E9E9E)
+                    style = TextStyle(fontSize = 9.sp, color = Color(0xFF9E9E9E))
                 )
             }
 
-            // ── Tab Bar ───────────────────────────────────────────────────
+            // ── Tab Bar (Compact) ─────────────────────────────────────────
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color(0xFF0D1117),
@@ -1605,8 +1594,11 @@ fun TerminalBottomSheet(
                         text = {
                             Text(
                                 title,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (selectedTab == index) Color(0xFF29B6F6) else Color(0xFF9E9E9E)
+                                style = TextStyle(
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selectedTab == index) Color(0xFF29B6F6) else Color(0xFF9E9E9E)
+                                )
                             )
                         }
                     )
@@ -1625,7 +1617,8 @@ fun TerminalBottomSheet(
                         logs = logs,
                         onSend = { viewModel.sendBashCommand(it) },
                         onSetupLinux = { viewModel.installMiniLinux(context) },
-                        isLinuxInstalled = isLinuxInstalled
+                        isLinuxInstalled = isLinuxInstalled,
+                        refreshTrigger = lifecycleRefreshKey
                     )
                 }
             }
@@ -1660,20 +1653,20 @@ fun BridgeStatusPill(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = animBg,
-        tonalElevation = 4.dp
+        tonalElevation = 2.dp
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White)
+            Text(label, style = TextStyle(fontSize = 10.sp, color = Color.White))
             Icon(
                 Icons.Default.KeyboardArrowUp,
                 contentDescription = "Open Terminal",
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(12.dp),
                 tint = Color.White
             )
         }

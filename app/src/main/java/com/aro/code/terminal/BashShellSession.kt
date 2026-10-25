@@ -292,8 +292,13 @@ object BashShellSession {
         sessions.add(session)
         if (ctx != null) {
             session.ensureJsInterface(ctx)
+            if (!session.isRunning) {
+                session.start(ctx)
+            }
         }
         activeSessionIndex = sessions.lastIndex
+        session.refocus()
+        session.jsInterface?.refresh()
         return session
     }
 
@@ -305,6 +310,8 @@ object BashShellSession {
             if (activeSessionIndex >= sessions.size) {
                 activeSessionIndex = sessions.size - 1
             }
+            activeSession?.refocus()
+            activeSession?.jsInterface?.refresh()
         }
     }
 
@@ -312,6 +319,7 @@ object BashShellSession {
         if (index in sessions.indices) {
             activeSessionIndex = index
             activeSession?.refocus()
+            activeSession?.jsInterface?.refresh()
         }
     }
 

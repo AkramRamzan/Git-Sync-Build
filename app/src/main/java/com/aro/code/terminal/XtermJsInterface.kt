@@ -141,6 +141,13 @@ class XtermJsInterface(
         }
     }
 
+    /** Refresh terminal canvas layout and repaint character cells */
+    fun refresh() {
+        scope.launch(Dispatchers.Main) {
+            webView?.evaluateJavascript("window.refreshTerminal && window.refreshTerminal()", null)
+        }
+    }
+
     /** Refocus the WebView so soft keyboard stays active */
     fun refocus() {
         scope.launch(Dispatchers.Main) {

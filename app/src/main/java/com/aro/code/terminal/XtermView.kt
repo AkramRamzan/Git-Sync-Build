@@ -2,6 +2,7 @@ package com.aro.code.terminal
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.MotionEvent
 import android.view.ViewGroup.LayoutParams
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -10,11 +11,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 /**
  * XtermView — Compose wrapper for an xterm.js terminal running in a WebView.
@@ -27,43 +30,70 @@ import androidx.compose.ui.viewinterop.AndroidView
  *  - JavaScript is enabled only for the local asset page (no remote scripts)
  *  - No mixed content, no geolocation, no camera, no DOM storage external leakage
  *
- * IME / keyboard notes:
+ * IME / keyboard & touch notes:
  *  - `setTextZoom(100)` and `builtInZoomControls = false` prevent IME focus loss
  *  - `setSupportMultipleWindows(false)` prevents popup focus stealing
  *  - `setLayerType(LAYER_TYPE_HARDWARE, null)` for smooth canvas rendering
- *
- * @param session        The [PtySession] to connect.
- * @param jsInterface    The [XtermJsInterface] that bridges JS ↔ PTY.
- * @param modifier       Compose modifier for sizing.
+ *  - Disallows parent intercept during touch moves so smooth scrolling works without
+ *    triggering BottomSheet drag gestures.
+ *  - Lifecycle observer automatically restores WebView and triggers xterm repaint
+ *    on ON_RESUME (eliminating blank/hidden elements when app is reopened).
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun XtermView(
     session: PtySession,
     jsInterface: XtermJsInterface,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    refreshTrigger: Int = 0
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     val webView = remember(session.id) {
         createTerminalWebView(context, jsInterface)
     }
 
+    // Lifecycle observer to guarantee WebView redraws instantly when app is un-minimized
+    DisposableEffect(lifecycleOwner, webView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    webView.onResume()
+                    webView.resumeTimers()
+                    webView.invalidate()
+                    jsInterface.refresh()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    webView.onPause()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     DisposableEffect(session.id) {
         onDispose {
-            // Don't destroy — session owner manages lifecycle
-            // WebView stays alive as long as the session is alive
+            // Session owner manages lifecycle
         }
     }
 
     AndroidView(
         factory = { webView },
         modifier = modifier,
-        update = { /* no-op; updates go through JavascriptInterface */ }
+        update = { wv ->
+            wv.onResume()
+            wv.invalidate()
+            jsInterface.refresh()
+        }
     )
 }
 
-@SuppressLint("SetJavaScriptEnabled")
+@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 private fun createTerminalWebView(
     context: Context,
     jsInterface: XtermJsInterface
@@ -75,42 +105,52 @@ private fun createTerminalWebView(
     // Dark terminal background immediately to eliminate any white flashes/lines
     wv.setBackgroundColor(android.graphics.Color.parseColor("#0D1117"))
 
-    // ── Hardware acceleration for canvas rendering ──
+    // Hardware acceleration for canvas rendering
     wv.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
-    // ── Security-hardened WebSettings ──
+    // Request parent container not to intercept vertical touch drags so
+    // user can scroll terminal text smoothly up & down
+    wv.setOnTouchListener { v, event ->
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                v.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+        }
+        false
+    }
+
+    // Security-hardened WebSettings
     with(wv.settings) {
-        javaScriptEnabled = true                     // required for xterm.js
+        javaScriptEnabled = true
         domStorageEnabled = true
-        allowFileAccess = true                       // load assets
+        allowFileAccess = true
         allowContentAccess = false
-        allowFileAccessFromFileURLs = true           // REQUIRED: allows index.html to load bundled xterm.js & xterm.css
-        allowUniversalAccessFromFileURLs = false     // no external fetching
+        allowFileAccessFromFileURLs = true
+        allowUniversalAccessFromFileURLs = false
         @Suppress("DEPRECATION")
         savePassword = false
         @Suppress("DEPRECATION")
         saveFormData = false
-        builtInZoomControls = false                  // prevent zoom stealing focus
+        builtInZoomControls = false
         displayZoomControls = false
         setSupportMultipleWindows(false)
-        textZoom = 100                               // prevent IME-triggered zoom
+        textZoom = 100
         cacheMode = WebSettings.LOAD_NO_CACHE
         mediaPlaybackRequiresUserGesture = true
         setSupportZoom(false)
     }
 
-    // ── JavascriptInterface — no port, no network ──
     wv.addJavascriptInterface(jsInterface, XtermJsInterface.INTERFACE_NAME)
 
-    // ── Block external navigation; open links in system browser ──
     wv.webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
             return if (url.startsWith("file:///android_asset/")) {
-                false // allow loading from assets
+                false
             } else {
-                // Delegate to AroTerminal.openUrl (JavascriptInterface) — already done in JS
-                // Fallback: open in system browser
                 jsInterface.openUrl(url)
                 true
             }
@@ -127,7 +167,6 @@ private fun createTerminalWebView(
         }
     }
 
-    // ── Minimal ChromeClient (no popups, no alerts exposed) ──
     wv.webChromeClient = object : WebChromeClient() {
         override fun onConsoleMessage(message: android.webkit.ConsoleMessage): Boolean {
             android.util.Log.d("XtermView[JS]", "[${message.messageLevel()}] ${message.message()}")
@@ -135,7 +174,6 @@ private fun createTerminalWebView(
         }
     }
 
-    // ── Load bundled xterm.js page ──
     wv.loadUrl("file:///android_asset/terminal/index.html")
 
     return wv
