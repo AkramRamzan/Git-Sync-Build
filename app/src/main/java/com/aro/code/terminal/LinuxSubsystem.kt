@@ -685,44 +685,57 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
         val bindings = mutableListOf(
             "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys"
+            "-b", "/proc"
         )
+        if (File("/sys").canRead()) {
+            bindings.add("-b")
+            bindings.add("/sys")
+        }
         val extStorage = File("/storage/emulated/0")
-        if (extStorage.exists()) {
+        if (extStorage.exists() && extStorage.canRead()) {
             bindings.add("-b")
             bindings.add("/storage/emulated/0:/storage")
             val download = File("/storage/emulated/0/Download")
-            if (download.exists()) {
+            if (download.exists() && download.canRead()) {
                 bindings.add("-b")
                 bindings.add("/storage/emulated/0/Download:/root/Download")
             }
         }
 
+        // Ensure guest mountpoints exist
+        File(rootfsDir, "storage").mkdirs()
+        File(rootfsDir, "root/Download").mkdirs()
+
+        // Ensure shell binaries and dynamic linkers have executable bit set
+        listOf(
+            "bin/bash", "usr/bin/bash",
+            "bin/sh", "usr/bin/sh",
+            "bin/env", "usr/bin/env",
+            "lib/ld-linux-aarch64.so.1",
+            "usr/lib/ld-linux-aarch64.so.1",
+            "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1",
+            "usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+        ).forEach { rel ->
+            val f = File(rootfsDir, rel)
+            if (f.exists()) {
+                f.setReadable(true, false)
+                f.setExecutable(true, false)
+            }
+        }
+
         val cmd = mutableListOf(
             proot.absolutePath,
+            "-v", "1",
             "-r", rootfsPath,
             "-0", // Fake root ID
-            "--link2symlink",
+            "-l", // --link2symlink
             "--kill-on-exit"
         )
         cmd.addAll(bindings)
 
-        // Termux proot-distro standard: invoke via /usr/bin/env -i to construct a clean,
-        // sanitized environment for the container. This prevents host environment variables
-        // (especially LD_LIBRARY_PATH, LD_PRELOAD, ANDROID_ROOT, ANDROID_DATA) from leaking
-        // into the GLIBC guest container and causing SIGSEGV (code 139)!
-        val envBinary = if (File(rootfsDir, "usr/bin/env").exists()) "/usr/bin/env" else "/bin/env"
         cmd.addAll(listOf(
             "-w", "/root",
-            envBinary, "-i",
-            "HOME=/root",
-            "USER=root",
-            "TERM=xterm-256color",
-            "COLORTERM=truecolor",
-            "LANG=C.UTF-8",
-            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            shell, "-l", "-i"
+            shell, "-l"
         ))
 
         // Environment for static PRoot process (clean and self-contained):
@@ -738,11 +751,16 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         envMap["TMPDIR"] = prootTmp.absolutePath
         envMap["TEMP"] = prootTmp.absolutePath
         envMap["TMP"] = prootTmp.absolutePath
+        envMap["HOME"] = "/root"
+        envMap["USER"] = "root"
+        envMap["TERM"] = "xterm-256color"
+        envMap["COLORTERM"] = "truecolor"
+        envMap["LANG"] = "C.UTF-8"
+        envMap["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
         // Host system paths for Bionic kernel/linker
         envMap["ANDROID_ROOT"] = System.getenv("ANDROID_ROOT") ?: "/system"
         envMap["ANDROID_DATA"] = System.getenv("ANDROID_DATA") ?: "/data"
-        envMap["PATH"] = System.getenv("PATH") ?: "/system/bin:/system/xbin"
 
         // Strip any dangerous host environment variables
         envMap.remove("LD_PRELOAD")

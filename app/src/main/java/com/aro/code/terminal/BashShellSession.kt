@@ -34,6 +34,22 @@ class ShellSession(
     var jsInterface: XtermJsInterface? = null
         private set
 
+    init {
+        // Mirror all PTY output (stdout & stderr from PRoot/bash) to session logs so
+        // diagnostics and errors are preserved in the UI logs and visible immediately
+        ptySession.onOutput = { data ->
+            try {
+                val text = String(data, Charsets.UTF_8)
+                for (rawLine in text.lines()) {
+                    val line = rawLine.replace("\r", "").trim()
+                    if (line.isNotEmpty()) {
+                        addLog(line)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     fun ensureJsInterface(context: Context): XtermJsInterface {
         val existing = jsInterface
         if (existing != null) return existing

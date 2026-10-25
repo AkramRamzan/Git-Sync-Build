@@ -47,8 +47,10 @@ class XtermJsInterface(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
-        /* Wire PTY output → xterm.js */
+        /* Wire PTY output → xterm.js (while preserving existing listeners like logger) */
+        val prevOnOutput = session.onOutput
         session.onOutput = { bytes ->
+            prevOnOutput?.invoke(bytes)
             sendOutputToJs(bytes)
         }
         session.onExit = { code ->

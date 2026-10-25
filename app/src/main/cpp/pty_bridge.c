@@ -220,6 +220,7 @@ Java_com_aro_code_terminal_PtyBridge_forkAndExec(
         /* Close leaked file descriptors above STDERR */
         int maxFd = (int)sysconf(_SC_OPEN_MAX);
         if (maxFd < 32) maxFd = 256;
+        if (maxFd > 1024) maxFd = 1024;
         for (int fd = 3; fd < maxFd; fd++) {
             close(fd);
         }
