@@ -89,21 +89,23 @@ private fun StatusBadge(status: BridgeStatus, pid: Int?) {
     ) {
         Box(
             Modifier
-                .size(7.dp)
+                .size(6.dp)
                 .clip(CircleShape)
                 .background(animColor)
         )
-        Text(label, style = TextStyle(fontSize = 10.sp, color = Color.White))
+        Text(label, style = TextStyle(fontSize = 9.sp, color = Color.White))
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Control Buttons (Compact mobile scaling)
+// Control Buttons (Compact mobile scaling with Minimize (-) toggle)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ControlButtons(
     status: BridgeStatus,
+    isMinimized: Boolean,
+    onToggleMinimize: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onRestart: () -> Unit,
@@ -121,14 +123,14 @@ private fun ControlButtons(
             onClick = onOpenTermux,
             shape = RoundedCornerShape(5.dp),
             color = Color(0xFF1F6FEB),
-            modifier = Modifier.padding(end = 2.dp)
+            modifier = Modifier.padding(end = 1.dp)
         ) {
             Row(
-                Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text("📲 Termux", style = TextStyle(fontSize = 9.5.sp, color = Color.White))
+                Text("📲 Termux", style = TextStyle(fontSize = 9.sp, color = Color.White))
             }
         }
 
@@ -137,14 +139,14 @@ private fun ControlButtons(
             onClick = onStart,
             shape = RoundedCornerShape(5.dp),
             color = Color(0xFF21262D),
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(22.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Default.PlayArrow,
                     contentDescription = "Start Bridge",
                     tint = if (!isRunning) Color(0xFF4CAF50) else Color.Gray,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(12.dp)
                 )
             }
         }
@@ -153,14 +155,14 @@ private fun ControlButtons(
             onClick = onRestart,
             shape = RoundedCornerShape(5.dp),
             color = Color(0xFF21262D),
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(22.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Default.Refresh,
                     contentDescription = "Restart Bridge",
                     tint = Color(0xFF29B6F6),
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(12.dp)
                 )
             }
         }
@@ -169,14 +171,14 @@ private fun ControlButtons(
             onClick = onStop,
             shape = RoundedCornerShape(5.dp),
             color = Color(0xFF21262D),
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(22.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Default.Stop,
                     contentDescription = "Stop Bridge",
                     tint = if (isRunning) Color(0xFFEF5350) else Color.Gray,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(12.dp)
                 )
             }
         }
@@ -185,14 +187,32 @@ private fun ControlButtons(
             onClick = onClear,
             shape = RoundedCornerShape(5.dp),
             color = Color(0xFF21262D),
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(22.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = "Clear Logs",
                     tint = Color(0xFF9E9E9E),
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+        }
+
+        // Minimize / Restore Toggle Button (-)
+        Surface(
+            onClick = onToggleMinimize,
+            shape = RoundedCornerShape(5.dp),
+            color = if (isMinimized) Color(0xFF1F6FEB) else Color(0xFF21262D),
+            border = BorderStroke(1.dp, if (isMinimized) Color(0xFF58A6FF) else Color(0xFF30363D)),
+            modifier = Modifier.size(22.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = if (isMinimized) "＋" else "－",
+                    color = if (isMinimized) Color.White else Color(0xFF58A6FF),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
                 )
             }
         }
@@ -212,8 +232,8 @@ private fun MobileKeyBar(
     var isCtrlSticky by remember { mutableStateOf(false) }
     var isAltSticky by remember { mutableStateOf(false) }
 
-    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, Enter, PASTE, and + button at very end)
-    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ENTER", "PASTE", "+")
+    // Row 1 — Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, SPACE, Enter, PASTE, and + button at very end)
+    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "SPACE", "ENTER", "PASTE", "+")
     // Row 2 — Shell & symbols
     val shellKeys = listOf("clear", "-", "/", "~", "|", "&&", "\"", "ls -la")
 
@@ -229,11 +249,12 @@ private fun MobileKeyBar(
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             navKeys.forEach { key ->
                 val isEnter = key == "ENTER"
+                val isSpace = key == "SPACE"
                 val isArrow = key == "↑" || key == "↓" || key == "←" || key == "→"
                 val isCtrlC = key == "CTRL+C"
                 val isCtrlD = key == "CTRL+D"
@@ -273,6 +294,7 @@ private fun MobileKeyBar(
                         isHighlighted -> Color(0xFF388BFD)
                         isPlus -> Color(0xFF238636)    // Termux green for add session
                         isEnter -> Color(0xFF238636)   // GitHub green
+                        isSpace -> Color(0xFF1F6FEB)   // Crisp blue for space select
                         isArrow -> Color(0xFF1F6FEB)   // Termux / VS Code blue
                         isCtrlC || isCtrlD -> Color(0xFF4E1010)   // Red
                         isPaste -> Color(0xFF382554)   // Purple
@@ -286,26 +308,27 @@ private fun MobileKeyBar(
                             isHighlighted -> Color(0xFF58A6FF)
                             isPlus -> Color(0xFF2EA043)
                             isEnter -> Color(0xFF2EA043)
+                            isSpace -> Color(0xFF388BFD)
                             isArrow -> Color(0xFF388BFD)
                             isPaste -> Color(0xFF8957E5)
                             else -> Color(0xFF30363D)
                         }
                     ),
-                    modifier = Modifier.height(27.dp)
+                    modifier = Modifier.height(25.dp)
                 ) {
                     Box(
-                        Modifier.padding(horizontal = if (isEnter) 9.dp else if (isPlus) 8.dp else 6.dp),
+                        Modifier.padding(horizontal = if (isEnter || isSpace) 8.dp else if (isPlus) 7.dp else 5.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isEnter) "⏎ ENTER" else if (isPlus) "＋" else key,
+                            text = if (isEnter) "⏎ ENTER" else if (isSpace) "␣ SPACE" else if (isPlus) "＋" else key,
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = if (isPlus) 12.sp else 10.sp,
-                                fontWeight = if (isEnter || isArrow || isPaste || isHighlighted || isPlus) FontWeight.Bold else FontWeight.Medium
+                                fontSize = if (isPlus) 11.sp else 9.sp,
+                                fontWeight = if (isEnter || isSpace || isArrow || isPaste || isHighlighted || isPlus) FontWeight.Bold else FontWeight.Medium
                             ),
                             color = when {
-                                isHighlighted || isEnter || isArrow || isPlus -> Color.White
+                                isHighlighted || isEnter || isSpace || isArrow || isPlus -> Color.White
                                 isCtrlC || isCtrlD -> Color(0xFFFF7B72)
                                 isPaste -> Color(0xFFD2A8FF)
                                 isAccent -> Color(0xFF58A6FF)
@@ -323,7 +346,7 @@ private fun MobileKeyBar(
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 4.dp, vertical = 1.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             shellKeys.forEach { key ->
@@ -332,12 +355,12 @@ private fun MobileKeyBar(
                     shape = RoundedCornerShape(5.dp),
                     color = Color(0xFF161B22),
                     border = BorderStroke(1.dp, Color(0xFF30363D)),
-                    modifier = Modifier.height(23.dp)
+                    modifier = Modifier.height(21.dp)
                 ) {
-                    Box(Modifier.padding(horizontal = 7.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
                         Text(
                             text = key,
-                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.5.sp),
+                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp),
                             color = Color(0xFF8B949E)
                         )
                     }
@@ -1450,6 +1473,7 @@ private fun BashShellTab(
                         "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
                         "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
                         "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
+                        "SPACE"  -> { BashShellSession.sendRaw(" "); activeSession?.refocus() }
                         "ENTER"  -> { BashShellSession.sendRaw("\r"); activeSession?.refocus() }
                         "clear"  -> { BashShellSession.clear(); activeSession?.refocus() }
                         "ls -la" -> { BashShellSession.sendCommand("ls -la"); activeSession?.refocus() }
@@ -1496,7 +1520,8 @@ fun TerminalBottomSheet(
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("⚡ Bridge Logs", "❯_ Bash Shell")
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var isMinimized by remember { mutableStateOf(false) }
 
     // Lifecycle state management: refresh UI and repaint canvas immediately on ON_RESUME
     var lifecycleRefreshKey by remember { mutableIntStateOf(0) }
@@ -1523,20 +1548,39 @@ fun TerminalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = Color(0xFF161B22),
-        dragHandle = { BottomSheetDefaults.DragHandle(color = Color(0xFF555555)) },
-        modifier = Modifier.fillMaxHeight(0.95f)
+        dragHandle = if (isMinimized) null else {
+            { BottomSheetDefaults.DragHandle(color = Color(0xFF555555), modifier = Modifier.height(8.dp)) }
+        },
+        modifier = if (isMinimized) {
+            Modifier
+                .fillMaxWidth()
+                .wrapContentHeight()
+        } else {
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+        },
+        windowInsets = WindowInsets(0, 0, 0, 0)
     ) {
         Column(
             Modifier
-                .fillMaxSize()
+                .then(
+                    if (isMinimized) Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                    else Modifier
+                        .fillMaxSize()
+                )
                 .imePadding()
+                .navigationBarsPadding()
         ) {
 
-            // ── Header: Status + Controls (Compact) ───────────────────────
+            // ── Header: Status + Controls (Compact & Clickable when Minimized) ────
             Row(
                 Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF0D1117))
+                    .clickable { if (isMinimized) isMinimized = false }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -1544,6 +1588,8 @@ fun TerminalBottomSheet(
                 StatusBadge(status, pid)
                 ControlButtons(
                     status = status,
+                    isMinimized = isMinimized,
+                    onToggleMinimize = { isMinimized = !isMinimized },
                     onStart      = { viewModel.startBridge(context) },
                     onStop       = {
                         viewModel.stopBridge(context)
@@ -1555,72 +1601,74 @@ fun TerminalBottomSheet(
                 )
             }
 
-            // ── Bridge Info Row ────────────────────────────────────────────
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0D1117))
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    "📍 ${TermuxBridgeService.state.activeUrl.value}",
-                    style = TextStyle(fontSize = 9.sp, color = Color(0xFF29B6F6))
-                )
-                Text(
-                    "📁 /storage/…/Download",
-                    style = TextStyle(fontSize = 9.sp, color = Color(0xFF9E9E9E))
-                )
-            }
-
-            // ── Tab Bar (Compact) ─────────────────────────────────────────
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color(0xFF0D1117),
-                contentColor = Color.White,
-                indicator = { tabPositions ->
-                    Box(
-                        Modifier
-                            .tabIndicatorOffset(tabPositions[selectedTab])
-                            .height(2.dp)
-                            .background(Color(0xFF29B6F6))
+            if (!isMinimized) {
+                // ── Bridge Info Row ────────────────────────────────────────────
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0D1117))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "📍 ${TermuxBridgeService.state.activeUrl.value}",
+                        style = TextStyle(fontSize = 8.5.sp, color = Color(0xFF29B6F6))
+                    )
+                    Text(
+                        "📁 /storage/…/Download",
+                        style = TextStyle(fontSize = 8.5.sp, color = Color(0xFF9E9E9E))
                     )
                 }
-            ) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                title,
-                                style = TextStyle(
-                                    fontSize = 10.5.sp,
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedTab == index) Color(0xFF29B6F6) else Color(0xFF9E9E9E)
+
+                // ── Tab Bar (Compact Termux) ──────────────────────────────────
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color(0xFF0D1117),
+                    contentColor = Color.White,
+                    indicator = { tabPositions ->
+                        Box(
+                            Modifier
+                                .tabIndicatorOffset(tabPositions[selectedTab])
+                                .height(2.dp)
+                                .background(Color(0xFF29B6F6))
+                        )
+                    }
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = {
+                                Text(
+                                    title,
+                                    style = TextStyle(
+                                        fontSize = 9.5.sp,
+                                        fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selectedTab == index) Color(0xFF29B6F6) else Color(0xFF9E9E9E)
+                                    )
                                 )
-                            )
-                        }
-                    )
+                            }
+                        )
+                    }
                 }
-            }
 
-            // ── Tab Content ───────────────────────────────────────────────
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                when (selectedTab) {
-                    0 -> BridgeLogsTab(logs)
-                    1 -> BashShellTab(
-                        logs = logs,
-                        onSend = { viewModel.sendBashCommand(it) },
-                        onSetupLinux = { viewModel.installMiniLinux(context) },
-                        isLinuxInstalled = isLinuxInstalled,
-                        refreshTrigger = lifecycleRefreshKey
-                    )
+                // ── Tab Content ───────────────────────────────────────────────
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    when (selectedTab) {
+                        0 -> BridgeLogsTab(logs)
+                        1 -> BashShellTab(
+                            logs = logs,
+                            onSend = { viewModel.sendBashCommand(it) },
+                            onSetupLinux = { viewModel.installMiniLinux(context) },
+                            isLinuxInstalled = isLinuxInstalled,
+                            refreshTrigger = lifecycleRefreshKey
+                        )
+                    }
                 }
             }
         }

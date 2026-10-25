@@ -107,6 +107,8 @@ private fun createTerminalWebView(
 
     // Hardware acceleration for canvas rendering
     wv.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+    wv.isFocusable = true
+    wv.isFocusableInTouchMode = true
 
     // Request parent container not to intercept vertical touch drags so
     // user can scroll terminal text smoothly up & down
@@ -114,6 +116,7 @@ private fun createTerminalWebView(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 v.parent?.requestDisallowInterceptTouchEvent(true)
+                if (!v.hasFocus()) v.requestFocus()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 v.parent?.requestDisallowInterceptTouchEvent(false)
