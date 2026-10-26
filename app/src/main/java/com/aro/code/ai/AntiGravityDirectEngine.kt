@@ -191,8 +191,8 @@ class AntiGravityDirectEngine @Inject constructor(
                             }
                         }
                         "step_update" -> {
-                            val su = json.optJSONObject("step_update") ?: return@try
-                            if (su.optString("step_type") == "agent_response") {
+                            val su = json.optJSONObject("step_update")
+                            if (su != null && su.optString("step_type") == "agent_response") {
                                 val delta = su.optString("text_delta")
                                 if (!delta.isNullOrEmpty()) {
                                     val clean = ANSI_REGEX.replace(delta, "")
