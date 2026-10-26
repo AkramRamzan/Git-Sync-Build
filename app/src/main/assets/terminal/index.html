@@ -37,79 +37,79 @@ html, body {
 }
 .xterm-screen canvas { image-rendering: pixelated; }
 
-/* ─── Slash Commands Suggestion Bar (Termux-style) ─────────────────────────── */
-.slash-palette {
+/* ─── Slash Commands Inline Suggestion Bar ──────────────────────────────────── */
+/* Positioned dynamically below cursor row — no top-of-screen popup, no reflow */
+#slash-palette {
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
   background: #161b22;
-  border-bottom: 2px solid #388bfd;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
-  z-index: 1000;
+  border-top: 1px solid #30363d;
+  border-bottom: 1px solid #388bfd;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.65);
+  z-index: 999;
   display: flex;
   flex-direction: column;
-  padding: 4px 6px 5px 6px;
+  padding: 3px 6px 4px 6px;
   font-family: 'JetBrainsMono', monospace;
-  animation: slideDown 0.12s ease-out;
+  /* Use opacity/visibility for zero-reflow show/hide */
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  will-change: opacity, transform;
+  transition: opacity 0.08s ease, visibility 0.08s ease;
 }
-.slash-palette.hidden {
-  display: none;
-}
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
+#slash-palette.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 .slash-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
-  padding: 0 2px;
+  margin-bottom: 3px;
+  padding: 0 1px;
 }
 .slash-title {
   color: #58a6ff;
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
 }
 .slash-hint {
-  color: #8b949e;
-  font-size: 8px;
+  color: #6e7681;
+  font-size: 7.5px;
 }
 .slash-list {
   display: flex;
   flex-direction: row;
   overflow-x: auto;
-  gap: 5px;
-  padding-bottom: 2px;
+  gap: 4px;
+  padding-bottom: 1px;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
-.slash-list::-webkit-scrollbar {
-  height: 3px;
-}
-.slash-list::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border-radius: 2px;
-}
+.slash-list::-webkit-scrollbar { display: none; }
 .slash-item {
   display: inline-flex;
   align-items: center;
   background: #21262d;
   border: 1px solid #30363d;
   border-radius: 4px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   cursor: pointer;
   user-select: none;
   flex-shrink: 0;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .slash-item:active {
   background: #1f6feb;
   border-color: #58a6ff;
 }
 .slash-item .cmd-name {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   color: #f0f6fc;
 }
@@ -120,30 +120,30 @@ html, body {
   padding: 0 1px;
 }
 .slash-item:active .cmd-name .match {
-  color: #ffffff;
+  color: #fff;
   background: transparent;
 }
 .slash-item .cmd-desc {
-  font-size: 8px;
+  font-size: 7.5px;
   color: #8b949e;
-  margin-left: 5px;
+  margin-left: 4px;
 }
 .slash-item .cmd-run {
-  margin-left: 6px;
-  padding: 1px 4px;
+  margin-left: 5px;
+  padding: 1px 3px;
   border-radius: 3px;
   background: #238636;
-  color: #ffffff;
-  font-size: 8px;
+  color: #fff;
+  font-size: 7.5px;
   font-weight: 700;
 }
 </style>
 </head>
 <body>
-<div id="slash-palette" class="slash-palette hidden">
+<div id="slash-palette" class="hidden">
   <div class="slash-header">
-    <span class="slash-title">⚡ SLASH COMMANDS</span>
-    <span class="slash-hint">Tap to auto-fill • [↵] Run</span>
+    <span class="slash-title">⚡ SLASH</span>
+    <span class="slash-hint">Tap=fill • ↵=run</span>
   </div>
   <div id="slash-list" class="slash-list"></div>
 </div>
@@ -364,24 +364,59 @@ window.addEventListener('focus', function() {
   window.refreshTerminal();
 });
 
-// ─── Slash Commands Autocompletion Engine (Termux-style) ──────────────────────
+// ─── Slash Commands Inline Autocomplete Engine ────────────────────────────────
+// Positions suggestion strip BELOW the current cursor row (inline, not top popup).
+// Uses opacity/visibility toggle — zero layout reflow, zero screen flash.
 const SLASH_COMMANDS = [
-  { cmd: '/model',   desc: 'AI Model Switcher' },
-  { cmd: '/help',    desc: 'Command Cheat Sheet' },
-  { cmd: '/agy',     desc: 'Anti-Gravity AI Agent' },
-  { cmd: '/clear',   desc: 'Clear Terminal Screen' },
-  { cmd: '/update',  desc: 'apt-get update' },
-  { cmd: '/upgrade', desc: 'apt-get upgrade -y' },
-  { cmd: '/install', desc: 'apt-get install <pkg>' },
-  { cmd: '/status',  desc: 'CPU, RAM & Disk Status' },
-  { cmd: '/storage', desc: 'cd /storage/Download' },
-  { cmd: '/history', desc: 'Recent Command History' },
-  { cmd: '/exit',    desc: 'Close Terminal Session' }
+  { cmd: '/model',   desc: 'AI Model' },
+  { cmd: '/help',    desc: 'Cheat Sheet' },
+  { cmd: '/agy',     desc: 'Anti-Gravity AI' },
+  { cmd: '/clear',   desc: 'Clear Screen' },
+  { cmd: '/update',  desc: 'apt update' },
+  { cmd: '/upgrade', desc: 'apt upgrade' },
+  { cmd: '/install', desc: 'apt install' },
+  { cmd: '/status',  desc: 'System Stats' },
+  { cmd: '/storage', desc: 'cd Downloads' },
+  { cmd: '/history', desc: 'Cmd History' },
+  { cmd: '/exit',    desc: 'Exit Shell' }
 ];
 
 let typedLineBuffer = '';
 const slashPaletteEl = document.getElementById('slash-palette');
-const slashListEl = document.getElementById('slash-list');
+const slashListEl    = document.getElementById('slash-list');
+
+/* ── Get pixel height of one terminal cell row ── */
+function getCellHeight() {
+  try {
+    // xterm.js internal: _core.renderService.dimensions.css.cell.height
+    const dims = term._core && term._core.renderService && term._core.renderService.dimensions;
+    if (dims && dims.css && dims.css.cell && dims.css.cell.height) {
+      return dims.css.cell.height;
+    }
+  } catch(e) {}
+  // fallback: divide screen canvas height by terminal rows
+  try {
+    const canvas = document.querySelector('.xterm-screen canvas');
+    if (canvas && term.rows > 0) return canvas.clientHeight / term.rows;
+  } catch(e) {}
+  return 18; // safe default
+}
+
+/* ── Position palette just below the cursor row ── */
+function positionPaletteAtCursor() {
+  try {
+    const cursorRow = term.buffer.active.cursorY; // 0-indexed row on screen
+    const cellH     = getCellHeight();
+    // xterm canvas top offset within the page
+    const termEl = document.getElementById('terminal');
+    const termTop = termEl ? termEl.getBoundingClientRect().top : 0;
+    const paletteTop = termTop + (cursorRow + 1) * cellH;
+    slashPaletteEl.style.top = Math.round(paletteTop) + 'px';
+  } catch(e) {
+    // If we can't calculate, show near bottom-third of screen
+    slashPaletteEl.style.top = Math.round(window.innerHeight * 0.6) + 'px';
+  }
+}
 
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -389,28 +424,20 @@ function escapeHtml(str) {
 
 function updateSlashPalette() {
   const trimmed = typedLineBuffer.trim();
-  // Show palette only when line starts with slash
-  if (!trimmed.startsWith('/')) {
-    hideSlashPalette();
-    return;
-  }
+  if (!trimmed.startsWith('/')) { hideSlashPalette(); return; }
 
-  const query = trimmed.toLowerCase();
+  const query   = trimmed.toLowerCase();
   const matches = SLASH_COMMANDS.filter(function(item) {
     return item.cmd.toLowerCase().includes(query);
   });
+  if (matches.length === 0) { hideSlashPalette(); return; }
 
-  if (matches.length === 0) {
-    hideSlashPalette();
-    return;
-  }
-
-  // Sort so prefix matches appear first
+  // Prefix matches first, then alphabetical
   matches.sort(function(a, b) {
-    const aStarts = a.cmd.toLowerCase().startsWith(query);
-    const bStarts = b.cmd.toLowerCase().startsWith(query);
-    if (aStarts && !bStarts) return -1;
-    if (!aStarts && bStarts) return 1;
+    const aS = a.cmd.toLowerCase().startsWith(query);
+    const bS = b.cmd.toLowerCase().startsWith(query);
+    if (aS && !bS) return -1;
+    if (!aS && bS) return  1;
     return a.cmd.localeCompare(b.cmd);
   });
 
@@ -419,59 +446,58 @@ function updateSlashPalette() {
     const itemEl = document.createElement('div');
     itemEl.className = 'slash-item';
 
-    // Highlight matching characters
     const cmdLower = item.cmd.toLowerCase();
     const matchIdx = cmdLower.indexOf(query);
     let nameHtml = '';
     if (matchIdx !== -1) {
       const before = escapeHtml(item.cmd.slice(0, matchIdx));
-      const match = escapeHtml(item.cmd.slice(matchIdx, matchIdx + query.length));
-      const after = escapeHtml(item.cmd.slice(matchIdx + query.length));
+      const match  = escapeHtml(item.cmd.slice(matchIdx, matchIdx + query.length));
+      const after  = escapeHtml(item.cmd.slice(matchIdx + query.length));
       nameHtml = before + '<span class="match">' + match + '</span>' + after;
     } else {
       nameHtml = escapeHtml(item.cmd);
     }
 
-    itemEl.innerHTML = '<span class="cmd-name">' + nameHtml + '</span>' +
-                       '<span class="cmd-desc">' + escapeHtml(item.desc) + '</span>' +
-                       '<span class="cmd-run" title="Run immediately">↵</span>';
+    itemEl.innerHTML =
+      '<span class="cmd-name">' + nameHtml + '</span>' +
+      '<span class="cmd-desc">' + escapeHtml(item.desc) + '</span>' +
+      '<span class="cmd-run" title="Run">↵</span>';
 
-    // Tap handling: run button executes command directly; item body inserts with space
-    itemEl.addEventListener('click', function(e) {
+    itemEl.addEventListener('pointerdown', function(e) {
       e.preventDefault();
       e.stopPropagation();
       const isRunBtn = e.target.classList.contains('cmd-run');
-      if (isRunBtn) {
-        if (window.AroTerminal) {
-          // Send Ctrl+U (\x15) to clear whatever was typed on the line, then cmd + enter
+      if (window.AroTerminal) {
+        if (isRunBtn) {
           AroTerminal.sendInput(toBase64Utf8('\x15' + item.cmd + '\r'));
-        }
-        typedLineBuffer = '';
-      } else {
-        if (window.AroTerminal) {
+          typedLineBuffer = '';
+        } else {
           AroTerminal.sendInput(toBase64Utf8('\x15' + item.cmd + ' '));
+          typedLineBuffer = item.cmd + ' ';
         }
-        typedLineBuffer = item.cmd + ' ';
       }
       hideSlashPalette();
-      window.refocusTerminal();
+      window.refocusTerminal && window.refocusTerminal();
     });
 
     slashListEl.appendChild(itemEl);
   });
 
+  // Position inline below cursor BEFORE making visible
+  positionPaletteAtCursor();
   slashPaletteEl.classList.remove('hidden');
 }
 
 function hideSlashPalette() {
-  if (slashPaletteEl) {
+  if (slashPaletteEl && !slashPaletteEl.classList.contains('hidden')) {
     slashPaletteEl.classList.add('hidden');
   }
 }
 
+// Hide when touching outside palette (passive — no reflow)
 document.addEventListener('touchstart', function(e) {
-  if (!e.target.closest('#slash-palette')) {
-    hideSlashPalette();
+  if (slashPaletteEl && !slashPaletteEl.classList.contains('hidden')) {
+    if (!slashPaletteEl.contains(e.target)) hideSlashPalette();
   }
 }, { passive: true });
 
@@ -574,11 +600,10 @@ window.refocusTerminal = function() {
     term.focus();
     setupInputHandling();
     const textarea = term.textarea || document.querySelector('.xterm-helper-textarea');
-    if (textarea) {
-      textarea.focus();
-    }
+    if (textarea) { textarea.focus(); }
   } catch(e) {}
-  window.refreshTerminal();
+  // Do NOT call refreshTerminal() here — it triggers fitAddon.fit() which
+  // causes canvas resize → screen flash. Only refocus keyboard/cursor.
 };
 
 // ─── Link handling ────────────────────────────────────────────────────────────
