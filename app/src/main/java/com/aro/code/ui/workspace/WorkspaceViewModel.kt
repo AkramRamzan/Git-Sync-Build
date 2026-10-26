@@ -18,6 +18,12 @@ import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 
+data class GitStatusInfo(
+    val branch: String = "main",
+    val changedFiles: List<String> = emptyList(),
+    val isGitRepo: Boolean = false
+)
+
 data class WorkspaceUiState(
     val projectNodes: List<ProjectNode> = emptyList(),
     val projectName: String? = null,
@@ -28,7 +34,9 @@ data class WorkspaceUiState(
     val isLoading: Boolean = false,
     val statusMessage: String? = null,
     val showCloneDialog: Boolean = false,
-    val showAntiGravityDialog: Boolean = false
+    val showAntiGravityDialog: Boolean = false,
+    val showGitDialog: Boolean = false,
+    val gitStatus: GitStatusInfo? = null
 )
 
 @HiltViewModel
@@ -241,6 +249,108 @@ class WorkspaceViewModel @Inject constructor(
                 refreshFileTree()
             }.onFailure { e ->
                 _uiState.update { it.copy(isLoading = false, statusMessage = "Clone failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun openGitDialog() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val projectPath = safManager.getPhysicalPath(_uiState.value.projectUriString)
+            val repoDir = if (projectPath != null) File(projectPath) else fs.reposRoot
+            val gitDir = File(repoDir, ".git")
+
+            if (!gitDir.exists()) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        showGitDialog = true,
+                        gitStatus = GitStatusInfo(isGitRepo = false)
+                    )
+                }
+                return@launch
+            }
+
+            var branchName = "main"
+            runCatching {
+                org.eclipse.jgit.api.Git.open(repoDir).use { g ->
+                    branchName = g.repository.branch ?: "main"
+                }
+            }
+
+            val statusResult = git.status(repoDir)
+            val changedFiles = statusResult.getOrDefault(emptySet()).toList()
+
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    showGitDialog = true,
+                    gitStatus = GitStatusInfo(
+                        branch = branchName,
+                        changedFiles = changedFiles,
+                        isGitRepo = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun dismissGitDialog() {
+        _uiState.update { it.copy(showGitDialog = false) }
+    }
+
+    fun commitAndPush(commitMessage: String) {
+        if (commitMessage.isBlank()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, statusMessage = "Committing changes…") }
+            val projectPath = safManager.getPhysicalPath(_uiState.value.projectUriString)
+            val repoDir = if (projectPath != null) File(projectPath) else fs.reposRoot
+            val token = credentialStore.githubToken.firstOrNull() ?: ""
+
+            git.stageAndCommit(
+                repoDir = repoDir,
+                message = commitMessage,
+                authorName = "Aro Code Developer",
+                authorEmail = "developer@arocode.app"
+            ).onSuccess { commitId ->
+                if (token.isNotBlank()) {
+                    _uiState.update { it.copy(statusMessage = "Pushing to remote…") }
+                    git.push(repoDir, token)
+                        .onSuccess {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    showGitDialog = false,
+                                    statusMessage = "Committed & Pushed ($commitId) ✓"
+                                )
+                            }
+                            refreshFileTree()
+                        }
+                        .onFailure { e ->
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    statusMessage = "Committed ($commitId), push failed: ${e.message}"
+                                )
+                            }
+                        }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            showGitDialog = false,
+                            statusMessage = "Committed ($commitId) ✓ (Configure GitHub token in Settings to push)"
+                        )
+                    }
+                    refreshFileTree()
+                }
+            }.onFailure { e ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        statusMessage = "Commit failed: ${e.message}"
+                    )
+                }
             }
         }
     }

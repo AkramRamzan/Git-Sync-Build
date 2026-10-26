@@ -15,7 +15,9 @@ data class EditorUiState(
     val currentContent: String? = null,
     val isLoading: Boolean = false,
     val isDirty: Boolean = false,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false
 )
 
 @HiltViewModel
@@ -27,6 +29,9 @@ class EditorViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(EditorUiState())
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
     private var originalContent: String? = null
+    private val undoStack = ArrayDeque<String>()
+    private val redoStack = ArrayDeque<String>()
+    private var lastSnapshotTime = 0L
 
     init {
         viewModelScope.launch {
@@ -58,12 +63,16 @@ class EditorViewModel @Inject constructor(
             safManager.readText(pathOrUri)
                 .onSuccess { content ->
                     originalContent = content
+                    undoStack.clear()
+                    redoStack.clear()
                     _uiState.update {
                         it.copy(
                             currentContent = content,
                             isDirty = false,
                             isLoading = false,
-                            statusMessage = "Loaded"
+                            statusMessage = "Loaded",
+                            canUndo = false,
+                            canRedo = false
                         )
                     }
                 }
@@ -78,9 +87,85 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    fun updateContent(newContent: String) {
+    fun updateContent(newContent: String, isUndoRedo: Boolean = false) {
+        val current = _uiState.value.currentContent
+        if (!isUndoRedo && current != null && current != newContent) {
+            val now = System.currentTimeMillis()
+            // Snapshot to undo stack if last snapshot was > 600ms ago or on first change
+            if (now - lastSnapshotTime > 600L || undoStack.isEmpty()) {
+                if (undoStack.size >= 50) undoStack.removeFirst()
+                undoStack.addLast(current)
+                lastSnapshotTime = now
+                redoStack.clear()
+            }
+        }
         val dirty = (newContent != originalContent)
-        _uiState.update { it.copy(currentContent = newContent, isDirty = dirty) }
+        _uiState.update {
+            it.copy(
+                currentContent = newContent,
+                isDirty = dirty,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty()
+            )
+        }
+    }
+
+    fun undo() {
+        if (undoStack.isEmpty()) return
+        val current = _uiState.value.currentContent ?: return
+        val prev = undoStack.removeLast()
+        redoStack.addLast(current)
+        val dirty = (prev != originalContent)
+        _uiState.update {
+            it.copy(
+                currentContent = prev,
+                isDirty = dirty,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = true,
+                statusMessage = "Undo"
+            )
+        }
+    }
+
+    fun redo() {
+        if (redoStack.isEmpty()) return
+        val current = _uiState.value.currentContent ?: return
+        val next = redoStack.removeLast()
+        undoStack.addLast(current)
+        val dirty = (next != originalContent)
+        _uiState.update {
+            it.copy(
+                currentContent = next,
+                isDirty = dirty,
+                canUndo = true,
+                canRedo = redoStack.isNotEmpty(),
+                statusMessage = "Redo"
+            )
+        }
+    }
+
+    fun replaceText(search: String, replace: String, replaceAll: Boolean = false) {
+        val content = _uiState.value.currentContent ?: return
+        if (search.isEmpty()) return
+        val updated = if (replaceAll) {
+            content.replace(search, replace)
+        } else {
+            content.replaceFirst(search, replace)
+        }
+        if (updated != content) {
+            undoStack.addLast(content)
+            redoStack.clear()
+            val dirty = (updated != originalContent)
+            _uiState.update {
+                it.copy(
+                    currentContent = updated,
+                    isDirty = dirty,
+                    canUndo = true,
+                    canRedo = false,
+                    statusMessage = if (replaceAll) "Replaced all occurrences" else "Replaced match"
+                )
+            }
+        }
     }
 
     fun saveFile() {
@@ -101,4 +186,5 @@ class EditorViewModel @Inject constructor(
     fun requestDiff(filePath: String) {
         bridge.onDiffRequested(filePath)
     }
+}
 }

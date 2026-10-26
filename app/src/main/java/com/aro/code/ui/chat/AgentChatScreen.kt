@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -190,6 +191,14 @@ fun AgentChatScreen(
                     }
                 },
                 actions = {
+                    // Session History List
+                    IconButton(
+                        onClick = { viewModel.openSessionHistory() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(Icons.Default.History, contentDescription = "Conversation History", modifier = Modifier.size(20.dp))
+                    }
+
                     // New Session Thread (+)
                     IconButton(
                         onClick = { viewModel.startNewSession() },
@@ -732,6 +741,149 @@ fun AgentChatScreen(
             },
             onSignOut = { viewModel.signOutGoogle() }
         )
+    }
+
+    // Conversation History Bottom Sheet
+    if (state.showSessionHistorySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.dismissSessionHistory() },
+            containerColor = Color(0xFF161B22)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = if (state.engine == ChatEngine.ANTIGRAVITY) "Anti-Gravity Conversations" else "Gemini Conversations",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "${state.sessionsList.size} saved sessions",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF8B949E)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.startNewSession()
+                            viewModel.dismissSessionHistory()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("New", fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                if (state.sessionsList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No past sessions found", color = Color(0xFF8B949E), fontFamily = FontFamily.Monospace)
+                    }
+                } else {
+                    val activeSid = if (state.engine == ChatEngine.ANTIGRAVITY) state.antiGravitySessionId else state.geminiSessionId
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.sessionsList, key = { it.sessionId }) { session ->
+                            val isActive = session.sessionId == activeSid
+                            Surface(
+                                onClick = { viewModel.switchSession(session.sessionId) },
+                                color = if (isActive) Color(0xFF1F6FEB).copy(alpha = 0.2f) else Color(0xFF21262D),
+                                border = BorderStroke(1.dp, if (isActive) Color(0xFF58A6FF) else Color(0xFF30363D)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (isActive) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF238636),
+                                                    modifier = Modifier.padding(end = 6.dp)
+                                                ) {
+                                                    Text(
+                                                        "ACTIVE",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = session.title,
+                                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 13.sp,
+                                                color = if (isActive) Color(0xFF58A6FF) else Color(0xFFE6EDF3),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        val timeStr = remember(session.lastTimestamp) {
+                                            val diff = System.currentTimeMillis() - session.lastTimestamp
+                                            when {
+                                                diff < 60_000L -> "Just now"
+                                                diff < 3600_000L -> "${diff / 60_000L}m ago"
+                                                diff < 86400_000L -> "${diff / 3600_000L}h ago"
+                                                else -> "${diff / 86400_000L}d ago"
+                                            }
+                                        }
+                                        Text(
+                                            text = "$timeStr • ${session.messageCount} messages",
+                                            fontSize = 10.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFF8B949E)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { viewModel.deleteSession(session.sessionId) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete session",
+                                            tint = Color(0xFF8B949E),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
     }
 }
 

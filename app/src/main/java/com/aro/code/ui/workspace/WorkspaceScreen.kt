@@ -71,6 +71,11 @@ fun WorkspaceScreen(
                         Icon(Icons.Default.FolderOpen, contentDescription = "Open Project Folder")
                     }
 
+                    // Git Source Control
+                    IconButton(onClick = { viewModel.openGitDialog() }) {
+                        Icon(Icons.Default.Code, contentDescription = "Git Source Control")
+                    }
+
                     // Anti-Gravity Autonomous Agent (⚡)
                     IconButton(onClick = { onChatOpen("antigravity") }, modifier = Modifier.size(36.dp)) {
                         Icon(
@@ -164,6 +169,9 @@ fun WorkspaceScreen(
                     }
 
                     Row {
+                        TextButton(onClick = { viewModel.openGitDialog() }) {
+                            Text("Git", style = MaterialTheme.typography.labelSmall)
+                        }
                         if (state.projectUriString != null) {
                             TextButton(onClick = { viewModel.resetToInternalStorage() }) {
                                 Text("Reset", style = MaterialTheme.typography.labelSmall)
@@ -233,6 +241,19 @@ fun WorkspaceScreen(
                 CloneDialog(
                     onConfirm = { url -> viewModel.cloneRepo(url) },
                     onDismiss = { viewModel.dismissCloneDialog() }
+                )
+            }
+
+            // Git Source Control Dialog
+            if (state.showGitDialog) {
+                GitDialog(
+                    gitStatus = state.gitStatus,
+                    onCommitAndPush = { msg -> viewModel.commitAndPush(msg) },
+                    onCloneClick = {
+                        viewModel.dismissGitDialog()
+                        viewModel.clonePrompt()
+                    },
+                    onDismiss = { viewModel.dismissGitDialog() }
                 )
             }
 
@@ -329,5 +350,131 @@ private fun CloneDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun GitDialog(
+    gitStatus: GitStatusInfo?,
+    onCommitAndPush: (String) -> Unit,
+    onCloneClick: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var commitMessage by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Git Source Control")
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (gitStatus == null || !gitStatus.isGitRepo) {
+                    Text(
+                        "Current directory is not a Git repository.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onCloneClick, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Clone Git Repository")
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                "branch: ${gitStatus.branch}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                        Text(
+                            "${gitStatus.changedFiles.size} changed file(s)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (gitStatus.changedFiles.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    if (gitStatus.changedFiles.isNotEmpty()) {
+                        Text(
+                            "Changes:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 100.dp)
+                                .background(Color(0xFF1E1E1E), androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                                .padding(6.dp)
+                        ) {
+                            items(gitStatus.changedFiles) { file ->
+                                Text(
+                                    text = "• $file",
+                                    fontSize = 11.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = Color(0xFFE6EDF3),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = commitMessage,
+                            onValueChange = { commitMessage = it },
+                            label = { Text("Commit message") },
+                            placeholder = { Text("Describe changes...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Working tree clean ✓",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (gitStatus?.isGitRepo == true && gitStatus.changedFiles.isNotEmpty()) {
+                Button(
+                    onClick = { onCommitAndPush(commitMessage) },
+                    enabled = commitMessage.isNotBlank()
+                ) {
+                    Text("Commit & Push")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
     )
 }

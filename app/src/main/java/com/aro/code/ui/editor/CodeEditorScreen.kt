@@ -8,7 +8,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +58,25 @@ fun CodeEditorScreen(
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
 
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchText by remember { mutableStateOf("") }
+    var replaceWithText by remember { mutableStateOf("") }
+
+    val matchCount = remember(content, searchText) {
+        if (searchText.isBlank() || content.isEmpty()) 0
+        else {
+            var count = 0
+            var idx = 0
+            while (true) {
+                val found = content.indexOf(searchText, idx)
+                if (found == -1) break
+                count++
+                idx = found + searchText.length
+            }
+            count
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -82,6 +105,42 @@ fun CodeEditorScreen(
                     }
                 },
                 actions = {
+                    // Undo
+                    IconButton(
+                        onClick = { viewModel.undo() },
+                        enabled = uiState.canUndo
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Undo,
+                            contentDescription = "Undo",
+                            tint = if (uiState.canUndo) MaterialTheme.colorScheme.primary else Color(0xFF555555)
+                        )
+                    }
+
+                    // Redo
+                    IconButton(
+                        onClick = { viewModel.redo() },
+                        enabled = uiState.canRedo
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Redo,
+                            contentDescription = "Redo",
+                            tint = if (uiState.canRedo) MaterialTheme.colorScheme.primary else Color(0xFF555555)
+                        )
+                    }
+
+                    // Find / Search toggle
+                    IconButton(
+                        onClick = { showSearchBar = !showSearchBar }
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Find & Replace",
+                            tint = if (showSearchBar) MaterialTheme.colorScheme.primary else Color.White
+                        )
+                    }
+
+                    // Save
                     IconButton(
                         onClick = { viewModel.saveFile() },
                         enabled = !uiState.isLoading
@@ -121,12 +180,88 @@ fun CodeEditorScreen(
             }
         }
     ) { padding ->
-        Box(
+        Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
                 .background(Color(0xFF1E1E1E))
         ) {
+            // Find & Replace Bar
+            if (showSearchBar) {
+                Surface(
+                    color = Color(0xFF252526),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = searchText,
+                                onValueChange = { searchText = it },
+                                placeholder = { Text("Find...", fontSize = 12.sp, color = Color(0xFF858585)) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Color.White)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (searchText.isBlank()) "" else "$matchCount match${if (matchCount == 1) "" else "es"}",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (matchCount > 0) Color(0xFF4FC3F7) else Color(0xFFE57373)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            IconButton(onClick = { showSearchBar = false }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close search", tint = Color(0xFF858585), modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = replaceWithText,
+                                onValueChange = { replaceWithText = it },
+                                placeholder = { Text("Replace...", fontSize = 12.sp, color = Color(0xFF858585)) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                textStyle = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Color.White)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Button(
+                                onClick = { viewModel.replaceText(searchText, replaceWithText, replaceAll = false) },
+                                enabled = matchCount > 0,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Text("Replace", fontSize = 11.sp)
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            Button(
+                                onClick = { viewModel.replaceText(searchText, replaceWithText, replaceAll = true) },
+                                enabled = matchCount > 0,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Text("All", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
             if (uiState.isLoading && uiState.currentContent == null) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -203,4 +338,5 @@ fun CodeEditorScreen(
             }
         }
     }
+}
 }

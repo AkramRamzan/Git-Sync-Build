@@ -13,6 +13,7 @@ import com.aro.code.ai.GeminiModel
 import com.aro.code.auth.AuthRepository
 import com.aro.code.auth.CredentialStore
 import com.aro.code.db.ChatHistoryDatabase
+import com.aro.code.db.SessionSummary
 import com.aro.code.filesystem.ProjectNode
 import com.aro.code.filesystem.SafProjectManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -60,7 +61,9 @@ data class ChatUiState(
     val engine: ChatEngine = ChatEngine.ANTIGRAVITY,
     val isAntiGravitySignedIn: Boolean = false,
     val antiGravityTokenSnippet: String? = null,
-    val showAuthDialog: Boolean = false
+    val showAuthDialog: Boolean = false,
+    val sessionsList: List<SessionSummary> = emptyList(),
+    val showSessionHistorySheet: Boolean = false
 ) {
     val currentMessages: List<ChatMessage>
         get() = if (engine == ChatEngine.ANTIGRAVITY) antiGravityMessages else geminiMessages
@@ -200,6 +203,77 @@ class ChatViewModel @Inject constructor(
                 val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
                 directEngine.warmUp(_uiState.value.selectedAntiGravityModel.id, projectPhysicalPath)
             }
+        }
+    }
+
+    fun openSessionHistory() {
+        _uiState.update { it.copy(showSessionHistorySheet = true) }
+        refreshSessionsList()
+    }
+
+    fun dismissSessionHistory() {
+        _uiState.update { it.copy(showSessionHistorySheet = false) }
+    }
+
+    fun refreshSessionsList() {
+        viewModelScope.launch {
+            val prefix = if (_uiState.value.engine == ChatEngine.ANTIGRAVITY) "antigravity" else "gemini"
+            val list = chatDb.getAllSessions(prefix)
+            _uiState.update { it.copy(sessionsList = list) }
+        }
+    }
+
+    fun switchSession(sessionId: String) {
+        viewModelScope.launch {
+            val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
+            val messages = chatDb.getMessagesForSession(sessionId)
+            val mapped = messages.map { entity ->
+                ChatMessage(
+                    role = if (entity.sender == "USER") "user" else "model",
+                    text = entity.messageText,
+                    attachments = entity.attachedFiles.map { AttachedFile(name = it, content = "", uriString = null) },
+                    diffBlocks = DiffParser.parseAllDiffs(entity.messageText),
+                    isStreaming = false
+                )
+            }
+            if (isAntiGravity) {
+                chatDb.saveLastSessionId(sessionId)
+                val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+                directEngine.resetSession(
+                    modelId = _uiState.value.selectedAntiGravityModel.id,
+                    projectPath = projectPhysicalPath
+                )
+                _uiState.update {
+                    it.copy(
+                        antiGravitySessionId = sessionId,
+                        antiGravityMessages = mapped,
+                        showSessionHistorySheet = false,
+                        statusMessage = "Switched session"
+                    )
+                }
+            } else {
+                chatDb.saveLastSessionId(sessionId)
+                _uiState.update {
+                    it.copy(
+                        geminiSessionId = sessionId,
+                        geminiMessages = mapped,
+                        showSessionHistorySheet = false,
+                        statusMessage = "Switched conversation"
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteSession(sessionId: String) {
+        viewModelScope.launch {
+            chatDb.clearSession(sessionId)
+            val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
+            val currentActiveSid = if (isAntiGravity) _uiState.value.antiGravitySessionId else _uiState.value.geminiSessionId
+            if (sessionId == currentActiveSid) {
+                startNewSession()
+            }
+            refreshSessionsList()
         }
     }
 

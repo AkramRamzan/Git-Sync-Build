@@ -21,6 +21,13 @@ data class ChatMessageEntity(
     val messageText: String
 )
 
+data class SessionSummary(
+    val sessionId: String,
+    val title: String,
+    val lastTimestamp: Long,
+    val messageCount: Int
+)
+
 /**
  * Module 2.3 — Local SQLite Database (chat_history.db) for Anti-Gravity Chat History.
  * Implements persistent conversation storage, session isolation, and automatic restoration.
@@ -229,6 +236,46 @@ class ChatHistoryDatabase @Inject constructor(
             arrayOf(key), null, null, null
         )
         cursor.use { if (it.moveToFirst()) it.getString(0) else null }
+    }
+
+    /**
+     * Retrieves all saved sessions for the given engine prefix ("antigravity" or "gemini")
+     * ordered by most recent interaction time.
+     */
+    suspend fun getAllSessions(enginePrefix: String): List<SessionSummary> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<SessionSummary>()
+        val sql = """
+            SELECT session_id,
+                   MAX(timestamp) AS max_time,
+                   COUNT(*) AS msg_count,
+                   (SELECT message_text FROM $TABLE_MESSAGES WHERE session_id = m.session_id AND sender = 'USER' ORDER BY timestamp ASC LIMIT 1) AS first_prompt
+            FROM $TABLE_MESSAGES m
+            WHERE session_id LIKE ?
+            GROUP BY session_id
+            ORDER BY max_time DESC
+        """.trimIndent()
+        val cursor = readableDatabase.rawQuery(sql, arrayOf("${enginePrefix}%"))
+        cursor.use { c ->
+            val sidIdx = c.getColumnIndexOrThrow("session_id")
+            val timeIdx = c.getColumnIndexOrThrow("max_time")
+            val countIdx = c.getColumnIndexOrThrow("msg_count")
+            val promptIdx = c.getColumnIndexOrThrow("first_prompt")
+            while (c.moveToNext()) {
+                val sid = c.getString(sidIdx)
+                val rawPrompt = if (promptIdx >= 0 && !c.isNull(promptIdx)) c.getString(promptIdx) else "New Conversation"
+                val cleanTitle = rawPrompt.lines().firstOrNull { it.isNotBlank() }?.trim() ?: "Conversation"
+                val displayTitle = if (cleanTitle.length > 45) cleanTitle.take(45) + "…" else cleanTitle
+                list.add(
+                    SessionSummary(
+                        sessionId = sid,
+                        title = displayTitle,
+                        lastTimestamp = c.getLong(timeIdx),
+                        messageCount = c.getInt(countIdx)
+                    )
+                )
+            }
+        }
+        list
     }
 
     suspend fun clearSession(sessionId: String) = withContext(Dispatchers.IO) {
