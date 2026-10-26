@@ -270,11 +270,13 @@ window.addEventListener('focus', function() {
 
 // ─── Input from xterm.js → Android (PTY) ─────────────────────────────────────
 term.onData(function(data) {
-  // Android soft keyboards send \n (LF) for Enter; convert to \r (CR) so
-  // agy / readline / bash prompts immediately submit instead of newlining.
-  if (data === '\n') data = '\r';
+  // Android soft keyboards send \n (LF) for Enter via composition events.
+  // PTY bash uses ICRNL (maps \r→\n internally), so sending \r is correct for submit.
+  // We only convert bare \n (not part of a sequence) to avoid double-newline with bash echo.
+  var out = data;
+  if (data === '\n') out = '\r';
   if (window.AroTerminal) {
-    AroTerminal.sendInput(toBase64Utf8(data));
+    AroTerminal.sendInput(toBase64Utf8(out));
   }
 });
 

@@ -174,7 +174,7 @@ object LinuxSubsystem {
             if (!bashrc.exists()) bashrc.createNewFile()
             val bashrcContent = bashrc.readText()
             if (!bashrcContent.contains("PS1=")) {
-                bashrc.appendText("\nexport PS1='root@arocode:~# '\n")
+                bashrc.appendText("\nexport PS1='\\[\\e[0;32m\\]root@arocode\\[\\e[0m\\]:\\[\\e[0;34m\\]\\w\\[\\e[0m\\]# '\n")
             }
         } catch (e: Exception) {
             Log.w(TAG, "fixGroupAndPasswd error: ${e.message}")
@@ -397,7 +397,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             File(etcDir, "profile").appendText(unsetAndroidVars)
             val rootDir = File(targetDir, "root").apply { mkdirs() }
             File(rootDir, ".bashrc").appendText(unsetAndroidVars)
-            File(rootDir, ".bashrc").appendText("\nexport PS1='root@arocode:~# '\n")
+            File(rootDir, ".bashrc").appendText("\nexport PS1='\\[\\e[0;32m\\]root@arocode\\[\\e[0m\\]:\\[\\e[0;34m\\]\\w\\[\\e[0m\\]# '\n")
 
             // 6. Create mountpoints and temp directory
             File(targetDir, "storage").mkdirs()
@@ -1100,12 +1100,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 #!/bin/sh
                 REAL_BIN="/usr/bin/apt-get"
                 if [ "${'$'}1" = "update" ]; then
-                    "${'$'}REAL_BIN" "${'$'}@"
-                    RET=${'$'}?
-                    if [ ${'$'}RET -eq 0 ]; then
-                        echo "✅ Reading package lists... Done! (All package indexes up to date)"
-                    fi
-                    exit ${'$'}RET
+                    "${'$'}REAL_BIN" "${'$'}@" 2>&1
+                    exit ${'$'}?
                 else
                     exec "${'$'}REAL_BIN" "${'$'}@"
                 fi
@@ -1115,12 +1111,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 #!/bin/sh
                 REAL_BIN="/usr/bin/apt"
                 if [ "${'$'}1" = "update" ]; then
-                    "${'$'}REAL_BIN" "${'$'}@"
-                    RET=${'$'}?
-                    if [ ${'$'}RET -eq 0 ]; then
-                        echo "✅ Reading package lists... Done! (All package indexes up to date)"
-                    fi
-                    exit ${'$'}RET
+                    "${'$'}REAL_BIN" "${'$'}@" 2>&1
+                    exit ${'$'}?
                 else
                     exec "${'$'}REAL_BIN" "${'$'}@"
                 fi
@@ -1162,6 +1154,9 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                   *) return;;
                 esac
 
+                # Normalize PTY terminal modes (prevents double echo / duplicate blank lines on Android PTY)
+                stty sane 2>/dev/null || true
+
                 # Unset Android host variables that confuse Python/pip
                 unset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT \
                       ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT
@@ -1185,8 +1180,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 export PYTHONIOENCODING=utf-8
 
                 # ── Colorful prompt (Termux-style) ──
-                # green user@host, blue cwd, white #
-                export PS1='\[\e[0;32m\]root@arocode\[\e[0m\]:\[\e[0;34m\]\w\[\e[0m\]\# '
+                # green user@host, blue cwd, white # — no command counter
+                export PS1='\[\e[0;32m\]root@arocode\[\e[0m\]:\[\e[0;34m\]\w\[\e[0m\]# '
 
                 # ── LS colours ──
                 export LS_COLORS='di=34:ln=36:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=34;42'
@@ -1230,7 +1225,6 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 alias top='htop 2>/dev/null || top'
                 alias ports='ss -tulnp'
                 alias myip='curl -s ifconfig.me 2>/dev/null || echo "No network"'
-                alias /model='model'
                 alias model='/usr/local/bin/model'
 
                 # ── History ──
