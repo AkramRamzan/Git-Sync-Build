@@ -37,51 +37,34 @@ html, body {
 }
 .xterm-screen canvas { image-rendering: pixelated; }
 
-/* ─── Slash Commands Inline Suggestion Bar ──────────────────────────────────── */
-/* Positioned dynamically below cursor row — no top-of-screen popup, no reflow */
+/* ─── Dynamic Slash-Command Inline Suggestion Bar ───────────────────────────── */
+/* Positioned dynamically below cursor row — zero reflow, no top popup         */
 #slash-palette {
   position: absolute;
   left: 0;
   right: 0;
-  background: #161b22;
-  border-top: 1px solid #30363d;
-  border-bottom: 1px solid #388bfd;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.65);
+  background: rgba(13, 17, 23, 0.97);
+  border-top: 1px solid #1f6feb;
+  border-bottom: 1px solid #1f6feb;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.75);
   z-index: 999;
-  display: flex;
-  flex-direction: column;
-  padding: 3px 6px 4px 6px;
+  padding: 4px 6px;
   font-family: 'JetBrainsMono', monospace;
-  /* Use opacity/visibility for zero-reflow show/hide */
+  /* Zero-reflow show/hide: opacity+visibility (GPU composite only) */
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  will-change: opacity, transform;
-  transition: opacity 0.08s ease, visibility 0.08s ease;
+  will-change: opacity;
+  transition: opacity 0.07s ease, visibility 0.07s ease;
 }
 #slash-palette.hidden {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
-.slash-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 3px;
-  padding: 0 1px;
-}
-.slash-title {
-  color: #58a6ff;
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-}
-.slash-hint {
-  color: #6e7681;
-  font-size: 7.5px;
-}
-.slash-list {
+
+/* ── Horizontal scrollable chip row ── */
+#slash-list {
   display: flex;
   flex-direction: row;
   overflow-x: auto;
@@ -90,62 +73,72 @@ html, body {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
-.slash-list::-webkit-scrollbar { display: none; }
-.slash-item {
+#slash-list::-webkit-scrollbar { display: none; }
+
+/* ── Individual command chip ── */
+.sp-chip {
   display: inline-flex;
   align-items: center;
-  background: #21262d;
+  gap: 4px;
+  background: #161b22;
   border: 1px solid #30363d;
-  border-radius: 4px;
-  padding: 2px 6px;
+  border-radius: 5px;
+  padding: 3px 7px;
+  flex-shrink: 0;
   cursor: pointer;
   user-select: none;
-  flex-shrink: 0;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.08s ease, border-color 0.08s ease;
 }
-.slash-item:active {
+.sp-chip:active {
   background: #1f6feb;
   border-color: #58a6ff;
 }
-.slash-item .cmd-name {
+/* Dynamic (bash-discovered) chips get a subtle purple tint */
+.sp-chip-dynamic {
+  border-color: #3d2b7a;
+}
+.sp-chip-dynamic:active {
+  background: #4c2b8a;
+  border-color: #bc8cff;
+}
+
+/* ── Chip text elements ── */
+.sp-cmd {
   font-size: 9.5px;
   font-weight: 700;
-  color: #f0f6fc;
+  color: #e6edf3;
+  letter-spacing: -0.1px;
 }
-.slash-item .cmd-name .match {
+.sp-match {
   color: #58a6ff;
-  background: rgba(88, 166, 255, 0.18);
+  background: rgba(88,166,255,0.15);
   border-radius: 2px;
   padding: 0 1px;
 }
-.slash-item:active .cmd-name .match {
+.sp-chip:active .sp-match {
   color: #fff;
   background: transparent;
 }
-.slash-item .cmd-desc {
+.sp-desc {
   font-size: 7.5px;
-  color: #8b949e;
-  margin-left: 4px;
+  color: #7d8590;
 }
-.slash-item .cmd-run {
-  margin-left: 5px;
-  padding: 1px 3px;
-  border-radius: 3px;
-  background: #238636;
-  color: #fff;
-  font-size: 7.5px;
+.sp-run {
+  font-size: 9px;
   font-weight: 700;
+  color: #fff;
+  background: #238636;
+  border-radius: 3px;
+  padding: 1px 3px;
+  flex-shrink: 0;
 }
 </style>
 </head>
 <body>
 <div id="slash-palette" class="hidden">
-  <div class="slash-header">
-    <span class="slash-title">⚡ SLASH</span>
-    <span class="slash-hint">Tap=fill • ↵=run</span>
-  </div>
-  <div id="slash-list" class="slash-list"></div>
+  <div id="slash-list"></div>
 </div>
 <div id="terminal"></div>
 <script src="xterm.js"></script>
@@ -364,140 +357,239 @@ window.addEventListener('focus', function() {
   window.refreshTerminal();
 });
 
-// ─── Slash Commands Inline Autocomplete Engine ────────────────────────────────
-// Positions suggestion strip BELOW the current cursor row (inline, not top popup).
-// Uses opacity/visibility toggle — zero layout reflow, zero screen flash.
-const SLASH_COMMANDS = [
-  { cmd: '/model',   desc: 'AI Model' },
-  { cmd: '/help',    desc: 'Cheat Sheet' },
-  { cmd: '/agy',     desc: 'Anti-Gravity AI' },
-  { cmd: '/clear',   desc: 'Clear Screen' },
-  { cmd: '/update',  desc: 'apt update' },
-  { cmd: '/upgrade', desc: 'apt upgrade' },
-  { cmd: '/install', desc: 'apt install' },
-  { cmd: '/status',  desc: 'System Stats' },
-  { cmd: '/storage', desc: 'cd Downloads' },
-  { cmd: '/history', desc: 'Cmd History' },
-  { cmd: '/exit',    desc: 'Exit Shell' }
+// ═══════════════════════════════════════════════════════════════════════════════
+// Dynamic Slash-Command Autocomplete Engine  (Termux-style, inline below cursor)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Architecture:
+//   • STATIC_COMMANDS  — built-in slash commands always available
+//   • Dynamic layer    — queries AroTerminal.queryCompletions(prefix) → bash compgen
+//   • Merged results   — static + dynamic, deduplicated, prefix-sorted
+//   • Inline position  — rendered below the current cursor row (no top popup)
+//   • Zero reflow      — opacity/visibility toggle, never display:none
+//   • MobileKeyBar     — hidden via AroTerminal.onSlashPaletteShown/Hidden bridge
+//
+// ── Built-in Slash Commands (always available, context-independent) ──────────
+
+const STATIC_COMMANDS = [
+  // Core terminal
+  { cmd: '/clear',   desc: 'Clear screen',        group: 'terminal' },
+  { cmd: '/exit',    desc: 'Exit shell',           group: 'terminal' },
+  { cmd: '/history', desc: 'Recent commands',      group: 'terminal' },
+  { cmd: '/status',  desc: 'CPU · RAM · Disk',     group: 'terminal' },
+  // AI & Agents
+  { cmd: '/agy',     desc: 'Antigravity AI',       group: 'ai'       },
+  { cmd: '/model',   desc: 'Switch AI model',      group: 'ai'       },
+  { cmd: '/help',    desc: 'Command cheat sheet',  group: 'ai'       },
+  // Package management
+  { cmd: '/update',  desc: 'apt update',           group: 'pkg'      },
+  { cmd: '/upgrade', desc: 'apt upgrade',          group: 'pkg'      },
+  { cmd: '/install', desc: 'apt install <pkg>',    group: 'pkg'      },
+  // Filesystem
+  { cmd: '/storage', desc: 'cd ~/Download',        group: 'fs'       },
 ];
 
-let typedLineBuffer = '';
+// ── State ────────────────────────────────────────────────────────────────────
+
+let typedLineBuffer  = '';     // chars typed on current line
+let dynamicSuggestions = [];   // filled by AroTerminal.queryCompletions callback
+let paletteVisible   = false;
+let compgenPending   = false;  // debounce flag
+
 const slashPaletteEl = document.getElementById('slash-palette');
 const slashListEl    = document.getElementById('slash-list');
 
-/* ── Get pixel height of one terminal cell row ── */
+// ── Bash compgen callback (Direction D: Android → JS) ────────────────────────
+// Called by XtermJsInterface after `compgen -c <prefix>` finishes
+
+window.aroCompletionsCallback = function(namesArray) {
+  // namesArray is a JS array of bare command names (strings), e.g. ["model","help"]
+  dynamicSuggestions = (namesArray || []).map(function(name) {
+    return { cmd: '/' + name, desc: name, group: 'dynamic' };
+  });
+  compgenPending = false;
+  renderPalette();
+};
+
+// ── Cell-height helper ────────────────────────────────────────────────────────
+
 function getCellHeight() {
   try {
-    // xterm.js internal: _core.renderService.dimensions.css.cell.height
     const dims = term._core && term._core.renderService && term._core.renderService.dimensions;
-    if (dims && dims.css && dims.css.cell && dims.css.cell.height) {
-      return dims.css.cell.height;
-    }
+    if (dims && dims.css && dims.css.cell && dims.css.cell.height) return dims.css.cell.height;
   } catch(e) {}
-  // fallback: divide screen canvas height by terminal rows
   try {
     const canvas = document.querySelector('.xterm-screen canvas');
     if (canvas && term.rows > 0) return canvas.clientHeight / term.rows;
   } catch(e) {}
-  return 18; // safe default
+  return 18;
 }
 
-/* ── Position palette just below the cursor row ── */
+// ── Position palette directly below the cursor row ───────────────────────────
+
 function positionPaletteAtCursor() {
   try {
-    const cursorRow = term.buffer.active.cursorY; // 0-indexed row on screen
+    const cursorRow = term.buffer.active.cursorY;
     const cellH     = getCellHeight();
-    // xterm canvas top offset within the page
-    const termEl = document.getElementById('terminal');
-    const termTop = termEl ? termEl.getBoundingClientRect().top : 0;
-    const paletteTop = termTop + (cursorRow + 1) * cellH;
-    slashPaletteEl.style.top = Math.round(paletteTop) + 'px';
+    const termEl    = document.getElementById('terminal');
+    const termTop   = termEl ? termEl.getBoundingClientRect().top : 0;
+    // Clamp so palette doesn't go below viewport
+    const rawTop    = termTop + (cursorRow + 1) * cellH;
+    const maxTop    = window.innerHeight - 60;
+    slashPaletteEl.style.top = Math.round(Math.min(rawTop, maxTop)) + 'px';
   } catch(e) {
-    // If we can't calculate, show near bottom-third of screen
-    slashPaletteEl.style.top = Math.round(window.innerHeight * 0.6) + 'px';
+    slashPaletteEl.style.top = Math.round(window.innerHeight * 0.55) + 'px';
   }
 }
 
+// ── HTML escaping ─────────────────────────────────────────────────────────────
+
 function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
-function updateSlashPalette() {
-  const trimmed = typedLineBuffer.trim();
-  if (!trimmed.startsWith('/')) { hideSlashPalette(); return; }
+// ── Highlight matching substring ──────────────────────────────────────────────
 
-  const query   = trimmed.toLowerCase();
-  const matches = SLASH_COMMANDS.filter(function(item) {
-    return item.cmd.toLowerCase().includes(query);
+function highlightMatch(text, query) {
+  const lc = text.toLowerCase();
+  const idx = lc.indexOf(query);
+  if (idx === -1) return escapeHtml(text);
+  return escapeHtml(text.slice(0, idx)) +
+    '<span class="sp-match">' + escapeHtml(text.slice(idx, idx + query.length)) + '</span>' +
+    escapeHtml(text.slice(idx + query.length));
+}
+
+// ── Build merged, deduplicated, sorted suggestion list ───────────────────────
+
+function buildSuggestions(query) {
+  const seen  = new Set();
+  const all   = [];
+
+  // 1. Static built-ins first (always shown, always filtered)
+  STATIC_COMMANDS.forEach(function(item) {
+    const cmdLc = item.cmd.toLowerCase();
+    if (cmdLc.includes(query) && !seen.has(item.cmd)) {
+      seen.add(item.cmd);
+      all.push({ cmd: item.cmd, desc: item.desc, isStatic: true });
+    }
   });
-  if (matches.length === 0) { hideSlashPalette(); return; }
 
-  // Prefix matches first, then alphabetical
-  matches.sort(function(a, b) {
-    const aS = a.cmd.toLowerCase().startsWith(query);
-    const bS = b.cmd.toLowerCase().startsWith(query);
-    if (aS && !bS) return -1;
-    if (!aS && bS) return  1;
+  // 2. Dynamic results from bash compgen (merged in, no duplicates)
+  dynamicSuggestions.forEach(function(item) {
+    const cmdLc = item.cmd.toLowerCase();
+    if (cmdLc.includes(query) && !seen.has(item.cmd)) {
+      seen.add(item.cmd);
+      all.push({ cmd: item.cmd, desc: item.desc, isStatic: false });
+    }
+  });
+
+  // Sort: prefix matches first, then static before dynamic, then alphabetical
+  all.sort(function(a, b) {
+    const aPrefix = a.cmd.toLowerCase().startsWith(query);
+    const bPrefix = b.cmd.toLowerCase().startsWith(query);
+    if (aPrefix !== bPrefix) return aPrefix ? -1 : 1;
+    if (a.isStatic !== b.isStatic) return a.isStatic ? -1 : 1;
     return a.cmd.localeCompare(b.cmd);
   });
 
+  return all.slice(0, 20); // cap at 20 items
+}
+
+// ── Render palette DOM ────────────────────────────────────────────────────────
+
+function renderPalette() {
+  const trimmed = typedLineBuffer.trim();
+  if (!trimmed.startsWith('/')) { hidePalette(); return; }
+
+  const query   = trimmed.toLowerCase();
+  const matches = buildSuggestions(query);
+
+  if (matches.length === 0) { hidePalette(); return; }
+
+  // Rebuild list items
   slashListEl.innerHTML = '';
   matches.forEach(function(item) {
-    const itemEl = document.createElement('div');
-    itemEl.className = 'slash-item';
+    const chip = document.createElement('div');
+    chip.className = 'sp-chip' + (item.isStatic ? '' : ' sp-chip-dynamic');
 
-    const cmdLower = item.cmd.toLowerCase();
-    const matchIdx = cmdLower.indexOf(query);
-    let nameHtml = '';
-    if (matchIdx !== -1) {
-      const before = escapeHtml(item.cmd.slice(0, matchIdx));
-      const match  = escapeHtml(item.cmd.slice(matchIdx, matchIdx + query.length));
-      const after  = escapeHtml(item.cmd.slice(matchIdx + query.length));
-      nameHtml = before + '<span class="match">' + match + '</span>' + after;
-    } else {
-      nameHtml = escapeHtml(item.cmd);
-    }
+    chip.innerHTML =
+      '<span class="sp-cmd">' + highlightMatch(item.cmd, query) + '</span>' +
+      '<span class="sp-desc">' + escapeHtml(item.desc) + '</span>' +
+      '<span class="sp-run" title="Run now">↵</span>';
 
-    itemEl.innerHTML =
-      '<span class="cmd-name">' + nameHtml + '</span>' +
-      '<span class="cmd-desc">' + escapeHtml(item.desc) + '</span>' +
-      '<span class="cmd-run" title="Run">↵</span>';
-
-    itemEl.addEventListener('pointerdown', function(e) {
+    chip.addEventListener('pointerdown', function(e) {
       e.preventDefault();
       e.stopPropagation();
-      const isRunBtn = e.target.classList.contains('cmd-run');
+      const isRun = e.target.classList.contains('sp-run');
       if (window.AroTerminal) {
-        if (isRunBtn) {
+        if (isRun) {
+          // Ctrl+U clears typed line, then sends command + Enter
           AroTerminal.sendInput(toBase64Utf8('\x15' + item.cmd + '\r'));
           typedLineBuffer = '';
         } else {
+          // Fill the command (with trailing space for arguments)
           AroTerminal.sendInput(toBase64Utf8('\x15' + item.cmd + ' '));
           typedLineBuffer = item.cmd + ' ';
         }
       }
-      hideSlashPalette();
-      window.refocusTerminal && window.refocusTerminal();
+      hidePalette();
     });
 
-    slashListEl.appendChild(itemEl);
+    slashListEl.appendChild(chip);
   });
 
-  // Position inline below cursor BEFORE making visible
   positionPaletteAtCursor();
-  slashPaletteEl.classList.remove('hidden');
-}
 
-function hideSlashPalette() {
-  if (slashPaletteEl && !slashPaletteEl.classList.contains('hidden')) {
-    slashPaletteEl.classList.add('hidden');
+  if (!paletteVisible) {
+    slashPaletteEl.classList.remove('hidden');
+    paletteVisible = true;
+    // Notify Android to hide MobileKeyBar
+    if (window.AroTerminal && AroTerminal.onSlashPaletteShown) {
+      AroTerminal.onSlashPaletteShown();
+    }
   }
 }
 
-// Hide when touching outside palette (passive — no reflow)
+// ── Show palette: merge static + trigger dynamic query ───────────────────────
+
+function showPalette() {
+  const trimmed = typedLineBuffer.trim();
+  if (!trimmed.startsWith('/')) { hidePalette(); return; }
+
+  // Render immediately with static commands (instant response)
+  renderPalette();
+
+  // Then asynchronously fetch dynamic bash completions
+  const prefix = trimmed.slice(1); // strip leading /
+  if (!compgenPending && window.AroTerminal && AroTerminal.queryCompletions) {
+    compgenPending = true;
+    AroTerminal.queryCompletions(prefix);
+    // compgenPending = false is set inside aroCompletionsCallback
+  }
+}
+
+// ── Hide palette ──────────────────────────────────────────────────────────────
+
+function hidePalette() {
+  if (!paletteVisible) return;
+  slashPaletteEl.classList.add('hidden');
+  paletteVisible = false;
+  dynamicSuggestions = [];
+  compgenPending = false;
+  // Notify Android to restore MobileKeyBar
+  if (window.AroTerminal && AroTerminal.onSlashPaletteHidden) {
+    AroTerminal.onSlashPaletteHidden();
+  }
+}
+
+// ── Dismiss on outside touch ──────────────────────────────────────────────────
+
 document.addEventListener('touchstart', function(e) {
-  if (slashPaletteEl && !slashPaletteEl.classList.contains('hidden')) {
-    if (!slashPaletteEl.contains(e.target)) hideSlashPalette();
+  if (paletteVisible && slashPaletteEl && !slashPaletteEl.contains(e.target)) {
+    hidePalette();
   }
 }, { passive: true });
 
@@ -514,16 +606,16 @@ term.onData(function(data) {
   // Real-time tracking of typed buffer for slash command suggestions
   if (out === '\r') {
     typedLineBuffer = '';
-    hideSlashPalette();
+    hidePalette();
   } else if (out === '\x7f' || out === '\b') {
     typedLineBuffer = typedLineBuffer.slice(0, -1);
-    updateSlashPalette();
+    showPalette();
   } else if (out === '\x03' || out === '\x1b') { // Ctrl+C or ESC
     typedLineBuffer = '';
-    hideSlashPalette();
+    hidePalette();
   } else if (out.length === 1 && out.charCodeAt(0) >= 32) {
     typedLineBuffer += out;
-    updateSlashPalette();
+    showPalette();
   }
 
   if (window.AroTerminal) {
