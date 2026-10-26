@@ -192,9 +192,9 @@ class AntiGravityDirectEngine @Inject constructor(
         val w = processWriter
         val r = processReader
 
-        // If process is running and configuration matches, reuse it immediately (WARM path)
+        // If process is running and model matches, reuse it immediately (WARM path - 0ms overhead)
         if (proc != null && proc.isAlive && w != null && r != null &&
-            activeModel == modelName && activeProjectPath == guestCwd
+            activeModel == modelName
         ) {
             return Pair(w, r)
         }
@@ -244,7 +244,7 @@ class AntiGravityDirectEngine @Inject constructor(
         }
 
         // Launch in stream-json mode for persistent resident multi-turn execution
-        val shellCmd = "exec /usr/local/bin/agy --model $modelName --dangerously-skip-permissions $addDirArg --input-format stream-json --output-format stream-json"
+        val shellCmd = "exec /usr/local/bin/agy --model $modelName --dangerously-skip-permissions --disable-slash-commands $addDirArg --input-format stream-json --output-format stream-json"
 
         cmd.addAll(listOf(
             "-w", guestCwd,

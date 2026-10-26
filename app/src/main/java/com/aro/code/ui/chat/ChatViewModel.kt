@@ -521,9 +521,11 @@ class ChatViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            // Save user message in local SQLite chat_history.db (Module 2.3)
-            runCatching {
-                chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
+            // Save user message in local SQLite chat_history.db asynchronously in background
+            launch(Dispatchers.IO) {
+                runCatching {
+                    chatDb.insertMessage(currentSessionId, "USER", userText, currentAttachments.map { it.name })
+                }
             }
 
             val apiKey = credentialStore.geminiApiKey.firstOrNull()?.takeIf { it.isNotBlank() }
@@ -582,14 +584,11 @@ class ChatViewModel @Inject constructor(
                 targetModelId = _uiState.value.selectedModel.id
             }
 
-            // Construct prompt with active project workspace info and attached file contexts
-            val promptBuilder = StringBuilder()
-            if (projectPhysicalPath != null) {
-                promptBuilder.appendLine("=== ACTIVE PROJECT WORKSPACE ===")
-                promptBuilder.appendLine("Path: $projectPhysicalPath")
-                promptBuilder.appendLine("You have direct access to inspect, create, and modify files in this directory.\n")
-            }
-            if (currentAttachments.isNotEmpty()) {
+            // Construct prompt cleanly — for AntiGravity, don't bloat conversational prompt
+            val fullUserPrompt = if (currentAttachments.isEmpty()) {
+                userText
+            } else {
+                val promptBuilder = StringBuilder()
                 promptBuilder.appendLine("=== ATTACHED PROJECT FILES ===")
                 currentAttachments.forEach { file ->
                     promptBuilder.appendLine("FILE: ${file.name}")
@@ -597,11 +596,10 @@ class ChatViewModel @Inject constructor(
                     promptBuilder.appendLine(file.content)
                     promptBuilder.appendLine("```\n")
                 }
+                promptBuilder.appendLine("USER INSTRUCTION:")
+                promptBuilder.append(userText)
+                promptBuilder.toString()
             }
-            promptBuilder.appendLine("USER INSTRUCTION:")
-            promptBuilder.appendLine(userText)
-
-            val fullUserPrompt = promptBuilder.toString()
 
             // Prepare placeholder assistant message for streaming
             val assistantMsg = ChatMessage(role = "model", text = "", isStreaming = true)
@@ -615,7 +613,7 @@ class ChatViewModel @Inject constructor(
                     directEngine.streamPrompt(
                         prompt = fullUserPrompt,
                         modelId = targetModelId,
-                        systemPrompt = activeSystemPrompt,
+                        systemPrompt = "", // agy CLI has built-in agent prompt; lean prompt matches CLI 3s speed
                         projectPath = projectPhysicalPath
                     )
                 } else if (useBridge) {
