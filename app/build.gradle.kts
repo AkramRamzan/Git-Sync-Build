@@ -42,6 +42,12 @@ android {
     }
 
     signingConfigs {
+        getByName("debug") {
+            storeFile     = file("debug.keystore")
+            storePassword = "android"
+            keyAlias      = "androiddebugkey"
+            keyPassword   = "android"
+        }
         create("release") {
             // Populated from environment / CI secrets via gradle.properties
             storeFile   = file(project.findProperty("RELEASE_STORE_FILE")   ?: "debug.keystore")
@@ -55,6 +61,7 @@ android {
         debug {
             isDebuggable    = true
             applicationIdSuffix = ".debug"
+            signingConfig   = signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = true

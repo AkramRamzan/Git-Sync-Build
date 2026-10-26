@@ -3,6 +3,7 @@
 /build/
 local.properties
 *.keystore
+!app/debug.keystore
 release.keystore
 
 # IDE
