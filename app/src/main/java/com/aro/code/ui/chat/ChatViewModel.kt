@@ -358,21 +358,31 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(activeDiffForPreview = null, isLoading = true) }
 
-            // Find file content if possible
+            val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
+
+            // Read existing file content
             val readRes = projectManager.readText(diff.filePath)
+
             val writeRes = if (readRes.isSuccess) {
                 val originalText = readRes.getOrNull().orEmpty()
-                val updatedText = if (originalText.contains(diff.originalSnippet) && diff.originalSnippet.isNotBlank()) {
-                    originalText.replaceFirst(diff.originalSnippet, diff.replacementSnippet)
+                // Only apply diff if originalSnippet is found — NEVER overwrite entire file on miss
+                if (diff.originalSnippet.isNotBlank() && originalText.contains(diff.originalSnippet)) {
+                    val updatedText = originalText.replaceFirst(diff.originalSnippet, diff.replacementSnippet)
+                    projectManager.writeTextAtomic(diff.filePath, updatedText)
+                } else if (diff.originalSnippet.isBlank() && diff.replacementSnippet.isNotBlank()) {
+                    // No search snippet — safe to write (new file creation intent)
+                    projectManager.writeTextAtomic(diff.filePath, diff.replacementSnippet)
                 } else {
-                    diff.replacementSnippet
+                    // originalSnippet not found in file — abort to prevent data loss
+                    Result.failure(Exception(
+                        "Search snippet not found in '${diff.filePath}'. " +
+                        "File may have changed since the diff was generated. No changes were written."
+                    ))
                 }
-                projectManager.writeTextAtomic(diff.filePath, updatedText)
             } else {
+                // File doesn't exist yet — write replacement as new file
                 projectManager.writeTextAtomic(diff.filePath, diff.replacementSnippet)
             }
-
-            val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
             if (writeRes.isSuccess) {
                 val confirmMsg = ChatMessage(
                     role = "model",

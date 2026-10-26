@@ -343,26 +343,35 @@ class GeminiClient @Inject constructor(
         } catch (e: Exception) {
             val msg = e.message.orEmpty()
             if (tokenCount == 0) {
-                // If model was not found, fallback to 2026 default gemini-3.8-flash; otherwise retry with targetModel
-                val fallbackModel = if (targetModel != "gemini-3.8-flash" &&
-                    (msg.contains("not found", ignoreCase = true) || msg.contains("HTTP 404") || msg.contains("no longer available", ignoreCase = true))) {
-                    "gemini-3.8-flash"
+                // If model was not found, fallback ONCE to gemini-3.8-flash.
+                // Guard: only fallback if current model is NOT already the fallback — prevents infinite recursion.
+                val isNotFound = msg.contains("not found", ignoreCase = true) ||
+                    msg.contains("HTTP 404") ||
+                    msg.contains("no longer available", ignoreCase = true)
+                if (isNotFound && targetModel != "gemini-3.8-flash") {
+                    generate(cleanKey, "gemini-3.8-flash", systemPrompt, userPrompt)
+                        .onSuccess { send(it); return@channelFlow }
+                        .onFailure { throw it }
                 } else {
-                    targetModel
+                    // No safe fallback available — propagate the error
+                    throw e
                 }
-                generate(cleanKey, fallbackModel, systemPrompt, userPrompt)
-                    .onSuccess { send(it); return@channelFlow }
-                    .onFailure { throw it }
             } else {
                 throw e
             }
         }
 
         // If streaming completed with 0 tokens and no error thrown, fallback to generate()
+        // Guard: only if targetModel is not already the default to prevent potential loop
         if (tokenCount == 0 && !streamSucceeded) {
-            generate(cleanKey, targetModel, systemPrompt, userPrompt)
-                .onSuccess { send(it) }
-                .onFailure { throw it }
+            if (targetModel != "gemini-3.8-flash") {
+                generate(cleanKey, "gemini-3.8-flash", systemPrompt, userPrompt)
+                    .onSuccess { send(it) }
+                    .onFailure { throw it }
+            } else {
+                // Already on default model with 0 tokens — nothing more to try
+                throw RuntimeException("gemini-3.8-flash returned 0 tokens with no error")
+            }
         }
     }
 

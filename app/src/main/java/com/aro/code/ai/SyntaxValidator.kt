@@ -71,12 +71,33 @@ class SyntaxValidator @Inject constructor() {
             }
 
             // 3. Kotlin Triple-quoted strings: """..."""
+            // Skip ALL characters inside including ${...} interpolation blocks so
+            // braces/brackets inside raw strings don't corrupt the delimiter counters.
             if (c == '"' && i + 2 < n && source[i + 1] == '"' && source[i + 2] == '"') {
                 i += 3
-                while (i + 2 < n && !(source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"')) {
-                    i++
+                // Scan until closing """ — handle nested ${...} to avoid premature exit
+                var interpDepth = 0
+                while (i < n) {
+                    val tc = source[i]
+                    when {
+                        // Nested ${...} interpolation — skip so closing } won't confuse us
+                        tc == '$' && i + 1 < n && source[i + 1] == '{' -> {
+                            interpDepth++
+                            i += 2
+                        }
+                        tc == '}' && interpDepth > 0 -> {
+                            interpDepth--
+                            i++
+                        }
+                        // Closing triple-quote only valid outside interpolation block
+                        interpDepth == 0 && tc == '"' && i + 2 < n &&
+                            source[i + 1] == '"' && source[i + 2] == '"' -> {
+                            i += 3
+                            break
+                        }
+                        else -> i++
+                    }
                 }
-                i += 3
                 continue
             }
 

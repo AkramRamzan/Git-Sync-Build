@@ -124,7 +124,7 @@ class TermuxBridgeService : Service() {
                 serviceScope.launch {
                     appendLog("🛑 Stopping Bridge Server...")
                     try {
-                        val url = URL("${state._activeUrl.value}/v1/shutdown")
+                        val url = URL("${state.getActiveUrlValue()}/v1/shutdown")
                         val conn = (url.openConnection() as HttpURLConnection).apply {
                             connectTimeout = 800
                             readTimeout = 800
@@ -135,7 +135,7 @@ class TermuxBridgeService : Service() {
 
                     BashShellSession.sendCtrlC()
 
-                    state._status.value = BridgeStatus.STOPPED
+                    state.setStatus(BridgeStatus.STOPPED)
                     updateNotification("🔴 Bridge Stopped")
                     appendLog("🛑 Bridge stopped successfully.")
                 }
@@ -149,14 +149,14 @@ class TermuxBridgeService : Service() {
         serviceScope.launch {
             var lastSyncedLogs = 0
             while (isActive) {
-                val wasRunning = state._status.value == BridgeStatus.RUNNING
+                val wasRunning = state.getStatusValue() == BridgeStatus.RUNNING
                 val isAlive = pingHealth(probeOtherPorts = !wasRunning)
                 if (isAlive) {
-                    val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
-                    if (state._status.value != BridgeStatus.RUNNING) {
-                        state._status.value = BridgeStatus.RUNNING
+                    val port = runCatching { URL(state.getActiveUrlValue()).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
+                    if (state.getStatusValue() != BridgeStatus.RUNNING) {
+                        state.setStatus(BridgeStatus.RUNNING)
                         updateNotification("🟢 Bridge Running on :$port")
-                        appendLog("✅ Connected to Anti-Gravity Bridge on ${state._activeUrl.value}!")
+                        appendLog("✅ Connected to Anti-Gravity Bridge on ${state.getActiveUrlValue()}!")
                     }
 
                     // Sync remote logs from server.py /v1/logs
@@ -172,10 +172,10 @@ class TermuxBridgeService : Service() {
                         }
                     }
                 } else {
-                    if (state._status.value == BridgeStatus.RUNNING) {
-                        state._status.value = BridgeStatus.STOPPED
+                    if (state.getStatusValue() == BridgeStatus.RUNNING) {
+                        state.setStatus(BridgeStatus.STOPPED)
                         updateNotification("🔴 Bridge Offline")
-                        appendLog("⚠️ Bridge connection lost (${state._activeUrl.value} unreachable).")
+                        appendLog("⚠️ Bridge connection lost (${state.getActiveUrlValue()} unreachable).")
                     }
                 }
                 // When online, check every 2.5s; when offline, backoff to 8s to conserve device battery
@@ -186,15 +186,15 @@ class TermuxBridgeService : Service() {
 
     private fun startBridge() {
         serviceScope.launch {
-            state._status.value = BridgeStatus.STARTING
+            state.setStatus(BridgeStatus.STARTING)
             appendLog("🚀 Checking Anti-Gravity Bridge Server...")
 
             // 1. Check if already running
             if (pingHealth()) {
-                val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
-                state._status.value = BridgeStatus.RUNNING
+                val port = runCatching { URL(state.getActiveUrlValue()).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
+                state.setStatus(BridgeStatus.RUNNING)
                 updateNotification("🟢 Bridge Running on :$port")
-                appendLog("✅ Bridge is already running at ${state._activeUrl.value}!")
+                appendLog("✅ Bridge is already running at ${state.getActiveUrlValue()}!")
                 return@launch
             }
 
@@ -213,12 +213,12 @@ class TermuxBridgeService : Service() {
             }
 
             if (connected) {
-                val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
-                state._status.value = BridgeStatus.RUNNING
+                val port = runCatching { URL(state.getActiveUrlValue()).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
+                state.setStatus(BridgeStatus.RUNNING)
                 updateNotification("🟢 Bridge Running on :$port")
                 appendLog("✅ Bridge successfully connected on :$port!")
             } else {
-                state._status.value = BridgeStatus.STOPPED
+                state.setStatus(BridgeStatus.STOPPED)
                 updateNotification("🔴 Bridge Offline — Tap to start")
                 appendLog("─".repeat(44))
                 if (sent) {
@@ -275,13 +275,14 @@ class TermuxBridgeService : Service() {
                 }
             } catch (_: Exception) {}
         }
-        return state._activeUrl.value
+        return state.getActiveUrlValue()
     }
 
     private fun checkHealthUrl(baseUrl: String): Boolean {
+        var conn: HttpURLConnection? = null
         return try {
             val url = URL("$baseUrl/v1/health")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 800
                 readTimeout = 800
                 requestMethod = "GET"
@@ -289,6 +290,9 @@ class TermuxBridgeService : Service() {
             conn.responseCode == 200
         } catch (_: Exception) {
             false
+        } finally {
+            // Always disconnect to release socket back to pool — prevents connection leak
+            try { conn?.disconnect() } catch (_: Exception) {}
         }
     }
 
@@ -296,14 +300,14 @@ class TermuxBridgeService : Service() {
     private fun pingHealth(probeOtherPorts: Boolean = false): Boolean {
         val candidate = resolveBridgeUrl()
         if (checkHealthUrl(candidate)) {
-            state._activeUrl.value = candidate
+            state.setActiveUrl(candidate)
             return true
         }
         if (probeOtherPorts) {
             for (port in listOf(8000, 8080, 8888, 8765, 9000)) {
                 val probe = "http://127.0.0.1:$port"
                 if (probe != candidate && checkHealthUrl(probe)) {
-                    state._activeUrl.value = probe
+                    state.setActiveUrl(probe)
                     return true
                 }
             }
@@ -314,7 +318,7 @@ class TermuxBridgeService : Service() {
     /** Fetch server.py log lines via /v1/logs */
     private fun fetchServerLogs(): List<String> {
         return try {
-            val url = URL("${state._activeUrl.value}/v1/logs")
+            val url = URL("${state.getActiveUrlValue()}/v1/logs")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 1500
                 readTimeout = 1500
@@ -381,10 +385,10 @@ enum class BridgeStatus { STOPPED, STARTING, RUNNING, STOPPING, ERROR }
 class BridgeServiceState {
     private companion object { const val MAX_LOG_LINES = 500 }
 
-    val _activeUrl = MutableStateFlow("http://127.0.0.1:8000")
+    private val _activeUrl = MutableStateFlow("http://127.0.0.1:8000")
     val activeUrl: StateFlow<String> = _activeUrl.asStateFlow()
 
-    val _status = MutableStateFlow(BridgeStatus.STOPPED)
+    private val _status = MutableStateFlow(BridgeStatus.STOPPED)
     val status: StateFlow<BridgeStatus> = _status.asStateFlow()
 
     val _logs = MutableStateFlow<List<String>>(emptyList())
@@ -393,7 +397,14 @@ class BridgeServiceState {
     val _pid = MutableStateFlow<Int?>(null)
     val pid: StateFlow<Int?> = _pid.asStateFlow()
 
-    val isRunning: Boolean get() = _status.value == BridgeStatus.RUNNING
+    val isRunning: Boolean get() = status.value == BridgeStatus.RUNNING
+
+    // Internal setters — only TermuxBridgeService should call these
+    internal fun setActiveUrl(url: String) { _activeUrl.value = url }
+    internal fun setStatus(status: BridgeStatus) { _status.value = status }
+    internal fun setPid(pid: Int?) { _pid.value = pid }
+    internal fun getActiveUrlValue(): String = _activeUrl.value
+    internal fun getStatusValue(): BridgeStatus = _status.value
 
     fun addLog(line: String) {
         val current = _logs.value.toMutableList()

@@ -65,7 +65,14 @@ class AuthRepository @Inject constructor(
     @Named("google_client_id") private val googleClientId: String
 ) {
     companion object {
-        const val ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+        // NOTE: ANTIGRAVITY_CLIENT_ID is the well-known public OAuth client ID for
+        // Google's Anti-Gravity service — it is NOT a secret (it is embedded in every
+        // agy CLI binary and is intentionally public). The actual secret is PKCE-only
+        // (no client_secret is exchanged for PKCE flows). This value is read from
+        // BuildConfig so it can be overridden per-build without recompiling this file.
+        val ANTIGRAVITY_CLIENT_ID: String get() = BuildConfig.ANTIGRAVITY_CLIENT_ID
+            .takeIf { it.isNotBlank() }
+            ?: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
         const val ANTIGRAVITY_REDIRECT_URI = "https://antigravity.google/oauth-callback"
         const val ANTIGRAVITY_SCOPES = "openid email profile https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/aicode"
     }

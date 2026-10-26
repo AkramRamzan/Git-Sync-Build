@@ -19,6 +19,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -51,10 +52,9 @@ class AntiGravityDirectEngine @Inject constructor(
     private var activeModel: String? = null
 
     // The current session's conversation_id from agy's `init` event.
-    // Persisted across process restarts via --conversation flag so the
-    // cloud UI always shows ONE session per user session.
-    var activeConversationId: String? = null
-        private set
+    // AtomicReference used for safe cross-thread access without holding sessionMutex.
+    private val _activeConversationId = AtomicReference<String?>(null)
+    val activeConversationId: String? get() = _activeConversationId.get()
 
     // ─── Public API ───────────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ class AntiGravityDirectEngine @Inject constructor(
         projectPath: String? = null
     ) {
         killProcess()
-        activeConversationId = null   // clear → next launch gets a brand new UUID
+        _activeConversationId.set(null)   // clear → next launch gets a brand new UUID
         // Pre-launch new warm process immediately in background
         if (isReady()) {
             engineScope.launch {
@@ -186,7 +186,7 @@ class AntiGravityDirectEngine @Inject constructor(
                         "init" -> {
                             val cid = json.optString("conversation_id")
                             if (cid.isNotEmpty()) {
-                                activeConversationId = cid
+                                _activeConversationId.set(cid)
                                 Log.i(TAG, "agy init: conversation_id=$cid model=$agyModelName")
                             }
                         }
@@ -274,25 +274,31 @@ class AntiGravityDirectEngine @Inject constructor(
         )
         cmd.addAll(bindings)
 
-        val addDirArg = if (guestCwd != "/root" &&
+        val addDirPath = if (guestCwd != "/root" &&
             File(rootfsDir, guestCwd.trimStart('/')).exists()
-        ) "--add-dir '$guestCwd'" else ""
+        ) guestCwd else null
 
         // If we have a stored conversation_id, resume it so same cloud session is reused
-        val conversationArg = activeConversationId?.let { "--conversation $it" } ?: ""
+        val conversationId = _activeConversationId.get()
 
-        val shellCmd = buildString {
-            append("exec /usr/local/bin/agy")
-            append(" --model $modelName")
-            append(" --dangerously-skip-permissions")
-            append(" --disable-slash-commands")
-            if (conversationArg.isNotEmpty()) append(" $conversationArg")
-            if (addDirArg.isNotEmpty()) append(" $addDirArg")
-            append(" --input-format stream-json")
-            append(" --output-format stream-json")
-        }
+        // Build agy args as a proper list to prevent shell injection via guestCwd
+        val agyArgs = mutableListOf(
+            "/usr/local/bin/agy",
+            "--model", modelName,
+            "--dangerously-skip-permissions",
+            "--disable-slash-commands"
+        )
+        if (conversationId != null) agyArgs.addAll(listOf("--conversation", conversationId))
+        if (addDirPath != null) agyArgs.addAll(listOf("--add-dir", addDirPath))
+        agyArgs.addAll(listOf("--input-format", "stream-json", "--output-format", "stream-json"))
 
-        cmd.addAll(listOf("-w", guestCwd, "/bin/bash", "-c", shellCmd))
+        // Pass args to bash as positional parameters to avoid any shell interpretation
+        // bash -c 'exec "$@"' -- /usr/local/bin/agy --model ...
+        val shellInvocation = mutableListOf("/bin/bash", "-c", "exec \"\$@\"", "--")
+        shellInvocation.addAll(agyArgs)
+
+        cmd.addAll(listOf("-w", guestCwd))
+        cmd.addAll(shellInvocation)
 
         val pb = ProcessBuilder(cmd).apply { redirectErrorStream(false) }
         pb.environment().apply {
@@ -337,8 +343,8 @@ class AntiGravityDirectEngine @Inject constructor(
                 val cid = obj.optString("conversation_id")
                 if (cid.isNotEmpty()) {
                     // Only update if we didn't already have one (resume keeps old id)
-                    if (activeConversationId == null) activeConversationId = cid
-                    Log.i(TAG, "agy process started: conversation_id=$cid resume=${conversationArg.isNotEmpty()}")
+                    _activeConversationId.compareAndSet(null, cid)
+                    Log.i(TAG, "agy process started: conversation_id=$cid resume=${conversationId != null}")
                 }
             } catch (_: Exception) {
                 Log.d(TAG, "agy init line: $initLine")

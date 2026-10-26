@@ -107,8 +107,21 @@ class ChatHistoryDatabase @Inject constructor(
             put(COL_ATTACHED_FILES, jsonArray)
             put(COL_MESSAGE_TEXT, messageText)
         }
-        val rowId = writableDatabase.insert(TABLE_MESSAGES, null, cv)
-        saveLastSessionId(sessionId)
+        val db = writableDatabase
+        // Wrap insert + session-id update in a single atomic transaction
+        db.beginTransaction()
+        var rowId = -1L
+        try {
+            rowId = db.insert(TABLE_MESSAGES, null, cv)
+            val metaCv = ContentValues().apply {
+                put(COL_META_KEY, KEY_LAST_SESSION)
+                put(COL_META_VAL, sessionId)
+            }
+            db.insertWithOnConflict(TABLE_META, null, metaCv, SQLiteDatabase.CONFLICT_REPLACE)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
         rowId
     }
 
