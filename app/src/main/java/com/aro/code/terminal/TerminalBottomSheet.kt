@@ -399,8 +399,8 @@ private fun MobileKeyBar(
     var isCtrlSticky by remember { mutableStateOf(false) }
     var isAltSticky by remember { mutableStateOf(false) }
 
-    // Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT)
-    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ALT+F5", "ALT+F6")
+    // Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, and instant / slash trigger)
+    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "/", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ALT+F5", "ALT+F6")
 
     Surface(
         color = Color(0xFF0D1117),
@@ -420,6 +420,7 @@ private fun MobileKeyBar(
                 val isCtrlD = key == "CTRL+D"
                 val isCtrl = key == "CTRL"
                 val isAlt = key == "ALT"
+                val isSlash = key == "/"
                 val isAccent = key == "ESC" || key == "TAB"
                 val isHighlighted = (isCtrl && isCtrlSticky) || (isAlt && isAltSticky)
 
@@ -448,6 +449,7 @@ private fun MobileKeyBar(
                     shape = RoundedCornerShape(4.dp),
                     color = when {
                         isHighlighted -> Color(0xFF388BFD)
+                        isSlash -> Color(0xFF6E40C9)
                         isArrow -> Color(0xFF1F6FEB)
                         isCtrlC || isCtrlD -> Color(0xFF4E1010)
                         isCtrl || isAlt -> Color(0xFF21262D)
@@ -458,6 +460,7 @@ private fun MobileKeyBar(
                         1.dp,
                         when {
                             isHighlighted -> Color(0xFF58A6FF)
+                            isSlash -> Color(0xFFBC8CFF)
                             isArrow -> Color(0xFF388BFD)
                             else -> Color(0xFF30363D)
                         }
@@ -473,10 +476,10 @@ private fun MobileKeyBar(
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 8.5.sp,
-                                fontWeight = if (isArrow || isHighlighted) FontWeight.Bold else FontWeight.Medium
+                                fontWeight = if (isArrow || isHighlighted || isSlash) FontWeight.Bold else FontWeight.Medium
                             ),
                             color = when {
-                                isHighlighted || isArrow -> Color.White
+                                isHighlighted || isArrow || isSlash -> Color.White
                                 isCtrlC || isCtrlD -> Color(0xFFFF7B72)
                                 isAccent -> Color(0xFF58A6FF)
                                 else -> Color(0xFFC9D1D9)

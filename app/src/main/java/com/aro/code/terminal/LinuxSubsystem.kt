@@ -763,7 +763,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
         envMap["TERM"] = "xterm-256color"
         envMap["COLORTERM"] = "truecolor"
         envMap["LANG"] = "C.UTF-8"
-        envMap["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        envMap["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin"
         // CRITICAL for Android + Ubuntu 22.04 LTS (glibc 2.35):
         // Disabling rseq via GLIBC_TUNABLES prevents glibc from issuing the rseq() syscall.
         envMap["GLIBC_TUNABLES"] = "glibc.pthread.rseq=0"
@@ -1003,10 +1003,78 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 printf "\033[0;37mExample:\033[0m \033[1;36m/model 2\033[0m  or  \033[1;36m/model gemini-2.5-pro\033[0m\n\n"
             """.trimIndent() + "\n")
             modelScript.setExecutable(true, false)
+
+            // Termux-style /help command
+            val helpScript = File(wrapperDir, "help")
+            helpScript.writeText("""
+                #!/bin/sh
+                printf "\033[1;36m╔══════════════════════════════════════════════════════════════╗\033[0m\n"
+                printf "\033[1;36m║\033[0m             \033[1;35m🚀 AroCode Ubuntu Linux (Termux Style)\033[0m           \033[1;36m║\033[0m\n"
+                printf "\033[1;36m║\033[0m                  \033[1;33mCommand Quick Reference\033[0m                     \033[1;36m║\033[0m\n"
+                printf "\033[1;36m╚══════════════════════════════════════════════════════════════╝\033[0m\n\n"
+                printf "\033[1;32m🧠 AI & Autonomous Agent:\033[0m\n"
+                printf "  \033[1;36m/model\033[0m                Switch AI Model (Gemini 3.8 / Pro / Claude)\n"
+                printf "  \033[1;36m/agy\033[0m                  Launch Anti-Gravity interactive coding agent\n"
+                printf "  \033[1;36magy -p \"prompt\"\033[0m       One-shot autonomous task execution\n"
+                printf "  \033[1;36magy --continue\033[0m        Resume previous conversation/task\n\n"
+                printf "\033[1;32m📦 Package Management:\033[0m\n"
+                printf "  \033[1;36m/update\033[0m               apt-get update (sync package indexes)\n"
+                printf "  \033[1;36m/upgrade\033[0m              apt-get upgrade -y (upgrade packages)\n"
+                printf "  \033[1;36m/install <pkg>\033[0m        apt-get install -y (install new packages)\n"
+                printf "  \033[1;36msearch <pkg>\033[0m          Search available packages (apt-cache search)\n\n"
+                printf "\033[1;32m💻 Terminal Utilities:\033[0m\n"
+                printf "  \033[1;36m/clear\033[0m (or cls)       Clear terminal screen & scrollback\n"
+                printf "  \033[1;36m/status\033[0m               View CPU, RAM, and filesystem stats\n"
+                printf "  \033[1;36m/storage\033[0m              Jump to shared Android Download directory\n"
+                printf "  \033[1;36m/history\033[0m              Show recently typed commands\n"
+                printf "  \033[1;36m/exit\033[0m                 Exit current shell session\n\n"
+                printf "\033[1;32m⚡ Shortcuts:\033[0m\n"
+                printf "  \033[1;33mCtrl+C\033[0m                Interrupt / cancel running process\n"
+                printf "  \033[1;33mCtrl+D\033[0m                Send EOF / exit shell\n"
+                printf "  \033[1;33mCtrl+L\033[0m                Redraw prompt & clear screen\n"
+                printf "  \033[1;33mTab\033[0m                   Autocomplete filename or command\n\n"
+            """.trimIndent() + "\n")
+            helpScript.setExecutable(true, false)
+
+            // Termux-style /status command
+            val statusScript = File(wrapperDir, "status")
+            statusScript.writeText("""
+                #!/bin/sh
+                printf "\033[1;36m╔══════════════════════════════════════════════════════════════╗\033[0m\n"
+                printf "\033[1;36m║\033[0m                 \033[1;32m🐧 Subsystem Status\033[0m                          \033[1;36m║\033[0m\n"
+                printf "\033[1;36m╚══════════════════════════════════════════════════════════════╝\033[0m\n\n"
+                printf "\033[1;33mOS:\033[0m Ubuntu 22.04 LTS (aarch64 via PRoot)\n"
+                printf "\033[1;33mKernel:\033[0m %s\n" "${'$'}(uname -r 2>/dev/null || echo '6.17.0-PRoot-Distro')"
+                printf "\033[1;33mActive Shell:\033[0m %s (PID %s)\n\n" "${'$'}SHELL" "${'$'}${'$'}"
+                printf "\033[1;32m📊 Memory:\033[0m\n"
+                free -h 2>/dev/null || cat /proc/meminfo | head -4
+                printf "\n\033[1;32m💾 Storage:\033[0m\n"
+                df -h / /storage 2>/dev/null || df -h
+                printf "\n\033[1;32m⚙️ Active Processes:\033[0m\n"
+                ps aux 2>/dev/null | head -10 || ps
+                printf "\n"
+            """.trimIndent() + "\n")
+            statusScript.setExecutable(true, false)
+
+            // Ensure root symlinks/executables exist for direct slash invocation (/model, /help, /status, etc.)
+            listOf("model", "help", "status").forEach { name ->
+                try {
+                    val rootBin = File(rootfsDir, name)
+                    val srcBin = File(wrapperDir, name)
+                    if (srcBin.exists()) {
+                        rootBin.writeText(srcBin.readText())
+                        rootBin.setExecutable(true, false)
+                    }
+                } catch (_: Exception) {}
+            }
             try {
-                val rootModel = File(rootfsDir, "model")
-                rootModel.writeText(modelScript.readText())
-                rootModel.setExecutable(true, false)
+                val rootClear = File(rootfsDir, "clear")
+                rootClear.writeText("#!/bin/sh\nprintf \"\\033[H\\033[2J\\033[3J\"\n")
+                rootClear.setExecutable(true, false)
+
+                val rootAgy = File(rootfsDir, "agy")
+                rootAgy.writeText("#!/bin/sh\nexec /usr/local/bin/agy \"${'$'}@\"\n")
+                rootAgy.setExecutable(true, false)
             } catch (_: Exception) {}
 
             val loginHelper = File(wrapperDir, "agy_login.py")
@@ -1157,6 +1225,28 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 # Normalize PTY terminal modes (prevents double echo / duplicate blank lines on Android PTY)
                 stty sane 2>/dev/null || true
 
+                # Ensure DNS nameservers are always set
+                [ ! -s /etc/resolv.conf ] && echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" > /etc/resolv.conf 2>/dev/null || true
+
+                # ── Termux-style Slash-Command Translator ──
+                # Allows commands like /model, /help, /status, /clear, /agy, /storage to work natively in bash
+                command_not_found_handle() {
+                    local raw_cmd="${'$'}1"
+                    shift
+                    if [[ "${'$'}raw_cmd" =~ ^/([a-zA-Z0-9_-]+)$ ]]; then
+                        local target="${'$'}{BASH_REMATCH[1]}"
+                        if type "${'$'}target" >/dev/null 2>&1; then
+                            "${'$'}target" "${'$'}@"
+                            return ${'$'}?
+                        elif [ "${'$'}target" = "storage" ]; then
+                            cd /storage/Download 2>/dev/null || cd /root/Download 2>/dev/null || cd /storage
+                            return 0
+                        fi
+                    fi
+                    printf "bash: %s: command not found\n" "${'$'}raw_cmd" >&2
+                    return 127
+                }
+
                 # Unset Android host variables that confuse Python/pip
                 unset ANDROID_DATA ANDROID_ROOT ANDROID_STORAGE ANDROID_ART_ROOT \
                       ANDROID_I18N_ROOT ANDROID_TZDATA_ROOT
@@ -1227,6 +1317,10 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 alias ports='ss -tulnp'
                 alias myip='curl -s ifconfig.me 2>/dev/null || echo "No network"'
                 alias model='/usr/local/bin/model'
+                alias help='/usr/local/bin/help'
+                alias status='/usr/local/bin/status'
+                alias storage='cd /storage/Download 2>/dev/null || cd /root/Download 2>/dev/null || cd /storage'
+                alias agy='/usr/local/bin/agy'
 
                 # ── History ──
                 HISTSIZE=2000

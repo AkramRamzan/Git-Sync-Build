@@ -36,9 +36,117 @@ html, body {
   overscroll-behavior: contain !important;
 }
 .xterm-screen canvas { image-rendering: pixelated; }
+
+/* ─── Slash Commands Suggestion Bar (Termux-style) ─────────────────────────── */
+.slash-palette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #161b22;
+  border-bottom: 2px solid #388bfd;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 6px 5px 6px;
+  font-family: 'JetBrainsMono', monospace;
+  animation: slideDown 0.12s ease-out;
+}
+.slash-palette.hidden {
+  display: none;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  padding: 0 2px;
+}
+.slash-title {
+  color: #58a6ff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.slash-hint {
+  color: #8b949e;
+  font-size: 8px;
+}
+.slash-list {
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  gap: 5px;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.slash-list::-webkit-scrollbar {
+  height: 3px;
+}
+.slash-list::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 2px;
+}
+.slash-item {
+  display: inline-flex;
+  align-items: center;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+.slash-item:active {
+  background: #1f6feb;
+  border-color: #58a6ff;
+}
+.slash-item .cmd-name {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f0f6fc;
+}
+.slash-item .cmd-name .match {
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.18);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.slash-item:active .cmd-name .match {
+  color: #ffffff;
+  background: transparent;
+}
+.slash-item .cmd-desc {
+  font-size: 8px;
+  color: #8b949e;
+  margin-left: 5px;
+}
+.slash-item .cmd-run {
+  margin-left: 6px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #238636;
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 700;
+}
 </style>
 </head>
 <body>
+<div id="slash-palette" class="slash-palette hidden">
+  <div class="slash-header">
+    <span class="slash-title">⚡ SLASH COMMANDS</span>
+    <span class="slash-hint">Tap to auto-fill • [↵] Run</span>
+  </div>
+  <div id="slash-list" class="slash-list"></div>
+</div>
 <div id="terminal"></div>
 <script src="xterm.js"></script>
 <script src="xterm-addon-fit.js"></script>
@@ -256,6 +364,117 @@ window.addEventListener('focus', function() {
   window.refreshTerminal();
 });
 
+// ─── Slash Commands Autocompletion Engine (Termux-style) ──────────────────────
+const SLASH_COMMANDS = [
+  { cmd: '/model',   desc: 'AI Model Switcher' },
+  { cmd: '/help',    desc: 'Command Cheat Sheet' },
+  { cmd: '/agy',     desc: 'Anti-Gravity AI Agent' },
+  { cmd: '/clear',   desc: 'Clear Terminal Screen' },
+  { cmd: '/update',  desc: 'apt-get update' },
+  { cmd: '/upgrade', desc: 'apt-get upgrade -y' },
+  { cmd: '/install', desc: 'apt-get install <pkg>' },
+  { cmd: '/status',  desc: 'CPU, RAM & Disk Status' },
+  { cmd: '/storage', desc: 'cd /storage/Download' },
+  { cmd: '/history', desc: 'Recent Command History' },
+  { cmd: '/exit',    desc: 'Close Terminal Session' }
+];
+
+let typedLineBuffer = '';
+const slashPaletteEl = document.getElementById('slash-palette');
+const slashListEl = document.getElementById('slash-list');
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function updateSlashPalette() {
+  const trimmed = typedLineBuffer.trim();
+  // Show palette only when line starts with slash
+  if (!trimmed.startsWith('/')) {
+    hideSlashPalette();
+    return;
+  }
+
+  const query = trimmed.toLowerCase();
+  const matches = SLASH_COMMANDS.filter(function(item) {
+    return item.cmd.toLowerCase().includes(query);
+  });
+
+  if (matches.length === 0) {
+    hideSlashPalette();
+    return;
+  }
+
+  // Sort so prefix matches appear first
+  matches.sort(function(a, b) {
+    const aStarts = a.cmd.toLowerCase().startsWith(query);
+    const bStarts = b.cmd.toLowerCase().startsWith(query);
+    if (aStarts && !bStarts) return -1;
+    if (!aStarts && bStarts) return 1;
+    return a.cmd.localeCompare(b.cmd);
+  });
+
+  slashListEl.innerHTML = '';
+  matches.forEach(function(item) {
+    const itemEl = document.createElement('div');
+    itemEl.className = 'slash-item';
+
+    // Highlight matching characters
+    const cmdLower = item.cmd.toLowerCase();
+    const matchIdx = cmdLower.indexOf(query);
+    let nameHtml = '';
+    if (matchIdx !== -1) {
+      const before = escapeHtml(item.cmd.slice(0, matchIdx));
+      const match = escapeHtml(item.cmd.slice(matchIdx, matchIdx + query.length));
+      const after = escapeHtml(item.cmd.slice(matchIdx + query.length));
+      nameHtml = before + '<span class="match">' + match + '</span>' + after;
+    } else {
+      nameHtml = escapeHtml(item.cmd);
+    }
+
+    itemEl.innerHTML = '<span class="cmd-name">' + nameHtml + '</span>' +
+                       '<span class="cmd-desc">' + escapeHtml(item.desc) + '</span>' +
+                       '<span class="cmd-run" title="Run immediately">↵</span>';
+
+    // Tap handling: run button executes command directly; item body inserts with space
+    itemEl.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const isRunBtn = e.target.classList.contains('cmd-run');
+      if (isRunBtn) {
+        if (window.AroTerminal) {
+          // Send Ctrl+U (\x15) to clear whatever was typed on the line, then cmd + enter
+          AroTerminal.sendInput(toBase64Utf8('\x15' + item.cmd + '\r'));
+        }
+        typedLineBuffer = '';
+      } else {
+        if (window.AroTerminal) {
+          AroTerminal.sendInput(toBase64Utf8('\x15' + item.cmd + ' '));
+        }
+        typedLineBuffer = item.cmd + ' ';
+      }
+      hideSlashPalette();
+      window.refocusTerminal();
+    });
+
+    slashListEl.appendChild(itemEl);
+  });
+
+  slashPaletteEl.classList.remove('hidden');
+}
+
+function hideSlashPalette() {
+  if (slashPaletteEl) {
+    slashPaletteEl.classList.add('hidden');
+  }
+}
+
+document.addEventListener('touchstart', function(e) {
+  if (!e.target.closest('#slash-palette')) {
+    hideSlashPalette();
+  }
+}, { passive: true });
+
 // ─── Input from xterm.js → Android (PTY) ─────────────────────────────────────
 term.onData(function(data) {
   // Normalize soft-keyboard newline (\n or \r\n) to carriage return (\r)
@@ -265,6 +484,22 @@ term.onData(function(data) {
   if (out === '\n' || out === '\r\n') {
     out = '\r';
   }
+
+  // Real-time tracking of typed buffer for slash command suggestions
+  if (out === '\r') {
+    typedLineBuffer = '';
+    hideSlashPalette();
+  } else if (out === '\x7f' || out === '\b') {
+    typedLineBuffer = typedLineBuffer.slice(0, -1);
+    updateSlashPalette();
+  } else if (out === '\x03' || out === '\x1b') { // Ctrl+C or ESC
+    typedLineBuffer = '';
+    hideSlashPalette();
+  } else if (out.length === 1 && out.charCodeAt(0) >= 32) {
+    typedLineBuffer += out;
+    updateSlashPalette();
+  }
+
   if (window.AroTerminal) {
     AroTerminal.sendInput(toBase64Utf8(out));
   }

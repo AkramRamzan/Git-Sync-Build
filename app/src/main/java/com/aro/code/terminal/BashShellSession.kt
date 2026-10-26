@@ -154,7 +154,7 @@ class ShellSession(
             return
         }
 
-        if (cmd == "clear" || cmd == "cls") {
+        if (cmd == "clear" || cmd == "cls" || cmd == "/clear" || cmd == "/cls") {
             clear()
             return
         }
