@@ -16,6 +16,7 @@ import com.aro.code.db.ChatHistoryDatabase
 import com.aro.code.filesystem.ProjectNode
 import com.aro.code.filesystem.SafProjectManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
