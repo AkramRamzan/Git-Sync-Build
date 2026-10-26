@@ -179,6 +179,15 @@ class ChatViewModel @Inject constructor(
                 }
             }
         }
+
+        // Pre-warm the in-app AntiGravity engine in background so first prompt is instant
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1200)
+            if (directEngine.isReady()) {
+                val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+                directEngine.warmUp(_uiState.value.selectedAntiGravityModel.id, projectPhysicalPath)
+            }
+        }
     }
 
     fun startNewSession() {
@@ -535,14 +544,15 @@ class ChatViewModel @Inject constructor(
                 targetModelId = selectedAgModel.id
                 activeSystemPrompt = antiGravitySystemPrompt
 
-                val isBridgeRunning = isBridgeAliveCached(bridgeUrl)
+                val isDirectReady = directEngine.isReady()
+                val isBridgeRunning = if (!isDirectReady) isBridgeAliveCached(bridgeUrl) else false
 
                 if (selectedAgModel.isExternalBridgeOnly) {
-                    useBridge = true
+                    useBridge = !isDirectReady && isBridgeRunning
                     authKey = ""
                 } else {
                     if (isBridgeRunning || apiKey.isNullOrBlank()) {
-                        useBridge = true
+                        useBridge = !isDirectReady && isBridgeRunning
                         authKey = ""
                     } else {
                         useBridge = false
@@ -634,6 +644,9 @@ class ChatViewModel @Inject constructor(
                 )
             }
 
+            var tokenCount = 0
+            var lastUpdateMs = 0L
+
             streamFlow.catch { e ->
                 val rawMsg = e.message.orEmpty()
                 val friendlyMsg = when {
@@ -660,12 +673,22 @@ class ChatViewModel @Inject constructor(
                 }
             }.collect { token ->
                 responseAccumulator.append(token)
-                val currentText = responseAccumulator.toString()
-                if (isAntiGravity && _uiState.value.activeStep != "✏️ [3/3] agy: Generating unified diff & code changes...") {
-                    _uiState.update { it.copy(activeStep = "✏️ [3/3] agy: Generating unified diff & code changes...") }
+                tokenCount++
+                val now = System.currentTimeMillis()
+                // Update immediately for first 3 tokens (<1ms), then throttle at ~32ms to avoid Compose main-thread lockup
+                if (tokenCount <= 3 || now - lastUpdateMs >= 32L) {
+                    lastUpdateMs = now
+                    val currentText = responseAccumulator.toString()
+                    if (isAntiGravity && _uiState.value.activeStep != "✏️ [3/3] agy: Generating unified diff & code changes...") {
+                        _uiState.update { it.copy(activeStep = "✏️ [3/3] agy: Generating unified diff & code changes...") }
+                    }
+                    updateLastMessage(isAntiGravity) { it.copy(text = currentText) }
                 }
-                updateLastMessage(isAntiGravity) { it.copy(text = currentText) }
             }
+
+            // Ensure the UI always renders the exact final accumulator text
+            val currentText = responseAccumulator.toString()
+            updateLastMessage(isAntiGravity) { it.copy(text = currentText) }
 
             // Stream completed: finalize message and parse any diff blocks
             val finalText = responseAccumulator.toString().ifBlank {

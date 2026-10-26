@@ -285,6 +285,15 @@ class AntiGravityDirectEngine @Inject constructor(
         val newWriter = newProc.outputStream.bufferedWriter(Charsets.UTF_8)
         val newReader = newProc.inputStream.bufferedReader(Charsets.UTF_8)
 
+        // Asynchronously drain stderr in background so child process NEVER blocks on full pipe buffer (4KB)
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            try {
+                newProc.errorStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    lines.forEach { line -> Log.d(TAG, "[agy-stderr] $line") }
+                }
+            } catch (_: Exception) {}
+        }
+
         // Read initial init line from agy
         val initLine = withContext(Dispatchers.IO) { newReader.readLine() }
         Log.i(TAG, "agy daemon initialized: $initLine")
