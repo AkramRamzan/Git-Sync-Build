@@ -26,11 +26,12 @@ import javax.inject.Singleton
  * AntiGravityDirectEngine — High-performance persistent resident daemon engine for `agy`.
  *
  * Architecture:
- * - Keeps a persistent, warm `agy` process running in PRoot using stream-json protocol.
- * - Background watchdog auto-restarts the process the moment it dies, so the next prompt
- *   always hits a warm process (zero cold-start delay).
- * - One conversation_id per session → no "General Greeting" spam in the cloud UI.
- * - All turns within one session share the same process → full context memory.
+ * - Keeps a persistent warm `agy` process alive in PRoot using stream-json protocol.
+ * - Stores the conversation_id from the `init` event. If the process dies (Android OOM
+ *   kill), the next launch passes `--conversation <id>` so the SAME cloud session is
+ *   resumed — no "General Greeting" fragmentation and full context restored.
+ * - After each result, immediately pre-warms the next process in background so the
+ *   next prompt is never slow.
  */
 @Singleton
 class AntiGravityDirectEngine @Inject constructor(
@@ -49,11 +50,13 @@ class AntiGravityDirectEngine @Inject constructor(
     private var processReader: BufferedReader? = null
     private var activeModel: String? = null
 
-    // Exposed for optional UI display
+    // The current session's conversation_id from agy's `init` event.
+    // Persisted across process restarts via --conversation flag so the
+    // cloud UI always shows ONE session per user session.
     var activeConversationId: String? = null
         private set
 
-    // --- Public API ---
+    // ─── Public API ───────────────────────────────────────────────────────────
 
     /**
      * Returns true if the embedded PRoot Linux subsystem and agy binary are available.
@@ -67,8 +70,8 @@ class AntiGravityDirectEngine @Inject constructor(
     }
 
     /**
-     * Pre-warms the daemon in the background so the first prompt is instant.
-     * Safe to call multiple times — only spawns if not already alive.
+     * Pre-warms the daemon in the background. Safe to call multiple times.
+     * Only spawns a new process if one isn't already running.
      */
     suspend fun warmUp(modelId: String = "gemini-3.8-flash", projectPath: String? = null) {
         if (!isReady()) return
@@ -84,17 +87,17 @@ class AntiGravityDirectEngine @Inject constructor(
     }
 
     /**
-     * Kills the current warm daemon so the next prompt starts a fresh agy process
-     * with a new conversation_id. Call this on "New Session" or "Clear History".
-     * Immediately kicks off a background re-warm so the next prompt is still fast.
+     * Ends the current conversation and starts a fresh one.
+     * Immediately pre-warms a new process in background so the first prompt
+     * of the new session is fast.
      */
     fun resetSession(
         modelId: String = "gemini-3.8-flash",
         projectPath: String? = null
     ) {
         killProcess()
-        activeConversationId = null
-        // Pre-launch a new warm process in background immediately
+        activeConversationId = null   // clear → next launch gets a brand new UUID
+        // Pre-launch new warm process immediately in background
         if (isReady()) {
             engineScope.launch {
                 try {
@@ -110,7 +113,10 @@ class AntiGravityDirectEngine @Inject constructor(
 
     /**
      * Streams a prompt to the persistent warm agy daemon.
-     * If the process has died, restarts it (one cold-start penalty, then warm forever).
+     *
+     * If the process has died (Android OOM kill), relaunches it with
+     * `--conversation <activeConversationId>` so the cloud session and context
+     * are restored automatically. The user sees one continuous session.
      */
     fun streamPrompt(
         prompt: String,
@@ -130,7 +136,7 @@ class AntiGravityDirectEngine @Inject constructor(
             val (writer, reader) = try {
                 ensureProcessAlive(agyModelName, guestCwd)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to get or create agy daemon session", e)
+                Log.e(TAG, "Failed to get/create agy daemon", e)
                 emit("⚠️ Failed to initialize in-app Anti-Gravity daemon: ${e.message}\n")
                 return@flow
             }
@@ -139,9 +145,7 @@ class AntiGravityDirectEngine @Inject constructor(
 
             val userPayload = JSONObject().apply {
                 put("event", "user")
-                put("message", JSONObject().apply {
-                    put("content", fullPrompt)
-                })
+                put("message", JSONObject().apply { put("content", fullPrompt) })
             }.toString()
 
             try {
@@ -151,7 +155,7 @@ class AntiGravityDirectEngine @Inject constructor(
                     writer.flush()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to write to agy daemon, restarting...", e)
+                Log.e(TAG, "Write failed, will retry on next prompt", e)
                 killProcess()
                 emit("⚠️ Session connection interrupted. Please try again.\n")
                 return@flow
@@ -163,25 +167,16 @@ class AntiGravityDirectEngine @Inject constructor(
             while (!turnCompleted) {
                 val line = try {
                     withContext(Dispatchers.IO) { reader.readLine() }
-                } catch (e: Exception) {
-                    null
-                }
+                } catch (e: Exception) { null }
 
                 if (line == null) {
-                    Log.w(TAG, "agy daemon stdout closed unexpectedly")
+                    Log.w(TAG, "agy stdout closed unexpectedly")
                     killProcess()
                     if (tokenCount == 0) {
-                        emit("⚠️ Anti-Gravity daemon closed unexpectedly. Please try again.\n")
+                        emit("⚠️ Anti-Gravity daemon closed. Please try again.\n")
                     }
-                    // Immediately kick off background re-warm for next prompt
-                    engineScope.launch {
-                        delay(200)
-                        try {
-                            sessionMutex.withLock {
-                                ensureProcessAlive(agyModelName, guestCwd)
-                            }
-                        } catch (_: Exception) {}
-                    }
+                    // Background pre-warm so next prompt is instant
+                    scheduleRewarm(agyModelName, guestCwd)
                     break
                 }
 
@@ -192,21 +187,18 @@ class AntiGravityDirectEngine @Inject constructor(
                             val cid = json.optString("conversation_id")
                             if (cid.isNotEmpty()) {
                                 activeConversationId = cid
-                                Log.i(TAG, "agy session conversation_id=$cid")
+                                Log.i(TAG, "agy init: conversation_id=$cid model=$agyModelName")
                             }
                         }
                         "step_update" -> {
-                            val stepUpdate = json.optJSONObject("step_update")
-                            val state = stepUpdate?.optString("state")
-                            val stepType = stepUpdate?.optString("step_type")
-                            // Emit text only from agent_response steps
-                            if (stepType == "agent_response") {
-                                val delta = stepUpdate?.optString("text_delta")
+                            val su = json.optJSONObject("step_update") ?: return@try
+                            if (su.optString("step_type") == "agent_response") {
+                                val delta = su.optString("text_delta")
                                 if (!delta.isNullOrEmpty()) {
-                                    val cleanDelta = ANSI_REGEX.replace(delta, "")
-                                    if (cleanDelta.isNotEmpty() && cleanDelta != "\n") {
+                                    val clean = ANSI_REGEX.replace(delta, "")
+                                    if (clean.isNotEmpty() && clean != "\n") {
                                         tokenCount++
-                                        emit(cleanDelta)
+                                        emit(clean)
                                     }
                                 }
                             }
@@ -219,21 +211,25 @@ class AntiGravityDirectEngine @Inject constructor(
                                 val err = resultObj?.optString("error") ?: ""
                                 if (err.isNotEmpty()) emit("\n\n⚠️ Anti-Gravity Error: $err\n")
                             }
-                            // Process stays alive — do NOT kill it. Next prompt reuses same process.
+                            // Process may still be alive waiting for next input.
+                            // Schedule a background liveness check: if it died, pre-warm
+                            // immediately so the next prompt never cold-starts.
+                            val capturedModel = agyModelName
+                            val capturedCwd = guestCwd
+                            schedulePostResultRewarm(capturedModel, capturedCwd)
                         }
                     }
-                } catch (_: Exception) {
-                    // Skip non-JSON lines (debug output etc.)
-                }
+                } catch (_: Exception) { /* skip non-JSON debug lines */ }
             }
         }
     }.flowOn(Dispatchers.IO)
 
-    // --- Internal helpers ---
+    // ─── Internal helpers ─────────────────────────────────────────────────────
 
     /**
-     * Returns the existing warm process if alive and model matches,
-     * otherwise kills it and starts a new one. Parses the `init` event.
+     * Checks if current process is alive. If not, starts a fresh one.
+     * CRITICAL: if we have a stored conversation_id, passes --conversation so
+     * the cloud session is resumed (same UUID → one session in cloud UI).
      */
     private suspend fun ensureProcessAlive(
         modelName: String,
@@ -243,33 +239,26 @@ class AntiGravityDirectEngine @Inject constructor(
         val w = processWriter
         val r = processReader
 
-        // Reuse existing process if alive and same model (warm path — zero overhead)
+        // Warm path: reuse existing alive process (0ms overhead)
         if (proc != null && isProcessAlive(proc) && w != null && r != null &&
             activeModel == modelName
         ) {
             return Pair(w, r)
         }
 
-        // Otherwise, kill stale process and start a fresh daemon
+        // Cold path: kill stale references, start fresh
         killProcess()
 
         val rootfsDir = LinuxSubsystem.getRootfsDir(context)
         val proot = LinuxSubsystem.getProotBinary(context)
-            ?: throw IllegalStateException("PRoot binary (libproot.so) not found")
+            ?: throw IllegalStateException("PRoot binary not found")
 
-        val bindings = mutableListOf(
-            "-b", "/dev",
-            "-b", "/proc",
-            "-b", "/sys"
-        )
+        val bindings = mutableListOf("-b", "/dev", "-b", "/proc", "-b", "/sys")
         val extStorage = File("/storage/emulated/0")
         if (extStorage.exists()) {
-            bindings.add("-b")
-            bindings.add("/storage/emulated/0:/storage")
-            val download = File("/storage/emulated/0/Download")
-            if (download.exists()) {
-                bindings.add("-b")
-                bindings.add("/storage/emulated/0/Download:/root/Download")
+            bindings += listOf("-b", "/storage/emulated/0:/storage")
+            if (File("/storage/emulated/0/Download").exists()) {
+                bindings += listOf("-b", "/storage/emulated/0/Download:/root/Download")
             }
         }
 
@@ -279,27 +268,25 @@ class AntiGravityDirectEngine @Inject constructor(
             proot.absolutePath,
             "-v", "-1",
             "-r", rootfsDir.absolutePath,
-            "-0",
-            "--link2symlink",
-            "-L",
-            "--sysvipc",
+            "-0", "--link2symlink", "-L", "--sysvipc",
             "-k", "6.17.0-PRoot-Distro"
-            // NOTE: No --kill-on-exit so child agy process survives between turns
+            // No --kill-on-exit: let agy outlive the bash wrapper
         )
         cmd.addAll(bindings)
 
-        val addDirArg = if (guestCwd != "/root" && File(rootfsDir, guestCwd.trimStart('/')).exists()) {
-            "--add-dir '$guestCwd'"
-        } else {
-            ""
-        }
+        val addDirArg = if (guestCwd != "/root" &&
+            File(rootfsDir, guestCwd.trimStart('/')).exists()
+        ) "--add-dir '$guestCwd'" else ""
 
-        // Launch agy in persistent stream-json mode
+        // If we have a stored conversation_id, resume it so same cloud session is reused
+        val conversationArg = activeConversationId?.let { "--conversation $it" } ?: ""
+
         val shellCmd = buildString {
             append("exec /usr/local/bin/agy")
             append(" --model $modelName")
             append(" --dangerously-skip-permissions")
             append(" --disable-slash-commands")
+            if (conversationArg.isNotEmpty()) append(" $conversationArg")
             if (addDirArg.isNotEmpty()) append(" $addDirArg")
             append(" --input-format stream-json")
             append(" --output-format stream-json")
@@ -307,8 +294,7 @@ class AntiGravityDirectEngine @Inject constructor(
 
         cmd.addAll(listOf("-w", guestCwd, "/bin/bash", "-c", shellCmd))
 
-        val pb = ProcessBuilder(cmd)
-        pb.redirectErrorStream(false)
+        val pb = ProcessBuilder(cmd).apply { redirectErrorStream(false) }
         pb.environment().apply {
             put("PROOT_VERBOSE", "-1")
             put("PROOT_NO_SECCOMP", "1")
@@ -325,43 +311,37 @@ class AntiGravityDirectEngine @Inject constructor(
             put("LANG", "C.UTF-8")
             put("PYTHONUNBUFFERED", "1")
             put("PYTHONIOENCODING", "utf-8")
-            remove("ANDROID_DATA")
-            remove("ANDROID_ROOT")
-            remove("ANDROID_STORAGE")
-            remove("ANDROID_ART_ROOT")
-            remove("ANDROID_I18N_ROOT")
-            remove("ANDROID_TZDATA_ROOT")
-            remove("LD_PRELOAD")
-            remove("LD_LIBRARY_PATH")
-            remove("PROOT_LOADER")
-            remove("PROOT_LOADER_32")
+            remove("ANDROID_DATA"); remove("ANDROID_ROOT"); remove("ANDROID_STORAGE")
+            remove("ANDROID_ART_ROOT"); remove("ANDROID_I18N_ROOT")
+            remove("ANDROID_TZDATA_ROOT"); remove("LD_PRELOAD")
+            remove("LD_LIBRARY_PATH"); remove("PROOT_LOADER"); remove("PROOT_LOADER_32")
         }
 
         val newProc = withContext(Dispatchers.IO) { pb.start() }
         val newWriter = newProc.outputStream.bufferedWriter(Charsets.UTF_8)
         val newReader = newProc.inputStream.bufferedReader(Charsets.UTF_8)
 
-        // Drain stderr so pipe buffer never fills (blocks child process writes)
+        // Drain stderr continuously so the pipe buffer never fills and blocks agy
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                newProc.errorStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                    lines.forEach { line -> Log.d(TAG, "[agy-stderr] $line") }
-                }
+                newProc.errorStream.bufferedReader(Charsets.UTF_8)
+                    .useLines { it.forEach { l -> Log.d(TAG, "[agy-stderr] $l") } }
             } catch (_: Exception) {}
         }
 
-        // Read the init event — contains conversation_id
+        // Read init line — contains the conversation_id for this process
         val initLine = withContext(Dispatchers.IO) { newReader.readLine() }
         if (initLine != null) {
             try {
-                val initJson = JSONObject(initLine)
-                val cid = initJson.optString("conversation_id")
+                val obj = JSONObject(initLine)
+                val cid = obj.optString("conversation_id")
                 if (cid.isNotEmpty()) {
-                    activeConversationId = cid
-                    Log.i(TAG, "agy daemon started: conversation_id=$cid model=$modelName")
+                    // Only update if we didn't already have one (resume keeps old id)
+                    if (activeConversationId == null) activeConversationId = cid
+                    Log.i(TAG, "agy process started: conversation_id=$cid resume=${conversationArg.isNotEmpty()}")
                 }
             } catch (_: Exception) {
-                Log.i(TAG, "agy daemon init: $initLine")
+                Log.d(TAG, "agy init line: $initLine")
             }
         }
 
@@ -370,34 +350,46 @@ class AntiGravityDirectEngine @Inject constructor(
         processReader = newReader
         activeModel = modelName
 
-        // Launch watchdog: when this process dies, immediately start a replacement
+        return Pair(newWriter, newReader)
+    }
+
+    /**
+     * After a result, wait briefly then check if agy is still alive.
+     * If it died, pre-warm immediately so the next prompt hits a warm process.
+     */
+    private fun schedulePostResultRewarm(modelName: String, guestCwd: String) {
         engineScope.launch {
-            try {
-                withContext(Dispatchers.IO) { newProc.waitFor() }
-            } catch (_: Exception) {}
-            Log.w(TAG, "agy daemon exited — scheduling background re-warm")
-            // Only restart if this is still our active process
-            if (activeProcess === newProc) {
-                killProcess()
-                delay(300)
+            delay(500) // let agy settle
+            val proc = activeProcess
+            if (proc == null || !isProcessAlive(proc)) {
+                // Process died after result — pre-warm now (keeps same conversationId)
                 try {
                     sessionMutex.withLock {
                         ensureProcessAlive(modelName, guestCwd)
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "watchdog re-warm failed: ${e.message}")
+                    Log.w(TAG, "post-result rewarm failed: ${e.message}")
                 }
             }
+            // If still alive — great, it will serve the next prompt immediately
         }
+    }
 
-        return Pair(newWriter, newReader)
+    private fun scheduleRewarm(modelName: String, guestCwd: String) {
+        engineScope.launch {
+            delay(200)
+            try {
+                sessionMutex.withLock { ensureProcessAlive(modelName, guestCwd) }
+            } catch (e: Exception) {
+                Log.w(TAG, "rewarm failed: ${e.message}")
+            }
+        }
     }
 
     private fun isProcessAlive(proc: Process): Boolean = try {
-        proc.exitValue()
-        false // exitValue() returns without exception → process has exited
+        proc.exitValue(); false
     } catch (_: IllegalThreadStateException) {
-        true  // throws if still running
+        true
     }
 
     private fun killProcess() {
@@ -419,15 +411,12 @@ class AntiGravityDirectEngine @Inject constructor(
         else                -> modelId
     }
 
-    private fun mapProjectPath(projectPath: String?): String = if (!projectPath.isNullOrBlank()) {
-        when {
+    private fun mapProjectPath(projectPath: String?): String =
+        if (!projectPath.isNullOrBlank()) when {
             projectPath.startsWith("/storage/emulated/0") ->
                 projectPath.replaceFirst("/storage/emulated/0", "/storage")
             projectPath.startsWith("/sdcard") ->
                 projectPath.replaceFirst("/sdcard", "/storage")
             else -> "/root"
-        }
-    } else {
-        "/root"
-    }
+        } else "/root"
 }
