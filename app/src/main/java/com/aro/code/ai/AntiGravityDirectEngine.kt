@@ -50,6 +50,8 @@ class AntiGravityDirectEngine @Inject constructor(
     private var processWriter: BufferedWriter? = null
     private var processReader: BufferedReader? = null
     private var activeModel: String? = null
+    // Track the active project CWD so daemon is restarted when project changes
+    private var activeGuestCwd: String? = null
 
     // The current session's conversation_id from agy's `init` event.
     // AtomicReference used for safe cross-thread access without holding sessionMutex.
@@ -241,7 +243,7 @@ class AntiGravityDirectEngine @Inject constructor(
 
         // Warm path: reuse existing alive process (0ms overhead)
         if (proc != null && isProcessAlive(proc) && w != null && r != null &&
-            activeModel == modelName
+            activeModel == modelName && activeGuestCwd == guestCwd
         ) {
             return Pair(w, r)
         }
@@ -274,9 +276,18 @@ class AntiGravityDirectEngine @Inject constructor(
         )
         cmd.addAll(bindings)
 
-        val addDirPath = if (guestCwd != "/root" &&
-            File(rootfsDir, guestCwd.trimStart('/')).exists()
-        ) guestCwd else null
+        val addDirPath = if (guestCwd != "/root") {
+            // Check physical path: /storage in PRoot is bind-mounted from /storage/emulated/0 on host
+            val physicalPath = when {
+                guestCwd.startsWith("/storage") ->
+                    File("/storage/emulated/0" + guestCwd.removePrefix("/storage"))
+                guestCwd.startsWith("/root/Download") ->
+                    File("/storage/emulated/0/Download" + guestCwd.removePrefix("/root/Download"))
+                else ->
+                    File(rootfsDir, guestCwd.trimStart('/'))
+            }
+            if (physicalPath.exists()) guestCwd else null
+        } else null
 
         // If we have a stored conversation_id, resume it so same cloud session is reused
         val conversationId = _activeConversationId.get()
@@ -355,6 +366,7 @@ class AntiGravityDirectEngine @Inject constructor(
         processWriter = newWriter
         processReader = newReader
         activeModel = modelName
+        activeGuestCwd = guestCwd
 
         return Pair(newWriter, newReader)
     }
@@ -406,6 +418,7 @@ class AntiGravityDirectEngine @Inject constructor(
         processWriter = null
         processReader = null
         activeModel = null
+        activeGuestCwd = null
     }
 
     private fun mapModelName(modelId: String): String = when (modelId) {

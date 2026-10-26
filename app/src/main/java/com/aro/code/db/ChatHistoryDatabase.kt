@@ -46,6 +46,9 @@ class ChatHistoryDatabase @Inject constructor(
         const val COL_META_KEY = "meta_key"
         const val COL_META_VAL = "meta_val"
         const val KEY_LAST_SESSION = "last_active_session_id"
+        // Per-engine last session keys
+        const val KEY_LAST_AG_SESSION = "last_antigravity_session_id"
+        const val KEY_LAST_GEM_SESSION = "last_gemini_session_id"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -113,11 +116,25 @@ class ChatHistoryDatabase @Inject constructor(
         var rowId = -1L
         try {
             rowId = db.insert(TABLE_MESSAGES, null, cv)
+            // Save the last-used global session key
             val metaCv = ContentValues().apply {
                 put(COL_META_KEY, KEY_LAST_SESSION)
                 put(COL_META_VAL, sessionId)
             }
             db.insertWithOnConflict(TABLE_META, null, metaCv, SQLiteDatabase.CONFLICT_REPLACE)
+            // Also save per-engine last session key (antigravity_ or gemini_ prefix)
+            val enginePrefix = when {
+                sessionId.startsWith("antigravity") -> "antigravity"
+                sessionId.startsWith("gemini") -> "gemini"
+                else -> null
+            }
+            if (enginePrefix != null) {
+                val engineCv = ContentValues().apply {
+                    put(COL_META_KEY, "last_${enginePrefix}_session_id")
+                    put(COL_META_VAL, sessionId)
+                }
+                db.insertWithOnConflict(TABLE_META, null, engineCv, SQLiteDatabase.CONFLICT_REPLACE)
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -199,6 +216,19 @@ class ChatHistoryDatabase @Inject constructor(
             cv,
             SQLiteDatabase.CONFLICT_REPLACE
         )
+    }
+
+    /**
+     * Returns the last active session ID for the given engine ("antigravity"/"gemini").
+     * Returns null if no session has been persisted yet.
+     */
+    suspend fun getLastSessionId(engine: String): String? = withContext(Dispatchers.IO) {
+        val key = "last_${engine}_session_id"
+        val cursor = readableDatabase.query(
+            TABLE_META, arrayOf(COL_META_VAL), "$COL_META_KEY = ?",
+            arrayOf(key), null, null, null
+        )
+        cursor.use { if (it.moveToFirst()) it.getString(0) else null }
     }
 
     suspend fun clearSession(sessionId: String) = withContext(Dispatchers.IO) {

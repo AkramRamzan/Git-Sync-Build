@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
@@ -37,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -548,7 +551,7 @@ fun AgentChatScreen(
                                 onClick = {},
                                 text = {
                                     Text(
-                                        "Select AI Model",
+                                        if (state.engine == ChatEngine.ANTIGRAVITY) "Select Anti-Gravity Model" else "Select Gemini Model",
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -557,50 +560,86 @@ fun AgentChatScreen(
                                 }
                             )
                             HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFF30363D))
-                            AntiGravityModel.entries.forEach { model ->
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(
-                                            when (model) {
-                                                AntiGravityModel.FLASH_3_8 -> Icons.Default.Bolt
-                                                AntiGravityModel.CLAUDE_SONNET_4_6,
-                                                AntiGravityModel.CLAUDE_OPUS_4_6 -> Icons.Default.Code
-                                                AntiGravityModel.GPT_OSS_120B -> Icons.Default.SmartToy
-                                                AntiGravityModel.GEMINI_4_ARGON -> Icons.Default.AutoAwesome
-                                            },
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
-                                            tint = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color(0xFF8B949E)
-                                        )
-                                    },
-                                    text = {
-                                        Column {
-                                            Text(
+                            if (state.engine == ChatEngine.ANTIGRAVITY) {
+                                AntiGravityModel.entries.forEach { model ->
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Icon(
                                                 when (model) {
-                                                    AntiGravityModel.FLASH_3_8 -> "Gemini 3.8 Flash"
-                                                    AntiGravityModel.CLAUDE_SONNET_4_6 -> "Claude Sonnet 4.6 Thinking"
-                                                    AntiGravityModel.CLAUDE_OPUS_4_6 -> "Claude Opus 4.6 Thinking"
-                                                    AntiGravityModel.GPT_OSS_120B -> "GPT-O-S-S 120B Medium"
-                                                    AntiGravityModel.GEMINI_4_ARGON -> "Gemini 4 Argon"
+                                                    AntiGravityModel.FLASH_3_8 -> Icons.Default.Bolt
+                                                    AntiGravityModel.CLAUDE_SONNET_4_6,
+                                                    AntiGravityModel.CLAUDE_OPUS_4_6 -> Icons.Default.Code
+                                                    AntiGravityModel.GPT_OSS_120B -> Icons.Default.SmartToy
+                                                    AntiGravityModel.GEMINI_4_ARGON -> Icons.Default.AutoAwesome
                                                 },
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 12.sp,
-                                                fontWeight = if (model == state.selectedAntiGravityModel) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color.Unspecified
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color(0xFF8B949E)
                                             )
-                                            Text(
-                                                model.description,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontSize = 10.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                        },
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    when (model) {
+                                                        AntiGravityModel.FLASH_3_8 -> "Gemini 3.8 Flash"
+                                                        AntiGravityModel.CLAUDE_SONNET_4_6 -> "Claude Sonnet 4.6 Thinking"
+                                                        AntiGravityModel.CLAUDE_OPUS_4_6 -> "Claude Opus 4.6 Thinking"
+                                                        AntiGravityModel.GPT_OSS_120B -> "GPT-O-S-S 120B Medium"
+                                                        AntiGravityModel.GEMINI_4_ARGON -> "Gemini 4 Argon"
+                                                    },
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (model == state.selectedAntiGravityModel) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color.Unspecified
+                                                )
+                                                Text(
+                                                    model.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.switchAntiGravityModel(model)
+                                            showModelSelectorMenu = false
                                         }
-                                    },
-                                    onClick = {
-                                        viewModel.switchAntiGravityModel(model)
-                                        showModelSelectorMenu = false
-                                    }
-                                )
+                                    )
+                                }
+                            } else {
+                                GeminiModel.entries.forEach { model ->
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.AutoAwesome,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp),
+                                                tint = if (model == state.selectedModel) Color(0xFF58A6FF) else Color(0xFF8B949E)
+                                            )
+                                        },
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    model.displayName,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (model == state.selectedModel) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (model == state.selectedModel) Color(0xFF58A6FF) else Color.Unspecified
+                                                )
+                                                Text(
+                                                    model.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.switchModel(model)
+                                            showModelSelectorMenu = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -635,23 +674,38 @@ fun AgentChatScreen(
                         }
                     )
 
-                    // Neatly positioned Send Button
+                    // Neatly positioned Send / Stop Button
                     val canSend = (input.isNotBlank() || state.attachedFiles.isNotEmpty()) && !state.isLoading
-                    IconButton(
-                        onClick = {
-                            val textToSend = input
-                            input = ""
-                            viewModel.send(textToSend)
-                        },
-                        enabled = canSend,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = if (canSend) Color(0xFF58A6FF) else Color(0xFF484F58),
-                            modifier = Modifier.size(18.dp)
-                        )
+                    if (state.isLoading) {
+                        // Stop generation button — shown while AI is generating
+                        IconButton(
+                            onClick = { viewModel.cancelGeneration() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Stop Generation",
+                                tint = Color(0xFFFF5252),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = {
+                                val textToSend = input
+                                input = ""
+                                viewModel.send(textToSend)
+                            },
+                            enabled = canSend,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if (canSend) Color(0xFF58A6FF) else Color(0xFF484F58),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -788,6 +842,29 @@ private fun ChatBubble(
                     lineHeight = 15.sp,
                     color = if (!isUser && isAntiGravity) Color(0xFFE6EDF3) else Color.White
                 )
+
+                // Copy to clipboard button — visible on non-streaming, non-empty messages
+                if (!message.isStreaming && message.text.isNotBlank()) {
+                    val clipboardManager = LocalClipboardManager.current
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(message.text))
+                            },
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = "Copy message",
+                                tint = Color(0xFF6E7681),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                }
 
                 // If diffs are available in the response, show clickable button
                 if (message.diffBlocks.isNotEmpty()) {

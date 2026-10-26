@@ -17,6 +17,7 @@ import com.aro.code.filesystem.ProjectNode
 import com.aro.code.filesystem.SafProjectManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -78,6 +79,9 @@ class ChatViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    /** Tracks the active generation Job so it can be cancelled mid-stream. */
+    private var generationJob: Job? = null
 
     private var lastBridgeCheckTime = 0L
     private var cachedBridgeAlive = false
@@ -151,8 +155,14 @@ class ChatViewModel @Inject constructor(
 
             // Restore conversation history from chat_history.db for BOTH engines independently
             runCatching {
-                val agMessages = chatDb.getMessagesForSession("antigravity_default")
-                val gemMessages = chatDb.getMessagesForSession("gemini_default")
+                // Restore the last active session IDs persisted from previous app run
+                val lastAgSid = chatDb.getLastSessionId("antigravity")
+                val lastGemSid = chatDb.getLastSessionId("gemini")
+                val agSessionId = lastAgSid ?: "antigravity_default"
+                val gemSessionId = lastGemSid ?: "gemini_default"
+
+                val agMessages = chatDb.getMessagesForSession(agSessionId)
+                val gemMessages = chatDb.getMessagesForSession(gemSessionId)
 
                 val mappedAg = agMessages.map { entity ->
                     ChatMessage(
@@ -174,6 +184,8 @@ class ChatViewModel @Inject constructor(
                 }
                 _uiState.update {
                     it.copy(
+                        antiGravitySessionId = agSessionId,
+                        geminiSessionId = gemSessionId,
                         antiGravityMessages = mappedAg,
                         geminiMessages = mappedGem
                     )
@@ -220,6 +232,21 @@ class ChatViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /** Cancels the currently running AI generation (if any). */
+    fun cancelGeneration() {
+        generationJob?.cancel()
+        generationJob = null
+        _uiState.update { it.copy(isLoading = false, activeStep = null) }
+        // Finalize last streaming message so it is not stuck on isStreaming=true
+        val isAg = _uiState.value.engine == ChatEngine.ANTIGRAVITY
+        updateLastMessage(isAg) { msg ->
+            if (msg.isStreaming) msg.copy(
+                text = if (msg.text.isBlank()) "⛔ Generation stopped." else msg.text + "\n\n⛔ Stopped.",
+                isStreaming = false
+            ) else msg
         }
     }
 
@@ -360,18 +387,26 @@ class ChatViewModel @Inject constructor(
 
             val isAntiGravity = _uiState.value.engine == ChatEngine.ANTIGRAVITY
 
+            // Resolve relative path against active project root
+            val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+            val targetPath = if (!diff.filePath.startsWith("content://") && !java.io.File(diff.filePath).isAbsolute && projectPhysicalPath != null) {
+                java.io.File(projectPhysicalPath, diff.filePath).absolutePath
+            } else {
+                diff.filePath
+            }
+
             // Read existing file content
-            val readRes = projectManager.readText(diff.filePath)
+            val readRes = projectManager.readText(targetPath)
 
             val writeRes = if (readRes.isSuccess) {
                 val originalText = readRes.getOrNull().orEmpty()
                 // Only apply diff if originalSnippet is found — NEVER overwrite entire file on miss
                 if (diff.originalSnippet.isNotBlank() && originalText.contains(diff.originalSnippet)) {
                     val updatedText = originalText.replaceFirst(diff.originalSnippet, diff.replacementSnippet)
-                    projectManager.writeTextAtomic(diff.filePath, updatedText)
+                    projectManager.writeTextAtomic(targetPath, updatedText)
                 } else if (diff.originalSnippet.isBlank() && diff.replacementSnippet.isNotBlank()) {
                     // No search snippet — safe to write (new file creation intent)
-                    projectManager.writeTextAtomic(diff.filePath, diff.replacementSnippet)
+                    projectManager.writeTextAtomic(targetPath, diff.replacementSnippet)
                 } else {
                     // originalSnippet not found in file — abort to prevent data loss
                     Result.failure(Exception(
@@ -381,7 +416,7 @@ class ChatViewModel @Inject constructor(
                 }
             } else {
                 // File doesn't exist yet — write replacement as new file
-                projectManager.writeTextAtomic(diff.filePath, diff.replacementSnippet)
+                projectManager.writeTextAtomic(targetPath, diff.replacementSnippet)
             }
             if (writeRes.isSuccess) {
                 val confirmMsg = ChatMessage(
@@ -543,7 +578,7 @@ class ChatViewModel @Inject constructor(
             )
         }
 
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             // Save user message in local SQLite chat_history.db asynchronously in background
             launch(Dispatchers.IO) {
                 runCatching {
