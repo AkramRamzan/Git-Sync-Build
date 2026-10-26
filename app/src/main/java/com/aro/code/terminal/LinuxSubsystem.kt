@@ -430,7 +430,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
             onLog("   python3 --version")
             onLog("   pip list")
             onLog("   agy (Google Antigravity CLI)")
-            onLog("   python3 /storage/Download/server.py")
+            onLog("   ✨ Direct In-App AI Engine active (no server.py needed)")
             onLog("─".repeat(44))
             true
         } catch (e: Exception) {
@@ -1479,8 +1479,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 echo "║    agy                  → Start AI coding session  ║"
                 echo "║    agy -p 'prompt'      → One-shot AI prompt       ║"
                 echo "╠═══════════════════════════════════════════════════╣"
-                echo "║  Server:                                           ║"
-                echo "║    python3 /storage/Download/server.py             ║"
+                echo "║  AI GUI Mode:                                      ║"
+                echo "║    Direct In-App Engine (no server.py required!)   ║"
                 echo "╚═══════════════════════════════════════════════════╝"
                 echo ""
             """.trimIndent() + "\n")

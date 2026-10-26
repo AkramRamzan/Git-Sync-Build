@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aro.code.ai.AntiGravityBridgeClient
+import com.aro.code.ai.AntiGravityDirectEngine
 import com.aro.code.ai.AntiGravityModel
 import com.aro.code.ai.DiffParser
 import com.aro.code.ai.DiffPreviewBlock
@@ -67,6 +68,7 @@ data class ChatUiState(
 class ChatViewModel @Inject constructor(
     private val geminiClient: GeminiClient,
     private val bridgeClient: AntiGravityBridgeClient,
+    private val directEngine: AntiGravityDirectEngine,
     private val credentialStore: CredentialStore,
     private val projectManager: SafProjectManager,
     private val chatDb: ChatHistoryDatabase,
@@ -583,15 +585,32 @@ class ChatViewModel @Inject constructor(
 
             val responseAccumulator = StringBuilder()
 
-            val streamFlow = if (useBridge) {
-                bridgeClient.streamGenerate(
-                    bridgeUrl = bridgeUrl,
-                    bridgeToken = bridgeToken,
-                    modelId = targetModelId,
-                    systemPrompt = activeSystemPrompt,
-                    userPrompt = fullUserPrompt,
-                    projectPath = projectPhysicalPath
-                )
+            val streamFlow = if (isAntiGravity) {
+                // Solution A: Direct in-app native execution via embedded PRoot Linux — zero server.py needed!
+                if (directEngine.isReady()) {
+                    directEngine.streamPrompt(
+                        prompt = fullUserPrompt,
+                        modelId = targetModelId,
+                        systemPrompt = activeSystemPrompt,
+                        projectPath = projectPhysicalPath
+                    )
+                } else if (useBridge) {
+                    bridgeClient.streamGenerate(
+                        bridgeUrl = bridgeUrl,
+                        bridgeToken = bridgeToken,
+                        modelId = targetModelId,
+                        systemPrompt = activeSystemPrompt,
+                        userPrompt = fullUserPrompt,
+                        projectPath = projectPhysicalPath
+                    )
+                } else {
+                    geminiClient.streamGenerate(
+                        apiKey = authKey,
+                        modelId = targetModelId,
+                        systemPrompt = activeSystemPrompt,
+                        userPrompt = fullUserPrompt
+                    )
+                }
             } else {
                 geminiClient.streamGenerate(
                     apiKey = authKey,
@@ -609,7 +628,7 @@ class ChatViewModel @Inject constructor(
                     rawMsg.contains("429") || rawMsg.contains("quota", ignoreCase = true) || rawMsg.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ->
                         "⚠️ Quota Exceeded (429): Rate limit reached. Quota resets in ~30 seconds, or you can enter a new free API key in Settings (⚙)."
                     rawMsg.contains("Connection refused", ignoreCase = true) || rawMsg.contains("Failed to connect", ignoreCase = true) ->
-                        "⚠️ Termux Bridge Offline: Connection refused at $bridgeUrl. Please run 'python server.py' in Termux."
+                        "⚠️ Subsystem Offline: In-app Linux terminal is starting. Please ensure the in-app Ubuntu subsystem is installed."
                     rawMsg.contains("timeout", ignoreCase = true) ->
                         "⚠️ Anti-Gravity Timeout: The task took longer than expected. Make sure to run 'termux-wake-lock' in Termux so Android does not sleep the bridge."
                     else -> {
