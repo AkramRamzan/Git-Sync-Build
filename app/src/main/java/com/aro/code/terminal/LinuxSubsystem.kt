@@ -1157,7 +1157,7 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 # ─────────────────────────────────────────────────
 
                 # If not running interactively, do nothing
-                case ${'$'}-in
+                case "${'$'}-" in
                   *i*) ;;
                   *) return;;
                 esac

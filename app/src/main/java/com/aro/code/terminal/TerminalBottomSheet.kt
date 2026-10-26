@@ -400,7 +400,7 @@ private fun MobileKeyBar(
     var isAltSticky by remember { mutableStateOf(false) }
 
     // Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT)
-    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→")
+    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ALT+F5", "ALT+F6")
 
     Surface(
         color = Color(0xFF0D1117),
@@ -956,6 +956,8 @@ private fun BashShellTab(
                         "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
                         "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
                         "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
+                        "ALT+F5" -> { BashShellSession.sendRaw("\u001B[15~"); activeSession?.refocus() }
+                        "ALT+F6" -> { BashShellSession.sendRaw("\u001B[17~"); activeSession?.refocus() }
                         else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
                     }
                 }
@@ -1117,14 +1119,23 @@ fun TerminalBottomSheet(
                 }
 
                 // ── Tab Content ───────────────────────────────────────────────
+                // Keep BOTH tabs mounted at all times to prevent WebView destroy/recreate
+                // which causes screen blinking and terminal state loss on tab switch.
                 Box(
                     Modifier
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    when (selectedTab) {
-                        0 -> BridgeLogsTab(logs)
-                        1 -> BashShellTab(
+                    // BashShellTab always mounted — only visibility toggled
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (selectedTab == 1) Modifier
+                                else Modifier.size(0.dp)
+                            )
+                    ) {
+                        BashShellTab(
                             logs = logs,
                             onSend = { viewModel.sendBashCommand(it) },
                             onSetupLinux = { viewModel.installMiniLinux(context) },
@@ -1133,6 +1144,12 @@ fun TerminalBottomSheet(
                             drawerState = drawerState,
                             oauthUrl = oauthUrl
                         )
+                    }
+                    // BridgeLogsTab overlaid when Tab 0 selected
+                    if (selectedTab == 0) {
+                        Box(Modifier.fillMaxSize()) {
+                            BridgeLogsTab(logs)
+                        }
                     }
                 }
             }

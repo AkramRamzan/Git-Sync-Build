@@ -270,6 +270,9 @@ window.addEventListener('focus', function() {
 
 // ─── Input from xterm.js → Android (PTY) ─────────────────────────────────────
 term.onData(function(data) {
+  // Android soft keyboards send \n (LF) for Enter; convert to \r (CR) so
+  // agy / readline / bash prompts immediately submit instead of newlining.
+  if (data === '\n') data = '\r';
   if (window.AroTerminal) {
     AroTerminal.sendInput(toBase64Utf8(data));
   }

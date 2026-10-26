@@ -3,6 +3,7 @@ package com.aro.code.ui.workspace
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -71,7 +73,8 @@ fun WorkspaceScreen(
                         Surface(
                             onClick = { modelMenuExpanded = true },
                             shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            color = Color(0xFF1F6FEB),
+                            border = BorderStroke(1.dp, Color(0xFF58A6FF)),
                             modifier = Modifier.padding(end = 4.dp)
                         ) {
                             Row(
@@ -81,13 +84,13 @@ fun WorkspaceScreen(
                                 Text(
                                     text = state.selectedModel.displayName.take(16),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    color = Color.White
                                 )
                                 Icon(
                                     Icons.Default.ArrowDropDown,
                                     contentDescription = "Select Model",
                                     modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    tint = Color.White
                                 )
                             }
                         }
@@ -102,7 +105,8 @@ fun WorkspaceScreen(
                                         Column {
                                             Text(
                                                 model.displayName,
-                                                fontWeight = if (model == state.selectedModel) FontWeight.Bold else FontWeight.Normal
+                                                fontWeight = if (model == state.selectedModel) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (model == state.selectedModel) Color(0xFF58A6FF) else Color.Unspecified
                                             )
                                             Text(
                                                 model.description,
