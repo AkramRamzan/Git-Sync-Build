@@ -25,6 +25,12 @@ data class WorkflowRun(
 )
 
 @Serializable
+data class WorkflowRunsResponse(
+    @SerialName("total_count") val totalCount: Int = 0,
+    @SerialName("workflow_runs") val workflowRuns: List<WorkflowRun> = emptyList()
+)
+
+@Serializable
 data class ArtifactList(
     @SerialName("total_count") val totalCount: Int,
     val artifacts: List<Artifact>
@@ -87,8 +93,8 @@ class CloudBuildPipeline @Inject constructor(
         ) {
             header("Authorization", "Bearer $token")
             header("Accept", "application/vnd.github+json")
-        }.body<Map<String, List<WorkflowRun>>>()
-        runs["workflow_runs"]?.firstOrNull()?.id
+        }.body<WorkflowRunsResponse>()
+        runs.workflowRuns.firstOrNull()?.id
     }.getOrNull()
 
     /**
@@ -109,9 +115,9 @@ class CloudBuildPipeline @Inject constructor(
             ) {
                 header("Authorization", "Bearer $token")
                 header("Accept", "application/vnd.github+json")
-            }.body<Map<String, List<WorkflowRun>>>()
+            }.body<WorkflowRunsResponse>()
 
-            val latest = runs["workflow_runs"]?.firstOrNull()
+            val latest = runs.workflowRuns.firstOrNull()
 
             // Guard against returning a stale, pre-existing run
             if (latest != null && (previousRunId == null || latest.id != previousRunId)) {

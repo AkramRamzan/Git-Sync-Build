@@ -106,12 +106,7 @@ ALLOWED_BASES = [
 # Restrict CORS to local device loopback for enhanced security
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1",
-        "http://127.0.0.1:8000",
-        "http://localhost",
-        "http://localhost:8000"
-    ],
+    allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -287,6 +282,20 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
 
     stdout_reader_task = asyncio.create_task(read_stdout())
 
+    # Drain stderr concurrently in background to prevent 64KB pipe buffer deadlocks
+    stderr_chunks = []
+    async def drain_stderr():
+        try:
+            while True:
+                chunk = await process.stderr.read(4096)
+                if not chunk:
+                    break
+                stderr_chunks.append(chunk)
+        except Exception:
+            pass
+
+    stderr_task = asyncio.create_task(drain_stderr())
+
     token_count = 0
     try:
         while True:
@@ -308,7 +317,8 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
                 # Pulse TCP keep-alive comment so mobile socket / Ktor NEVER times out!
                 yield ": keepalive\n\n"
 
-        stderr_output = await process.stderr.read()
+        await stderr_task
+        stderr_output = b"".join(stderr_chunks)
         if stderr_output and (token_count == 0 or process.returncode != 0):
             err_text = stderr_output.decode("utf-8", errors="replace").strip()
             clean_err = ANSI_ESCAPE.sub('', err_text)
@@ -320,6 +330,8 @@ async def stream_agy_execution(model: str, full_prompt: str, project_path: Optio
 
         await process.wait()
     finally:
+        stdout_reader_task.cancel()
+        stderr_task.cancel()
         async with process_lock:
             if active_process is process:
                 active_process = None
@@ -352,7 +364,7 @@ def find_available_port(preferred: int = 8000) -> int:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            s.bind(("0.0.0.0", port))
+            s.bind(("127.0.0.1", port))
             s.close()
             return port
         except OSError:
@@ -390,4 +402,4 @@ if __name__ == "__main__":
     print(f"📱 Aro Code app will automatically connect to port {active_port}.", flush=True)
     print("="*55 + "\n", flush=True)
 
-    uvicorn.run(app, host="0.0.0.0", port=active_port)
+    uvicorn.run(app, host="127.0.0.1", port=active_port)

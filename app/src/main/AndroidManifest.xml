@@ -72,6 +72,11 @@
             </intent-filter>
         </activity>
 
+        <!-- APK Installer Callback Receiver -->
+        <receiver
+            android:name=".installer.InstallReceiver"
+            android:exported="false" />
+
         <!-- In-App Bridge Terminal Service -->
         <service
             android:name=".terminal.TermuxBridgeService"

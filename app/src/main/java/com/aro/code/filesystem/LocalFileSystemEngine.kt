@@ -38,7 +38,11 @@ class LocalFileSystemEngine @Inject constructor(
                 file.parentFile?.mkdirs()
                 val tmp = File(file.parent, ".tmp_${file.name}")
                 tmp.writeText(content, Charsets.UTF_8)
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                try {
+                    Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                } catch (_: Exception) {
+                    Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
                 Unit
             }
         }

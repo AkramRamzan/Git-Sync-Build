@@ -57,6 +57,7 @@ class GitRepository @Inject constructor(
         runCatching {
             Git.open(repoDir).use { git ->
                 git.add().addFilepattern(".").call()
+                git.add().setUpdate(true).addFilepattern(".").call()
                 val commit = git.commit()
                     .setMessage(message)
                     .setAuthor(authorName, authorEmail)

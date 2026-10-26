@@ -237,7 +237,11 @@ class SafProjectManager @Inject constructor(
                         physicalFile.parentFile?.mkdirs()
                         val tmp = File(physicalFile.parent, ".tmp_${physicalFile.name}")
                         tmp.writeText(content, Charsets.UTF_8)
-                        Files.move(tmp.toPath(), physicalFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                        try {
+                            Files.move(tmp.toPath(), physicalFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                        } catch (_: Exception) {
+                            Files.move(tmp.toPath(), physicalFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        }
                         return@runCatching Unit
                     }
 
@@ -247,7 +251,11 @@ class SafProjectManager @Inject constructor(
                     file.parentFile?.mkdirs()
                     val tmp = File(file.parent, ".tmp_${file.name}")
                     tmp.writeText(content, Charsets.UTF_8)
-                    Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                    try {
+                        Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                    } catch (_: Exception) {
+                        Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    }
                 }
                 Unit
             }
