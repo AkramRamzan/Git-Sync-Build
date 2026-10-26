@@ -407,10 +407,17 @@ class BridgeServiceState {
     internal fun getStatusValue(): BridgeStatus = _status.value
 
     fun addLog(line: String) {
-        val current = _logs.value.toMutableList()
-        current.add(line)
-        if (current.size > MAX_LOG_LINES) current.removeAt(0)
-        _logs.value = current
+        // Atomic compare-and-set loop so concurrent callers from IO + Main threads
+        // never lose a log entry or corrupt the list.
+        while (true) {
+            val current = _logs.value
+            val updated = if (current.size >= MAX_LOG_LINES) {
+                current.drop(1) + line
+            } else {
+                current + line
+            }
+            if (_logs.compareAndSet(current, updated)) break
+        }
     }
 
     fun clearLogs() {

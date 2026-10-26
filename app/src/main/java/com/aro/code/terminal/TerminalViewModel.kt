@@ -117,8 +117,9 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
     fun installMiniLinux(context: Context) {
         viewModelScope.launch {
             BashShellSession.installMiniLinux(context)
+            // Poll with coroutine delay instead of blocking while-loop on main thread
             while (BashShellSession.isInstallingLinux) {
-                kotlinx.coroutines.delay(500)
+                kotlinx.coroutines.delay(300)
             }
             _isLinuxInstalled.value = LinuxSubsystem.isInstalled(context)
         }

@@ -288,6 +288,8 @@ class ShellSession(
     fun stop() {
         ptySession.stop()
         isRunning = false
+        jsInterface?.destroy()
+        jsInterface = null
         destroyWebView()
     }
 

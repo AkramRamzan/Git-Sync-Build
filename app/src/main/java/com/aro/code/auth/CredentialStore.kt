@@ -43,11 +43,15 @@ class CredentialStore @Inject constructor(
     val antigravityBridgeToken: Flow<String?> = context.dataStore.data.map { it[ANTIGRAVITY_BRIDGE_TOKEN] }
 
     suspend fun saveGithubToken(token: String) {
-        context.dataStore.edit { it[GITHUB_TOKEN] = token }
+        context.dataStore.edit {
+            if (token.isBlank()) it.remove(GITHUB_TOKEN) else it[GITHUB_TOKEN] = token
+        }
     }
 
     suspend fun saveGeminiKey(key: String) {
-        context.dataStore.edit { it[GEMINI_KEY] = key }
+        context.dataStore.edit {
+            if (key.isBlank()) it.remove(GEMINI_KEY) else it[GEMINI_KEY] = key
+        }
     }
 
     suspend fun saveGeminiModel(modelId: String) {

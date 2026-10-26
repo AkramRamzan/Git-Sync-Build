@@ -10,6 +10,7 @@ import android.webkit.WebView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 /**
  * XtermJsInterface — JavascriptInterface bridge between xterm.js (in WebView)
@@ -63,6 +64,12 @@ class XtermJsInterface(
         this.webView = wv
     }
 
+    /** Cancel pending JS dispatch coroutines and clear WebView ref. Call when session is destroyed. */
+    fun destroy() {
+        scope.cancel()
+        webView = null
+    }
+
     // ── Called by JS: terminal is ready, provide initial size ─────────────
 
     @JavascriptInterface
@@ -96,7 +103,14 @@ class XtermJsInterface(
     @JavascriptInterface
     fun openUrl(url: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            val parsed = Uri.parse(url.trim())
+            // Only allow http:// and https:// — block file://, intent://, javascript: etc.
+            val scheme = parsed.scheme?.lowercase() ?: ""
+            if (scheme != "http" && scheme != "https") {
+                Log.w(TAG, "openUrl blocked non-http scheme: $scheme for url=$url")
+                return
+            }
+            val intent = Intent(Intent.ACTION_VIEW, parsed).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
