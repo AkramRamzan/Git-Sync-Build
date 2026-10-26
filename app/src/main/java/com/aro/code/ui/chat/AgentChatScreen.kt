@@ -19,15 +19,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,8 +62,7 @@ fun AgentChatScreen(
     val state by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
-    var showModelMenu by remember { mutableStateOf(false) }
-    var showAntiGravityModelMenu by remember { mutableStateOf(false) }
+    var showModelSelectorMenu by remember { mutableStateOf(false) }
     var showAttachMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -102,7 +102,7 @@ fun AgentChatScreen(
         }
     }
 
-    // Folder/Tree picker — opens SAF document tree picker
+    // Attach Folder picker — reads all files in folder and attaches them
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { treeUri: Uri? ->
@@ -112,6 +112,15 @@ fun AgentChatScreen(
             if (files.isNotEmpty()) {
                 viewModel.attachMultipleFiles(files)
             }
+        }
+    }
+
+    // Project folder selector launcher — sets active project directory context
+    val projectPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri: Uri? ->
+        treeUri?.let { uri ->
+            viewModel.selectActiveProject(uri)
         }
     }
 
@@ -135,7 +144,7 @@ fun AgentChatScreen(
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
@@ -144,186 +153,24 @@ fun AgentChatScreen(
                     }
                 },
                 title = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        // 1. Folder button positioned at the very top, directly above the title
-                        Surface(
-                            onClick = { folderPickerLauncher.launch(null) },
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFF21262D),
-                            border = BorderStroke(1.dp, Color(0xFF30363D))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Folder,
-                                    contentDescription = "Folder",
-                                    tint = if (state.activeProjectName != null) Color(0xFF58A6FF) else Color(0xFFD29922),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    text = state.activeProjectName?.let { "📁 $it" } ?: "📁 Select Folder",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (state.activeProjectName != null) Color(0xFF58A6FF) else Color(0xFFD29922),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    tint = Color(0xFF8B949E),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                            }
-                        }
-
-                        // 2. 'Anti-Gravity Agent' title (or 'Gemini AI Chat')
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 1.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (state.engine == ChatEngine.ANTIGRAVITY) Icons.Default.Bolt else Icons.Default.Chat,
-                                contentDescription = null,
-                                tint = if (state.engine == ChatEngine.ANTIGRAVITY) Color(0xFF58A6FF) else MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = if (state.engine == ChatEngine.ANTIGRAVITY) "Anti-Gravity Agent" else "Gemini AI Chat",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-
-                        // 3. Dropdown model selector directly below 'Anti-Gravity Agent' title
-                        if (state.engine == ChatEngine.ANTIGRAVITY) {
-                            Box {
-                                Surface(
-                                    onClick = { showAntiGravityModelMenu = true },
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFF161B22),
-                                    border = BorderStroke(1.dp, Color(0xFF30363D))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = state.selectedAntiGravityModel.displayName,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 10.5.sp,
-                                            color = Color(0xFF58A6FF),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Icon(
-                                            Icons.Default.ArrowDropDown,
-                                            contentDescription = "Switch Model",
-                                            modifier = Modifier.size(14.dp),
-                                            tint = Color(0xFF58A6FF)
-                                        )
-                                    }
-                                }
-
-                                DropdownMenu(
-                                    expanded = showAntiGravityModelMenu,
-                                    onDismissRequest = { showAntiGravityModelMenu = false }
-                                ) {
-                                    AntiGravityModel.entries.forEach { model ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Column {
-                                                    Text(
-                                                        model.displayName,
-                                                        fontFamily = FontFamily.Monospace,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = if (model == state.selectedAntiGravityModel) FontWeight.Bold else FontWeight.Normal,
-                                                        color = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color.Unspecified
-                                                    )
-                                                    Text(
-                                                        model.description,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontSize = 10.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            },
-                                            onClick = {
-                                                viewModel.switchAntiGravityModel(model)
-                                                showAntiGravityModelMenu = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            Box {
-                                Surface(
-                                    onClick = { showModelMenu = true },
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFF161B22),
-                                    border = BorderStroke(1.dp, Color(0xFF30363D))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = state.selectedModel.displayName,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 10.5.sp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Icon(
-                                            Icons.Default.ArrowDropDown,
-                                            contentDescription = "Switch Model",
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-
-                                DropdownMenu(
-                                    expanded = showModelMenu,
-                                    onDismissRequest = { showModelMenu = false }
-                                ) {
-                                    GeminiModel.entries.forEach { model ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Column {
-                                                    Text(
-                                                        model.displayName,
-                                                        fontWeight = if (model == state.selectedModel) FontWeight.Bold else FontWeight.Normal
-                                                    )
-                                                    Text(
-                                                        model.description,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontSize = 10.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            },
-                                            onClick = {
-                                                viewModel.switchModel(model)
-                                                showModelMenu = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        Icon(
+                            imageVector = if (state.engine == ChatEngine.ANTIGRAVITY) Icons.Default.Bolt else Icons.Default.Chat,
+                            contentDescription = null,
+                            tint = if (state.engine == ChatEngine.ANTIGRAVITY) Color(0xFF58A6FF) else MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(19.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (state.engine == ChatEngine.ANTIGRAVITY) "ARO Code AI Agent" else "Gemini AI Chat",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = Color.White
+                        )
                     }
                 },
                 actions = {
@@ -629,6 +476,118 @@ fun AgentChatScreen(
                                     folderPickerLauncher.launch(null)
                                 }
                             )
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = Color(0xFF30363D))
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.FolderOpen,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(17.dp),
+                                        tint = Color(0xFF58A6FF)
+                                    )
+                                },
+                                text = {
+                                    Column {
+                                        Text(
+                                            "Select Project Folder",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF58A6FF)
+                                        )
+                                        state.activeProjectName?.let { proj ->
+                                            Text(
+                                                "Active: $proj",
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF8B949E)
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    showAttachMenu = false
+                                    projectPickerLauncher.launch(null)
+                                }
+                            )
+                        }
+                    }
+
+                    // Small Model Selection Button positioned next to the attachment button
+                    Box {
+                        IconButton(
+                            onClick = { showModelSelectorMenu = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = "Select Model",
+                                tint = Color(0xFF58A6FF),
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showModelSelectorMenu,
+                            onDismissRequest = { showModelSelectorMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                enabled = false,
+                                text = {
+                                    Text(
+                                        "Select AI Model",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF8B949E)
+                                    )
+                                }
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = Color(0xFF30363D))
+                            AntiGravityModel.entries.forEach { model ->
+                                DropdownMenuItem(
+                                    leadingIcon = {
+                                        Icon(
+                                            when (model) {
+                                                AntiGravityModel.FLASH_3_8 -> Icons.Default.Bolt
+                                                AntiGravityModel.CLAUDE_SONNET_4_6,
+                                                AntiGravityModel.CLAUDE_OPUS_4_6 -> Icons.Default.Code
+                                                AntiGravityModel.GPT_OSS_120B -> Icons.Default.SmartToy
+                                                AntiGravityModel.GEMINI_4_ARGON -> Icons.Default.AutoAwesome
+                                            },
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color(0xFF8B949E)
+                                        )
+                                    },
+                                    text = {
+                                        Column {
+                                            Text(
+                                                when (model) {
+                                                    AntiGravityModel.FLASH_3_8 -> "Gemini 3.8 Flash"
+                                                    AntiGravityModel.CLAUDE_SONNET_4_6 -> "Claude Sonnet 4.6 Thinking"
+                                                    AntiGravityModel.CLAUDE_OPUS_4_6 -> "Claude Opus 4.6 Thinking"
+                                                    AntiGravityModel.GPT_OSS_120B -> "GPT-O-S-S 120B Medium"
+                                                    AntiGravityModel.GEMINI_4_ARGON -> "Gemini 4 Argon"
+                                                },
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 12.sp,
+                                                fontWeight = if (model == state.selectedAntiGravityModel) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (model == state.selectedAntiGravityModel) Color(0xFF58A6FF) else Color.Unspecified
+                                            )
+                                            Text(
+                                                model.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.switchAntiGravityModel(model)
+                                        showModelSelectorMenu = false
+                                    }
+                                )
+                            }
                         }
                     }
 
