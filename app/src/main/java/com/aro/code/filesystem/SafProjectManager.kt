@@ -118,7 +118,9 @@ class SafProjectManager @Inject constructor(
     suspend fun scanLocalDirectory(root: File, maxDepth: Int = 4): List<ProjectNode> =
         withContext(Dispatchers.IO) {
             scanLocalFileDirectory(root, level = 0, currentPath = root.name, maxDepth = maxDepth)
-        }    private fun scanLocalFileDirectory(
+        }
+
+    private fun scanLocalFileDirectory(
         dir: File,
         level: Int,
         currentPath: String,

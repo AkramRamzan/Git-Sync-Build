@@ -50,7 +50,9 @@ import com.aro.code.ai.DiffPreviewBlock
 import com.aro.code.ai.GeminiModel
 import com.aro.code.ui.auth.AntiGravityAccountDialog
 import com.aro.code.ui.editor.DiffPreviewDialog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +79,7 @@ fun AgentChatScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            coroutineScope.launch(Dispatchers.IO) {
                 val fileName = queryFileName(context, it) ?: "attached_file.txt"
                 val content = runCatching {
                     context.contentResolver.openInputStream(it)?.use { stream ->
@@ -94,7 +96,7 @@ fun AgentChatScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            coroutineScope.launch(Dispatchers.IO) {
                 val attachedFiles = uris.mapNotNull { uri ->
                     val fileName = queryFileName(context, uri) ?: "file_${System.currentTimeMillis()}.txt"
                     val content = runCatching {
@@ -117,7 +119,7 @@ fun AgentChatScreen(
     ) { treeUri: Uri? ->
         treeUri?.let { uri ->
             viewModel.selectActiveProject(uri)
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            coroutineScope.launch(Dispatchers.IO) {
                 val files = readFolderFiles(context, uri)
                 if (files.isNotEmpty()) {
                     viewModel.attachMultipleFiles(files)
