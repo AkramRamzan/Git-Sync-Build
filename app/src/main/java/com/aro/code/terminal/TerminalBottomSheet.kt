@@ -929,12 +929,13 @@ private fun BashShellTab(
                 ) {
                     val session = activeSession
                     if (session != null) {
-                        XtermView(
-                            session = session.ptySession,
-                            jsInterface = session.ensureJsInterface(context),
-                            modifier = Modifier.fillMaxSize(),
-                            refreshTrigger = refreshTrigger
-                        )
+                        key(session.id) {
+                            XtermView(
+                                session = session,
+                                modifier = Modifier.fillMaxSize(),
+                                refreshTrigger = refreshTrigger
+                            )
+                        }
                     } else {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No active terminal session", color = Color(0xFF8B949E), style = TextStyle(fontSize = 11.sp))
@@ -984,8 +985,15 @@ fun TerminalBottomSheet(
     val pid by viewModel.pid.collectAsState()
     val isLinuxInstalled by viewModel.isLinuxInstalled.collectAsState()
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(1) }
     val tabs = listOf("⚡ Bridge Logs", "❯_ Bash Shell")
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 1) {
+            BashShellSession.activeSession?.refocus()
+            BashShellSession.activeSession?.jsInterface?.refresh()
+        }
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var isMinimized by remember { mutableStateOf(false) }

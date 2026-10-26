@@ -1,7 +1,10 @@
 package com.aro.code.terminal
 
 import android.content.Context
+import android.content.MutableContextWrapper
 import android.util.Log
+import android.view.ViewGroup
+import android.webkit.WebView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -32,6 +35,10 @@ class ShellSession(
 
     val ptySession = PtySession(id)
     var jsInterface: XtermJsInterface? = null
+        private set
+
+    private var contextWrapper: MutableContextWrapper? = null
+    var webView: WebView? = null
         private set
 
     init {
@@ -237,9 +244,35 @@ class ShellSession(
         ptySession.resize(newRows, newCols)
     }
 
+    fun getOrCreateWebView(context: Context): WebView {
+        val existing = webView
+        if (existing != null) {
+            contextWrapper?.baseContext = context
+            (existing.parent as? ViewGroup)?.removeView(existing)
+            return existing
+        }
+        val wrapper = MutableContextWrapper(context)
+        contextWrapper = wrapper
+        val iface = ensureJsInterface(context)
+        val wv = createTerminalWebView(wrapper, iface)
+        webView = wv
+        return wv
+    }
+
+    fun destroyWebView() {
+        try {
+            (webView?.parent as? ViewGroup)?.removeView(webView)
+            webView?.stopLoading()
+            webView?.destroy()
+        } catch (_: Exception) {}
+        webView = null
+        contextWrapper = null
+    }
+
     fun clear() {
         jsInterface?.clear()
-        sendRaw("clear\r")
+        // Ctrl+L (0x0C) instructs readline / shell to redraw prompt at top of cleared viewport
+        sendRaw("\u000C")
     }
 
     /** Direct write to xterm.js viewport without sending through PTY stdin */
@@ -255,6 +288,7 @@ class ShellSession(
     fun stop() {
         ptySession.stop()
         isRunning = false
+        destroyWebView()
     }
 
     fun addLog(line: String) {

@@ -70,7 +70,10 @@ class PtySession(val id: Int) {
             return
         }
 
-        val result = PtyBridge.forkAndExec(cmd, envp, cwd, rows, cols)
+        val safeRows = rows.coerceAtLeast(4)
+        val safeCols = cols.coerceAtLeast(10)
+
+        val result = PtyBridge.forkAndExec(cmd, envp, cwd, safeRows, safeCols)
         if (result == null || result.size < 2) {
             Log.e(TAG, "forkAndExec returned null for cmd=${cmd.firstOrNull()}")
             onExit?.invoke(1)
@@ -86,31 +89,19 @@ class PtySession(val id: Int) {
         isRunning    = true
         stopped.set(false)
 
-        // Reader loop: read chunks from PTY master, batch for ~16 ms, deliver
+        // Reader loop: read chunks from PTY master and deliver immediately to onOutput.
+        // Zero batching delay — terminal conversational output (prompts, interactive cursors)
+        // must be rendered instantaneously without waiting for subsequent keystrokes.
         scope.launch(Dispatchers.IO) {
-            val buf   = ByteArray(READ_BUFFER)
-            val batch = ArrayList<Byte>(READ_BUFFER)
-            var lastFlush = System.currentTimeMillis()
-
+            val buf = ByteArray(READ_BUFFER)
             try {
                 while (isActive && !stopped.get()) {
                     val n = try { inputStream!!.read(buf) } catch (e: IOException) { -1 }
-                    if (n == -1) break
+                    if (n <= 0) break
 
-                    for (i in 0 until n) batch.add(buf[i])
-
-                    val now = System.currentTimeMillis()
-                    if (now - lastFlush >= FLUSH_INTERVAL_MS || batch.size >= READ_BUFFER) {
-                        if (batch.isNotEmpty()) {
-                            val chunk = batch.toByteArray()
-                            batch.clear()
-                            onOutput?.invoke(chunk)
-                        }
-                        lastFlush = now
-                    }
+                    val chunk = buf.copyOf(n)
+                    onOutput?.invoke(chunk)
                 }
-                // Flush remaining
-                if (batch.isNotEmpty()) onOutput?.invoke(batch.toByteArray())
             } catch (e: Exception) {
                 Log.e(TAG, "Reader error session $id", e)
             }
@@ -144,10 +135,13 @@ class PtySession(val id: Int) {
 
     fun resize(rows: Int, cols: Int) {
         if (masterFd < 0) return
+        if (rows <= 0 || cols <= 0) return // Guard against 0x0 size when view is hidden
         if (!PtyBridge.ensureLoaded()) return
-        val rc = PtyBridge.resizePty(masterFd, rows, cols)
+        val safeRows = rows.coerceAtLeast(4)
+        val safeCols = cols.coerceAtLeast(10)
+        val rc = PtyBridge.resizePty(masterFd, safeRows, safeCols)
         if (rc < 0) Log.w(TAG, "resizePty failed for session $id")
-        else Log.d(TAG, "Session $id resized to ${rows}x${cols}")
+        else Log.d(TAG, "Session $id resized to ${safeRows}x${safeCols}")
     }
 
     // ── Stop ───────────────────────────────────────────────────────────────

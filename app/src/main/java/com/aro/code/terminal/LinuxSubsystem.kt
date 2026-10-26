@@ -1216,7 +1216,8 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
                 alias gp='git push'
 
                 # ── Misc ──
-                alias cls='clear'
+                alias clear='printf "\033[H\033[2J\033[3J"'
+                alias cls='printf "\033[H\033[2J\033[3J"'
                 alias h='history'
                 alias df='df -h'
                 alias du='du -sh'

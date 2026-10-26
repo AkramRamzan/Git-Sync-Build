@@ -43,16 +43,16 @@ import androidx.lifecycle.LifecycleEventObserver
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun XtermView(
-    session: PtySession,
-    jsInterface: XtermJsInterface,
+    session: ShellSession,
     modifier: Modifier = Modifier,
     refreshTrigger: Int = 0
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val jsInterface = session.ensureJsInterface(context)
 
     val webView = remember(session.id) {
-        createTerminalWebView(context, jsInterface)
+        session.getOrCreateWebView(context)
     }
 
     // Lifecycle observer to guarantee WebView redraws instantly when app is un-minimized
@@ -77,12 +77,6 @@ fun XtermView(
         }
     }
 
-    DisposableEffect(session.id) {
-        onDispose {
-            // Session owner manages lifecycle
-        }
-    }
-
     // Stable refresh: only refresh when refreshTrigger explicitly changes, not on every recomposition
     LaunchedEffect(refreshTrigger) {
         if (refreshTrigger > 0) {
@@ -100,7 +94,7 @@ fun XtermView(
 }
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
-private fun createTerminalWebView(
+internal fun createTerminalWebView(
     context: Context,
     jsInterface: XtermJsInterface
 ): WebView {

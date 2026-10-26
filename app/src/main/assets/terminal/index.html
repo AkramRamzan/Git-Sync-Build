@@ -115,29 +115,17 @@ function setupInputHandling() {
     textarea.setAttribute('autocomplete', 'off');
     textarea.setAttribute('spellcheck', 'false');
     textarea.setAttribute('aria-autocomplete', 'none');
+    textarea.setAttribute('enterkeyhint', 'enter');
     textarea.setAttribute('inputmode', 'text');
   }
 }
 setupInputHandling();
 
-// ─── CLI Input Controls (Space, Enter, and interactive shortcuts) ─────────────
+// ─── Native Key Event Delegation ──────────────────────────────────────────────
 term.attachCustomKeyEventHandler(function(e) {
-  if (e.type === 'keydown') {
-    // Space key: guarantees selecting options in interactive CLI tools (inquirer, menus, scripts)
-    if (e.key === ' ' || e.code === 'Space' || e.keyCode === 32) {
-      if (window.AroTerminal) {
-        AroTerminal.sendInput(btoa(' '));
-      }
-      return false;
-    }
-    // Enter key: guarantees confirming/advancing execution immediately
-    if (e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13) {
-      if (window.AroTerminal) {
-        AroTerminal.sendInput(btoa('\r'));
-      }
-      return false;
-    }
-  }
+  // Let xterm.js process keys natively through its input pipeline.
+  // We do NOT intercept Space or Enter here because the helper textarea simultaneously
+  // receives the input event, which would cause double command execution / duplicate prompts.
   return true;
 });
 
@@ -242,7 +230,7 @@ window.writeToTerminal = function(base64data) {
 };
 
 window.clearTerminal = function() {
-  term.clear();
+  term.write('\x1b[H\x1b[2J\x1b[3J');
 };
 
 // ─── Refresh on Visibility / App Reopen ──────────────────────────────────────
@@ -270,11 +258,13 @@ window.addEventListener('focus', function() {
 
 // ─── Input from xterm.js → Android (PTY) ─────────────────────────────────────
 term.onData(function(data) {
-  // Android soft keyboards send \n (LF) for Enter via composition events.
-  // PTY bash uses ICRNL (maps \r→\n internally), so sending \r is correct for submit.
-  // We only convert bare \n (not part of a sequence) to avoid double-newline with bash echo.
+  // Normalize soft-keyboard newline (\n or \r\n) to carriage return (\r)
+  // so POSIX shell and interactive TUI tools (agy, inquirer, readline) receive
+  // single Enter submit without duplicating line breaks or commands.
   var out = data;
-  if (data === '\n') out = '\r';
+  if (out === '\n' || out === '\r\n') {
+    out = '\r';
+  }
   if (window.AroTerminal) {
     AroTerminal.sendInput(toBase64Utf8(out));
   }
@@ -345,8 +335,14 @@ window.pasteText = function(text) {
 };
 
 window.refocusTerminal = function() {
-  term.focus();
-  setupInputHandling();
+  try {
+    term.focus();
+    setupInputHandling();
+    const textarea = term.textarea || document.querySelector('.xterm-helper-textarea');
+    if (textarea) {
+      textarea.focus();
+    }
+  } catch(e) {}
   window.refreshTerminal();
 };
 

@@ -136,6 +136,7 @@ class TerminalViewModel @Inject constructor() : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        BashShellSession.stop()
+        // Do not kill persistent background shell sessions when ViewModel clears on screen navigation.
+        // Sessions survive so user can switch between Editor/Chat and Terminal seamlessly.
     }
 }
