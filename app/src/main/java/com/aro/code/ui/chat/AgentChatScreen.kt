@@ -532,6 +532,7 @@ fun AgentChatScreen(
                         ) {
                             DropdownMenuItem(
                                 enabled = false,
+                                onClick = {},
                                 text = {
                                     Text(
                                         "Select AI Model",
