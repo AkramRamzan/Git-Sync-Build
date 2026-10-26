@@ -43,27 +43,76 @@ class SyntaxValidator @Inject constructor() {
         return true
     }
 
-    /** Simple bracket, parenthesis, and quote-balance check. */
+    /** Robust structural bracket and parenthesis validator that ignores comments and literals. */
     private fun fallbackBracketCheck(source: String): Boolean {
         var depth = 0
         var parenDepth = 0
-        var inString = false
-        var prevChar = ' '
+        var bracketDepth = 0
 
-        for (ch in source) {
-            if (ch == '"' && prevChar != '\\') {
-                inString = !inString
+        val n = source.length
+        var i = 0
+
+        while (i < n) {
+            val c = source[i]
+
+            // 1. Line comments: // ...
+            if (c == '/' && i + 1 < n && source[i + 1] == '/') {
+                i += 2
+                while (i < n && source[i] != '\n') i++
+                continue
             }
-            if (!inString) {
-                when (ch) {
-                    '{' -> depth++
-                    '}' -> if (--depth < 0) return false
-                    '(' -> parenDepth++
-                    ')' -> if (--parenDepth < 0) return false
+
+            // 2. Block comments: /* ... */
+            if (c == '/' && i + 1 < n && source[i + 1] == '*') {
+                i += 2
+                while (i + 1 < n && !(source[i] == '*' && source[i + 1] == '/')) i++
+                i += 2
+                continue
+            }
+
+            // 3. Kotlin Triple-quoted strings: """..."""
+            if (c == '"' && i + 2 < n && source[i + 1] == '"' && source[i + 2] == '"') {
+                i += 3
+                while (i + 2 < n && !(source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"')) {
+                    i++
                 }
+                i += 3
+                continue
             }
-            prevChar = ch
+
+            // 4. Regular double-quoted string: "..."
+            if (c == '"') {
+                i++
+                while (i < n && source[i] != '"') {
+                    if (source[i] == '\\' && i + 1 < n) i++ // skip escaped char
+                    i++
+                }
+                if (i < n && source[i] == '"') i++
+                continue
+            }
+
+            // 5. Single-quoted char literal: '.'
+            if (c == '\'') {
+                i++
+                while (i < n && source[i] != '\'') {
+                    if (source[i] == '\\' && i + 1 < n) i++
+                    i++
+                }
+                if (i < n && source[i] == '\'') i++
+                continue
+            }
+
+            // 6. Count code delimiters
+            when (c) {
+                '{' -> depth++
+                '}' -> if (--depth < 0) return false
+                '(' -> parenDepth++
+                ')' -> if (--parenDepth < 0) return false
+                '[' -> bracketDepth++
+                ']' -> if (--bracketDepth < 0) return false
+            }
+            i++
         }
-        return depth == 0 && parenDepth == 0
+        return depth == 0 && parenDepth == 0 && bracketDepth == 0
     }
 }

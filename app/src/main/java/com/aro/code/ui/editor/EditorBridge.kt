@@ -8,7 +8,7 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class EditorEvent(val type: String, val payload: String)
+data class EditorEvent(val type: String, val payload: String, val filePath: String? = null)
 
 /**
  * Module 4 – JavascriptInterface bridge between Monaco/CodeMirror WebView
@@ -21,8 +21,7 @@ class EditorBridge @Inject constructor() {
 
     @JavascriptInterface
     fun onContentChanged(filePath: String, content: String) {
-        val encoded = Json.encodeToString(content)
-        _events.tryEmit(EditorEvent("content_changed", """{"path":"$filePath","content":$encoded}"""))
+        _events.tryEmit(EditorEvent("content_changed", content, filePath))
     }
 
     @JavascriptInterface
@@ -32,12 +31,11 @@ class EditorBridge @Inject constructor() {
 
     @JavascriptInterface
     fun onDiffRequested(filePath: String) {
-        _events.tryEmit(EditorEvent("diff_request", """{"path":"$filePath"}"""))
+        _events.tryEmit(EditorEvent("diff_request", filePath))
     }
 
     @JavascriptInterface
     fun onPromptSubmitted(prompt: String) {
-        val encoded = Json.encodeToString(prompt)
-        _events.tryEmit(EditorEvent("prompt", """{"text":$encoded}"""))
+        _events.tryEmit(EditorEvent("prompt", prompt))
     }
 }

@@ -324,8 +324,11 @@ class GeminiClient @Inject constructor(
                     if (trimmed.startsWith("data:")) {
                         val jsonStr = trimmed.removePrefix("data:").trim()
                         if (jsonStr.isNotEmpty() && jsonStr != "[DONE]") {
-                            runCatching {
-                                val chunk = json.decodeFromString<GeminiResponse>(jsonStr)
+                            val chunk = runCatching { json.decodeFromString<GeminiResponse>(jsonStr) }.getOrNull()
+                            if (chunk != null) {
+                                if (chunk.error != null) {
+                                    error(chunk.error.message)
+                                }
                                 val chunkText = chunk.text()
                                 if (chunkText.isNotEmpty()) {
                                     tokenCount++

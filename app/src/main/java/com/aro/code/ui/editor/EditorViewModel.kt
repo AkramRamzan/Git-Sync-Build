@@ -33,8 +33,17 @@ class EditorViewModel @Inject constructor(
             bridge.events.collect { event ->
                 when (event.type) {
                     "content_changed" -> {
-                        event.payload?.let { newText ->
-                            updateContent(newText)
+                        event.payload?.let { rawPayload ->
+                            // Defensive decoding: extract content if payload was JSON encoded
+                            val cleanText = if (rawPayload.startsWith("{") && rawPayload.contains("\"content\":")) {
+                                runCatching {
+                                    val obj = org.json.JSONObject(rawPayload)
+                                    obj.optString("content", rawPayload)
+                                }.getOrDefault(rawPayload)
+                            } else {
+                                rawPayload
+                            }
+                            updateContent(cleanText)
                         }
                     }
                     "prompt" -> { /* forwarded to AI module */ }

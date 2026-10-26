@@ -34,38 +34,44 @@ class AiPatchOrchestrator @Inject constructor(
         authorName: String,
         authorEmail: String
     ): PatchResult = withContext(Dispatchers.IO) {
-        // 1. Stash as rollback checkpoint
-        git.stash(repoDir)
+        // 1. Stash as rollback checkpoint (if working tree has dirty files)
+        val stashCreated = git.stash(repoDir).getOrDefault(false)
+
+        suspend fun rollback() {
+            if (stashCreated) {
+                git.stashPop(repoDir)
+            }
+        }
 
         // 2. Read original source
         val original = fs.readFile(targetFile).getOrElse {
-            git.stashPop(repoDir)
+            rollback()
             return@withContext PatchResult.ApplyFailed("Could not read file: ${it.message}")
         }
 
         // 3. Parse SEARCH/REPLACE blocks
         val blocks = diffEngine.parseBlocks(modelResponse)
         if (blocks.isEmpty()) {
-            git.stashPop(repoDir)
+            rollback()
             return@withContext PatchResult.ApplyFailed("No SEARCH/REPLACE blocks found in response")
         }
 
         // 4. Apply patches
         val patched = diffEngine.applyPatches(original, blocks).getOrElse {
-            git.stashPop(repoDir)
+            rollback()
             return@withContext PatchResult.ApplyFailed(it.message ?: "Patch apply error")
         }
 
         // 5. Syntax validation (Tree-Sitter)
         val valid = validator.validate(patched, language)
         if (!valid) {
-            git.stashPop(repoDir)
+            rollback()
             return@withContext PatchResult.ValidationFailed("AST validation failed post-patch")
         }
 
         // 6. Write atomically
         fs.writeFileAtomic(targetFile, patched).getOrElse {
-            git.stashPop(repoDir)
+            rollback()
             return@withContext PatchResult.ApplyFailed("Write failed: ${it.message}")
         }
 
@@ -74,7 +80,7 @@ class AiPatchOrchestrator @Inject constructor(
             repoDir, "ai: apply model patch to ${targetFile.name}",
             authorName, authorEmail
         ).getOrElse {
-            git.stashPop(repoDir)
+            rollback()
             return@withContext PatchResult.ApplyFailed("Commit failed: ${it.message}")
         }
 

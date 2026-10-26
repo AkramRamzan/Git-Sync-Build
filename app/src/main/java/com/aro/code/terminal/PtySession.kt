@@ -151,18 +151,23 @@ class PtySession(val id: Int) {
         isRunning = false
         Log.i(TAG, "Stopping session $id (pid=$childPid)")
 
-        if (childPid > 0 && PtyBridge.ensureLoaded()) {
-            PtyBridge.killProcessGroup(childPid, 15) // SIGTERM
-            kotlinx.coroutines.runBlocking {
-                kotlinx.coroutines.delay(300)
-                if (PtyBridge.waitForExit(childPid) < 0)
-                    PtyBridge.killProcessGroup(childPid, 9) // SIGKILL
+        val pidToKill = childPid
+        childPid = -1
+
+        if (pidToKill > 0 && PtyBridge.ensureLoaded()) {
+            PtyBridge.killProcessGroup(pidToKill, 15) // SIGTERM
+            // Non-blocking asynchronous child termination — avoids freezing Android UI thread
+            scope.launch(Dispatchers.IO) {
+                kotlinx.coroutines.delay(200)
+                if (PtyBridge.waitForExit(pidToKill) < 0) {
+                    PtyBridge.killProcessGroup(pidToKill, 9) // SIGKILL
+                }
             }
-            childPid = -1
         }
 
-        try { inputStream?.close()  } catch (_: Exception) {}
-        try { outputStream?.close() } catch (_: Exception) {}
+        // Close input stream (which releases the underlying OS masterFd)
+        // Avoid double-closing the same descriptor through outputStream
+        try { inputStream?.close() } catch (_: Exception) {}
         inputStream  = null
         outputStream = null
         masterFd     = -1

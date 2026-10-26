@@ -214,7 +214,7 @@ fun WorkspaceScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.projectNodes) { node ->
+                    items(state.projectNodes, key = { it.path }) { node ->
                         ProjectNodeRow(
                             node = node,
                             onToggle = { viewModel.toggleDirectory(node) },

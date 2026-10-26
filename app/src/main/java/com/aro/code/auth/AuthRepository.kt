@@ -216,6 +216,7 @@ class AuthRepository @Inject constructor(
 
     suspend fun pollGitHubToken(deviceCode: String, intervalSecs: Int): Result<String> =
         runCatching {
+            var currentInterval = intervalSecs
             repeat(60) {
                 val resp: AccessTokenResponse = httpClient.post(
                     "https://github.com/login/oauth/access_token"
@@ -230,7 +231,17 @@ class AuthRepository @Inject constructor(
                     store.saveGithubToken(resp.accessToken)
                     return@runCatching resp.accessToken
                 }
-                delay(intervalSecs * 1_000L)
+
+                when (resp.error) {
+                    "authorization_pending" -> { /* User hasn't finished authorizing yet */ }
+                    "slow_down" -> currentInterval += 5
+                    "expired_token" -> error("GitHub device code has expired. Please restart sign-in.")
+                    "access_denied" -> error("GitHub authorization was denied by the user.")
+                    null -> { /* continue */ }
+                    else -> error("GitHub Device Flow error: ${resp.error}")
+                }
+
+                delay(currentInterval * 1_000L)
             }
             error("Device flow timed out")
         }

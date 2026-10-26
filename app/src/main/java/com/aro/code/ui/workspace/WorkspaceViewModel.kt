@@ -61,13 +61,16 @@ class WorkspaceViewModel @Inject constructor(
             }
         }
 
-        // Monitor Google Auth state
+        // Monitor Google Auth state (Display redacted snippet to avoid token leak in public UI state)
         viewModelScope.launch {
             credentialStore.googleAccessToken.collect { token ->
+                val snippet = token?.takeIf { it.isNotBlank() }?.let { t ->
+                    if (t.length > 12) "${t.take(6)}...${t.takeLast(4)}" else t
+                }
                 _uiState.update {
                     it.copy(
                         isGoogleSignedIn = !token.isNullOrBlank(),
-                        googleTokenSnippet = token
+                        googleTokenSnippet = snippet
                     )
                 }
             }
@@ -85,6 +88,8 @@ class WorkspaceViewModel @Inject constructor(
         }
     }
 
+    private var cachedRawNodes: List<ProjectNode> = emptyList()
+
     fun refreshFileTree() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
@@ -98,6 +103,8 @@ class WorkspaceViewModel @Inject constructor(
                 _uiState.update { it.copy(projectName = "Workspace (Internal)") }
                 safManager.scanLocalDirectory(fs.reposRoot)
             }
+
+            cachedRawNodes = rawNodes
 
             // Apply expanded state
             val flattened = applyExpandedState(rawNodes)
@@ -124,7 +131,13 @@ class WorkspaceViewModel @Inject constructor(
         } else {
             expandedPaths.add(node.path)
         }
-        refreshFileTree()
+        // Instant in-memory toggle without redundant physical disk re-scans
+        if (cachedRawNodes.isNotEmpty()) {
+            val flattened = applyExpandedState(cachedRawNodes)
+            _uiState.update { it.copy(projectNodes = flattened) }
+        } else {
+            refreshFileTree()
+        }
     }
 
     fun onProjectFolderSelected(uri: Uri) {

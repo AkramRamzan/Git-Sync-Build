@@ -66,51 +66,62 @@ fun AgentChatScreen(
     var showAttachMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(initialEngine) {
         viewModel.selectEngine(initialEngine)
     }
 
-    // File picker launcher — single file
+    // File picker launcher — single file (asynchronous on IO dispatcher to prevent UI thread ANR)
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val fileName = queryFileName(context, it) ?: "attached_file.txt"
-            val content = context.contentResolver.openInputStream(it)?.use { stream ->
-                stream.bufferedReader(Charsets.UTF_8).readText()
-            } ?: ""
-            viewModel.attachFile(name = fileName, content = content, uriString = it.toString())
+            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val fileName = queryFileName(context, it) ?: "attached_file.txt"
+                val content = runCatching {
+                    context.contentResolver.openInputStream(it)?.use { stream ->
+                        stream.bufferedReader(Charsets.UTF_8).readText()
+                    }
+                }.getOrNull() ?: ""
+                viewModel.attachFile(name = fileName, content = content, uriString = it.toString())
+            }
         }
     }
 
-    // Multiple files picker — select several files at once
+    // Multiple files picker — select several files at once (asynchronous on IO dispatcher)
     val multiFilePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
-        val attachedFiles = uris.mapNotNull { uri ->
-            val fileName = queryFileName(context, uri) ?: "file_${System.currentTimeMillis()}.txt"
-            val content = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader(Charsets.UTF_8).readText()
-                } ?: ""
-            }.getOrDefault("")
-            if (content.isNotBlank()) AttachedFile(name = fileName, content = content, uriString = uri.toString()) else null
-        }
-        if (attachedFiles.isNotEmpty()) {
-            viewModel.attachMultipleFiles(attachedFiles)
+        if (uris.isNotEmpty()) {
+            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val attachedFiles = uris.mapNotNull { uri ->
+                    val fileName = queryFileName(context, uri) ?: "file_${System.currentTimeMillis()}.txt"
+                    val content = runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            stream.bufferedReader(Charsets.UTF_8).readText()
+                        } ?: ""
+                    }.getOrDefault("")
+                    if (content.isNotBlank()) AttachedFile(name = fileName, content = content, uriString = uri.toString()) else null
+                }
+                if (attachedFiles.isNotEmpty()) {
+                    viewModel.attachMultipleFiles(attachedFiles)
+                }
+            }
         }
     }
 
-    // Attach Folder picker — reads all files in folder and attaches them
+    // Attach Folder picker — reads all files in folder asynchronously and attaches them
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { treeUri: Uri? ->
         treeUri?.let { uri ->
             viewModel.selectActiveProject(uri)
-            val files = readFolderFiles(context, uri)
-            if (files.isNotEmpty()) {
-                viewModel.attachMultipleFiles(files)
+            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val files = readFolderFiles(context, uri)
+                if (files.isNotEmpty()) {
+                    viewModel.attachMultipleFiles(files)
+                }
             }
         }
     }
@@ -822,63 +833,65 @@ private fun queryFileName(context: Context, uri: Uri): String? {
 
 /**
  * Reads all readable text files from a SAF-selected folder tree (recursively, max 50 files, 200KB each).
+ * Safely executes on Dispatchers.IO to prevent Android UI thread starvation / ANRs.
  */
-private fun readFolderFiles(context: Context, treeUri: Uri): List<AttachedFile> {
-    val result = mutableListOf<AttachedFile>()
-    val docId = try {
-        android.provider.DocumentsContract.getTreeDocumentId(treeUri)
-    } catch (e: Exception) {
-        return result
-    }
+private suspend fun readFolderFiles(context: Context, treeUri: Uri): List<AttachedFile> =
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val result = mutableListOf<AttachedFile>()
+        val docId = try {
+            android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+        } catch (e: Exception) {
+            return@withContext result
+        }
 
-    val textExtensions = setOf(
-        "kt", "java", "py", "js", "ts", "tsx", "jsx", "json", "xml",
-        "md", "txt", "gradle", "kts", "toml", "yaml", "yml", "html",
-        "css", "sh", "c", "cpp", "h", "swift", "go", "rs", "dart"
-    )
+        val textExtensions = setOf(
+            "kt", "java", "py", "js", "ts", "tsx", "jsx", "json", "xml",
+            "md", "txt", "gradle", "kts", "toml", "yaml", "yml", "html",
+            "css", "sh", "c", "cpp", "h", "swift", "go", "rs", "dart"
+        )
 
-    fun traverseDir(parentDocId: String) {
-        if (result.size >= 50) return
-        val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
-        context.contentResolver.query(
-            childrenUri,
-            arrayOf(
-                android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
-                android.provider.DocumentsContract.Document.COLUMN_SIZE
-            ),
-            null, null, null
-        )?.use { cursor ->
-            while (cursor.moveToNext() && result.size < 50) {
-                val childDocId = cursor.getString(0) ?: continue
-                val name = cursor.getString(1) ?: continue
-                val mimeType = cursor.getString(2) ?: continue
-                val size = cursor.getLong(3)
+        fun traverseDir(parentDocId: String) {
+            if (result.size >= 50) return
+            val childrenUri = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
+            context.contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    android.provider.DocumentsContract.Document.COLUMN_SIZE
+                ),
+                null, null, null
+            )?.use { cursor ->
+                while (cursor.moveToNext() && result.size < 50) {
+                    val childDocId = cursor.getString(0) ?: continue
+                    val name = cursor.getString(1) ?: continue
+                    val mimeType = cursor.getString(2) ?: continue
+                    val size = cursor.getLong(3)
 
-                if (mimeType == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
-                    // Skip hidden folders and common non-code dirs
-                    if (!name.startsWith(".") && name !in setOf("build", ".gradle", "node_modules", "__pycache__", ".git")) {
-                        traverseDir(childDocId)
-                    }
-                } else {
-                    val ext = name.substringAfterLast('.', "").lowercase()
-                    if (ext in textExtensions && size in 1..200_000) {
-                        runCatching {
-                            val fileUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocId)
-                            val content = context.contentResolver.openInputStream(fileUri)?.use { stream ->
-                                stream.bufferedReader(Charsets.UTF_8).readText()
-                            } ?: return@runCatching
-                            if (content.isNotBlank()) {
-                                result.add(AttachedFile(name = name, content = content, uriString = fileUri.toString()))
+                    if (mimeType == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
+                        // Skip hidden folders and common non-code dirs
+                        if (!name.startsWith(".") && name !in setOf("build", ".gradle", "node_modules", "__pycache__", ".git")) {
+                            traverseDir(childDocId)
+                        }
+                    } else {
+                        val ext = name.substringAfterLast('.', "").lowercase()
+                        if (ext in textExtensions && size in 1..200_000) {
+                            runCatching {
+                                val fileUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocId)
+                                val content = context.contentResolver.openInputStream(fileUri)?.use { stream ->
+                                    stream.bufferedReader(Charsets.UTF_8).readText()
+                                } ?: return@runCatching
+                                if (content.isNotBlank()) {
+                                    result.add(AttachedFile(name = name, content = content, uriString = fileUri.toString()))
+                                }
                             }
                         }
                     }
                 }
             }
         }
-    }
 
-    traverseDir(docId)
-    return result
-}
+        traverseDir(docId)
+        result
+    }

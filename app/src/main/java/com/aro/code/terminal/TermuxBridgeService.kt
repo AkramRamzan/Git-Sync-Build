@@ -144,12 +144,13 @@ class TermuxBridgeService : Service() {
         return START_STICKY
     }
 
-    /** Continuous health check & log syncer (runs every 2 seconds) */
+    /** Continuous health check & log syncer (battery-friendly backoff when stopped) */
     private fun startContinuousMonitor() {
         serviceScope.launch {
             var lastSyncedLogs = 0
             while (isActive) {
-                val isAlive = pingHealth()
+                val wasRunning = state._status.value == BridgeStatus.RUNNING
+                val isAlive = pingHealth(probeOtherPorts = !wasRunning)
                 if (isAlive) {
                     val port = runCatching { URL(state._activeUrl.value).port }.getOrNull()?.takeIf { it > 0 } ?: 8000
                     if (state._status.value != BridgeStatus.RUNNING) {
@@ -177,7 +178,8 @@ class TermuxBridgeService : Service() {
                         appendLog("⚠️ Bridge connection lost (${state._activeUrl.value} unreachable).")
                     }
                 }
-                delay(2000)
+                // When online, check every 2.5s; when offline, backoff to 8s to conserve device battery
+                delay(if (isAlive) 2500L else 8000L)
             }
         }
     }
@@ -291,17 +293,19 @@ class TermuxBridgeService : Service() {
     }
 
     /** Fast health ping with dynamic port discovery */
-    private fun pingHealth(): Boolean {
+    private fun pingHealth(probeOtherPorts: Boolean = false): Boolean {
         val candidate = resolveBridgeUrl()
         if (checkHealthUrl(candidate)) {
             state._activeUrl.value = candidate
             return true
         }
-        for (port in listOf(8000, 8080, 8888, 8765, 9000)) {
-            val probe = "http://127.0.0.1:$port"
-            if (probe != candidate && checkHealthUrl(probe)) {
-                state._activeUrl.value = probe
-                return true
+        if (probeOtherPorts) {
+            for (port in listOf(8000, 8080, 8888, 8765, 9000)) {
+                val probe = "http://127.0.0.1:$port"
+                if (probe != candidate && checkHealthUrl(probe)) {
+                    state._activeUrl.value = probe
+                    return true
+                }
             }
         }
         return false

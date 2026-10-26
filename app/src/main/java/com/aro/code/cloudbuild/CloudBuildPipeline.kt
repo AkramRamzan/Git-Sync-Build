@@ -74,13 +74,33 @@ class CloudBuildPipeline @Inject constructor(
     }
 
     /**
+     * Fetches the ID of the most recent workflow run (if any).
+     * Used as a baseline before triggerBuild to prevent returning stale runs.
+     */
+    suspend fun getLatestRunId(
+        owner: String,
+        repo: String,
+        token: String
+    ): Long? = runCatching {
+        val runs = httpClient.get(
+            "$GH_API/repos/$owner/$repo/actions/workflows/$WORKFLOW_FILE/runs?per_page=1"
+        ) {
+            header("Authorization", "Bearer $token")
+            header("Accept", "application/vnd.github+json")
+        }.body<Map<String, List<WorkflowRun>>>()
+        runs["workflow_runs"]?.firstOrNull()?.id
+    }.getOrNull()
+
+    /**
      * Polls workflow runs until the latest one completes.
+     * Prevents race conditions by ignoring [previousRunId] so old completed builds are never returned.
      * Rate-limit aware: reads X-RateLimit-Remaining and backs off.
      */
     suspend fun awaitBuildCompletion(
         owner: String,
         repo: String,
-        token: String
+        token: String,
+        previousRunId: Long? = null
     ): Result<WorkflowRun> = runCatching {
         repeat(MAX_POLL_ATTEMPTS) { attempt ->
             delay(POLL_INTERVAL_MS)
@@ -92,12 +112,14 @@ class CloudBuildPipeline @Inject constructor(
             }.body<Map<String, List<WorkflowRun>>>()
 
             val latest = runs["workflow_runs"]?.firstOrNull()
-                ?: error("No workflow runs found")
 
-            when (latest.status) {
-                "completed" -> return@runCatching latest
-                "queued", "in_progress" -> { /* keep polling */ }
-                else -> error("Unexpected run status: ${latest.status}")
+            // Guard against returning a stale, pre-existing run
+            if (latest != null && (previousRunId == null || latest.id != previousRunId)) {
+                when (latest.status) {
+                    "completed" -> return@runCatching latest
+                    "queued", "in_progress" -> { /* keep polling */ }
+                    else -> error("Unexpected run status: ${latest.status}")
+                }
             }
         }
         error("Build timed out after ${MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 60_000} minutes")

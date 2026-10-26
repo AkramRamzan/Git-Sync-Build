@@ -569,7 +569,18 @@ deb http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe
 
                 if (entryName.isEmpty()) continue
 
+                // Security: Tar Slip / Directory Traversal protection
+                val destCanonical = destDir.canonicalFile
                 val outFile = File(destDir, entryName)
+                val outCanonical = outFile.canonicalFile
+                if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+                    Log.w(TAG, "Tar Slip directory escape attempt blocked: $entryName")
+                    if (size > 0) {
+                        val toSkip = size + ((512 - (size % 512)) % 512)
+                        skipFully(gzipIn, toSkip)
+                    }
+                    continue
+                }
 
                 if (type == '5' || entryName.endsWith("/")) {
                     outFile.mkdirs()

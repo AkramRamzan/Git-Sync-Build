@@ -82,12 +82,12 @@ class GitRepository @Inject constructor(
         }
 
     // ── Stash (pre-patch checkpoint) ────────────────────────────────────────
-    suspend fun stash(repoDir: File): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun stash(repoDir: File): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {
             Git.open(repoDir).use { git ->
-                git.stashCreate().call()
+                val commit = git.stashCreate().call()
+                commit != null
             }
-            Unit
         }
     }
 

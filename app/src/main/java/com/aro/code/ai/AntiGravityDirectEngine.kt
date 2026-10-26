@@ -196,7 +196,7 @@ class AntiGravityDirectEngine @Inject constructor(
                                 val delta = su.optString("text_delta")
                                 if (!delta.isNullOrEmpty()) {
                                     val clean = ANSI_REGEX.replace(delta, "")
-                                    if (clean.isNotEmpty() && clean != "\n") {
+                                    if (clean.isNotEmpty()) {
                                         tokenCount++
                                         emit(clean)
                                     }
@@ -322,7 +322,7 @@ class AntiGravityDirectEngine @Inject constructor(
         val newReader = newProc.inputStream.bufferedReader(Charsets.UTF_8)
 
         // Drain stderr continuously so the pipe buffer never fills and blocks agy
-        CoroutineScope(Dispatchers.IO).launch {
+        engineScope.launch {
             try {
                 newProc.errorStream.bufferedReader(Charsets.UTF_8)
                     .useLines { it.forEach { l -> Log.d(TAG, "[agy-stderr] $l") } }
