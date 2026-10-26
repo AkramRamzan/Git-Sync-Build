@@ -241,10 +241,24 @@ class ChatViewModel @Inject constructor(
 
     fun switchAntiGravityModel(model: AntiGravityModel) {
         _uiState.update { it.copy(selectedAntiGravityModel = model) }
+        viewModelScope.launch {
+            if (directEngine.isReady()) {
+                val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+                directEngine.warmUp(model.id, projectPhysicalPath)
+            }
+        }
     }
 
     fun selectEngine(engine: ChatEngine) {
         _uiState.update { it.copy(engine = engine, error = null, activeStep = null) }
+        if (engine == ChatEngine.ANTIGRAVITY) {
+            viewModelScope.launch {
+                if (directEngine.isReady()) {
+                    val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+                    directEngine.warmUp(_uiState.value.selectedAntiGravityModel.id, projectPhysicalPath)
+                }
+            }
+        }
     }
 
     fun openAuthDialog() = _uiState.update { it.copy(showAuthDialog = true) }
