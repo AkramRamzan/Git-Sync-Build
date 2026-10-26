@@ -187,4 +187,3 @@ class EditorViewModel @Inject constructor(
         bridge.onDiffRequested(filePath)
     }
 }
-}
