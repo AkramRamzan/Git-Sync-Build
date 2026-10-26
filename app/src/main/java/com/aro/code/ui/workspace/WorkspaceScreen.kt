@@ -49,8 +49,6 @@ fun WorkspaceScreen(
 
     Scaffold(
         topBar = {
-            var modelMenuExpanded by remember { mutableStateOf(false) }
-
             TopAppBar(
                 navigationIcon = {
                     IconButton(onClick = { directoryPickerLauncher.launch(null) }) {
@@ -68,62 +66,6 @@ fun WorkspaceScreen(
                     }
                 },
                 actions = {
-                    // Module 2.1 & 2.2 — Model Switcher Dropdown
-                    Box {
-                        Surface(
-                            onClick = { modelMenuExpanded = true },
-                            shape = MaterialTheme.shapes.small,
-                            color = Color(0xFF1F6FEB),
-                            border = BorderStroke(1.dp, Color(0xFF58A6FF)),
-                            modifier = Modifier.padding(end = 4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = state.selectedModel.displayName.take(16),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White
-                                )
-                                Icon(
-                                    Icons.Default.ArrowDropDown,
-                                    contentDescription = "Select Model",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = Color.White
-                                )
-                            }
-                        }
-
-                        DropdownMenu(
-                            expanded = modelMenuExpanded,
-                            onDismissRequest = { modelMenuExpanded = false }
-                        ) {
-                            com.aro.code.ai.GeminiModel.entries.forEach { model ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                model.displayName,
-                                                fontWeight = if (model == state.selectedModel) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (model == state.selectedModel) Color(0xFF58A6FF) else Color.Unspecified
-                                            )
-                                            Text(
-                                                model.description,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        viewModel.selectModel(model)
-                                        modelMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
                     // Open SAF Folder
                     IconButton(onClick = { directoryPickerLauncher.launch(null) }) {
                         Icon(Icons.Default.FolderOpen, contentDescription = "Open Project Folder")
