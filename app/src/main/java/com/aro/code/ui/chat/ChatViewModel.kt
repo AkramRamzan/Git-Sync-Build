@@ -196,6 +196,9 @@ class ChatViewModel @Inject constructor(
             val currentEngine = _uiState.value.engine
             val newSid = "${if (currentEngine == ChatEngine.ANTIGRAVITY) "antigravity" else "gemini"}_${UUID.randomUUID()}"
             if (currentEngine == ChatEngine.ANTIGRAVITY) {
+                // Kill the warm daemon so next prompt starts a brand-new agy process
+                // with a fresh conversation UUID — no context bleed between sessions.
+                directEngine.resetSession()
                 _uiState.update {
                     it.copy(
                         antiGravitySessionId = newSid,
@@ -204,6 +207,9 @@ class ChatViewModel @Inject constructor(
                         statusMessage = "Started fresh Anti-Gravity agent session"
                     )
                 }
+                // Re-warm the daemon in background so next prompt is instant
+                val projectPhysicalPath = projectManager.getPhysicalPath(_uiState.value.activeProjectUri)
+                directEngine.warmUp(_uiState.value.selectedAntiGravityModel.id, projectPhysicalPath)
             } else {
                 _uiState.update {
                     it.copy(
@@ -221,6 +227,8 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             val currentEngine = _uiState.value.engine
             if (currentEngine == ChatEngine.ANTIGRAVITY) {
+                // Also reset the warm daemon so context is truly cleared
+                directEngine.resetSession()
                 chatDb.clearSession(_uiState.value.antiGravitySessionId)
                 _uiState.update {
                     it.copy(
