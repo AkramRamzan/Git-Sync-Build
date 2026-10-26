@@ -947,28 +947,25 @@ private fun BashShellTab(
                 }
             }
 
-            // Mobile key shortcuts (Termux-style) — hidden when slash palette is active
-            val isSlashPaletteActive = activeSession?.slashPaletteVisible == true
-            if (!isSlashPaletteActive) {
-                MobileKeyBar(
-                    onKey = { key ->
-                        when (key) {
-                            "CTRL+C" -> { BashShellSession.sendCtrlC(); activeSession?.refocus() }
-                            "CTRL+D" -> { BashShellSession.sendCtrlD(); activeSession?.refocus() }
-                            "CTRL+Z" -> { BashShellSession.sendCtrlZ(); activeSession?.refocus() }
-                            "ESC"    -> { BashShellSession.sendRaw("\u001B"); activeSession?.refocus() }
-                            "TAB"    -> { BashShellSession.sendRaw("\t"); activeSession?.refocus() }
-                            "↑"      -> { BashShellSession.sendRaw("\u001B[A"); activeSession?.refocus() }
-                            "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
-                            "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
-                            "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
-                            "ALT+F5" -> { BashShellSession.sendRaw("\u001B[15~"); activeSession?.refocus() }
-                            "ALT+F6" -> { BashShellSession.sendRaw("\u001B[17~"); activeSession?.refocus() }
-                            else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
-                        }
+            // Mobile key shortcuts (Termux-style)
+            MobileKeyBar(
+                onKey = { key ->
+                    when (key) {
+                        "CTRL+C" -> { BashShellSession.sendCtrlC(); activeSession?.refocus() }
+                        "CTRL+D" -> { BashShellSession.sendCtrlD(); activeSession?.refocus() }
+                        "CTRL+Z" -> { BashShellSession.sendCtrlZ(); activeSession?.refocus() }
+                        "ESC"    -> { BashShellSession.sendRaw("\u001B"); activeSession?.refocus() }
+                        "TAB"    -> { BashShellSession.sendRaw("\t"); activeSession?.refocus() }
+                        "↑"      -> { BashShellSession.sendRaw("\u001B[A"); activeSession?.refocus() }
+                        "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
+                        "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
+                        "→"      -> { BashShellSession.sendRaw("\u001B[C"); activeSession?.refocus() }
+                        "ALT+F5" -> { BashShellSession.sendRaw("\u001B[15~"); activeSession?.refocus() }
+                        "ALT+F6" -> { BashShellSession.sendRaw("\u001B[17~"); activeSession?.refocus() }
+                        else     -> { BashShellSession.sendRaw(key); activeSession?.refocus() }
                     }
-                )
-            }
+                }
+            )
         }
     }
 }

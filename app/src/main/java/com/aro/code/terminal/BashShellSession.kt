@@ -57,9 +57,6 @@ class ShellSession(
         }
     }
 
-    // Observed by Compose to hide MobileKeyBar when slash palette is shown
-    var slashPaletteVisible by mutableStateOf(false)
-
     fun ensureJsInterface(context: Context): XtermJsInterface {
         val existing = jsInterface
         if (existing != null) return existing
@@ -80,9 +77,6 @@ class ShellSession(
                 exitCode = code
                 isRunning = false
                 Log.d("ShellSession", "Session $id exited with code $code")
-            },
-            onSlashPaletteVisibility = { visible ->
-                slashPaletteVisible = visible
             }
         )
         jsInterface = iface
