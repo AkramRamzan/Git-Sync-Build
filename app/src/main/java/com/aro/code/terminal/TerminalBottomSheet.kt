@@ -482,7 +482,7 @@ private fun MobileKeyBar(
                     vib?.vibrate(18)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 
     // Auto-reset sticky modifiers once a key is typed/consumed in xterm.js
@@ -541,13 +541,15 @@ private fun MobileKeyBar(
                 Surface(
                     onClick = {
                         vibrate()
-                        val text = clipboardManager.getText()?.text ?: ""
-                        if (text.isNotEmpty()) {
-                            activeSession?.jsInterface?.let { ji ->
-                                val wrapped = "\u001b[200~$text\u001b[201~"
-                                ji.sendBytesToPty(wrapped.toByteArray(Charsets.UTF_8))
+                        try {
+                            val text = clipboardManager.getText()?.text ?: ""
+                            if (text.isNotEmpty()) {
+                                activeSession?.jsInterface?.let { ji ->
+                                    val wrapped = "\u001b[200~$text\u001b[201~"
+                                    ji.sendBytesToPty(wrapped.toByteArray(Charsets.UTF_8))
+                                }
                             }
-                        }
+                        } catch (_: Throwable) {}
                     },
                     shape = RoundedCornerShape(4.dp),
                     color = Color(0xFF1E3A2A),
@@ -1311,17 +1313,29 @@ fun TerminalBottomSheet(
     var isFullScreen by remember { mutableStateOf(false) }
     var currentFontSize by remember { mutableFloatStateOf(9.5f) }
 
-    // WakeLock — keep screen on while terminal is open (like Termux)
+    // Keep screen awake while terminal is open (like Termux) — safe, crash-proof
     DisposableEffect(Unit) {
-        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        @Suppress("DEPRECATION")
-        val wakeLock = pm?.newWakeLock(
-            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
-            "com.aro.code:TerminalWakeLock"
-        )
-        wakeLock?.acquire(30 * 60 * 1000L) // max 30 min, auto-releases on dispose
+        val activity = generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+            .filterIsInstance<android.app.Activity>()
+            .firstOrNull()
+        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        var wakeLock: PowerManager.WakeLock? = null
+        try {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            @Suppress("DEPRECATION")
+            wakeLock = pm?.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
+                "com.aro.code:TerminalWakeLock"
+            )
+            wakeLock?.acquire(30 * 60 * 1000L)
+        } catch (_: Throwable) {}
+
         onDispose {
-            if (wakeLock?.isHeld == true) wakeLock.release()
+            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            try {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+            } catch (_: Throwable) {}
         }
     }
 

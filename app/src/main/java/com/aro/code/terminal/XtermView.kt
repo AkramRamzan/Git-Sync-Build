@@ -70,7 +70,7 @@ fun XtermView(
                         vib?.vibrate(30)
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 

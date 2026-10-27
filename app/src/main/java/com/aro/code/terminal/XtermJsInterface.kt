@@ -132,7 +132,7 @@ class XtermJsInterface(
                     cm?.setPrimaryClip(clip)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 
     // ── Called by JS: terminal bell \x07 (audio/haptic notification) ───────
