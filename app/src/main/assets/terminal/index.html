@@ -266,13 +266,16 @@ let touchLastY = 0;
 let touchScrollAccumulator = 0;
 let inertiaAnimId = null;
 
-// Windowed touch sample buffer for stable, noise-free velocity tracking
+// Windowed touch sample buffer for stable velocity tracking (last 120ms)
 let touchSamples = [];
 
 let pinchStartDist = 0;
 let pinchStartFontSize = 9.5;
 
 const terminalEl = document.getElementById('terminal');
+
+// Feather-light touch scroll sensitivity multiplier (calibrated to Termux)
+const SCROLL_SENSITIVITY = 1.6;
 
 function stopInertia() {
   if (inertiaAnimId) {
@@ -283,8 +286,8 @@ function stopInertia() {
 
 function recordTouchSample(y, t) {
   touchSamples.push({ y: y, t: t });
-  // Keep only the most recent 80ms window of samples
-  const cutoff = t - 80;
+  // Keep only the most recent 120ms window of samples
+  const cutoff = t - 120;
   while (touchSamples.length > 2 && touchSamples[0].t < cutoff) {
     touchSamples.shift();
   }
@@ -295,7 +298,7 @@ function getVelocity() {
   const first = touchSamples[0];
   const last = touchSamples[touchSamples.length - 1];
   const dt = last.t - first.t;
-  if (dt < 10) return 0;
+  if (dt < 12) return 0;
   return (last.y - first.y) / dt;
 }
 
@@ -319,7 +322,7 @@ terminalEl.addEventListener('touchstart', function(e) {
     pinchStartDist = getPinchDist(e);
     pinchStartFontSize = term.options.fontSize || 9.5;
   }
-}, { passive: true });
+}, { passive: true, capture: true });
 
 terminalEl.addEventListener('touchmove', function(e) {
   if (e.touches.length === 1) {
@@ -340,8 +343,8 @@ terminalEl.addEventListener('touchmove', function(e) {
       return;
     }
 
-    // 1:1 true physical drag — finger and terminal text move in perfect lockstep
-    touchScrollAccumulator += deltaY;
+    // Feather-light physical drag with calibrated sensitivity
+    touchScrollAccumulator += (deltaY * SCROLL_SENSITIVITY);
     const lines = Math.trunc(touchScrollAccumulator / cachedRowHeight);
     if (lines !== 0) {
       term.scrollLines(-lines);
@@ -359,64 +362,58 @@ terminalEl.addEventListener('touchmove', function(e) {
       }
     }
   }
-}, { passive: false });
+}, { passive: false, capture: true });
 
 terminalEl.addEventListener('touchend', function(e) {
-  const now = performance.now();
-  const lastSample = touchSamples[touchSamples.length - 1];
+  let vel = getVelocity(); // px/ms
+  // If velocity is above threshold, launch smooth Termux-style inertial glide
+  if (Math.abs(vel) > 0.04) {
+    vel = Math.max(-4.0, Math.min(4.0, vel * SCROLL_SENSITIVITY));
 
-  // If user paused finger for more than 65ms before release, keep position without fling
-  if (lastSample && (now - lastSample.t) <= 65) {
-    let vel = getVelocity(); // px/ms
-    if (Math.abs(vel) > 0.05) {
-      vel = Math.max(-3.5, Math.min(3.5, vel));
+    let lastFrame = performance.now();
 
-      let lastFrame = performance.now();
+    function momentumStep(frameNow) {
+      const dt = Math.min(32, Math.max(1, frameNow - lastFrame));
+      lastFrame = frameNow;
 
-      function momentumStep(frameNow) {
-        const dt = Math.min(32, Math.max(1, frameNow - lastFrame));
-        lastFrame = frameNow;
-
-        const buf = term.buffer.active;
-        // Stop immediately if hitting top or bottom boundary
-        if ((vel > 0 && buf.viewportY <= 0) || (vel < 0 && buf.viewportY >= buf.baseY)) {
-          stopInertia();
-          touchScrollAccumulator = 0;
-          return;
-        }
-
-        // Physical distance = velocity * elapsed time
-        touchScrollAccumulator += (vel * dt);
-        const lines = Math.trunc(touchScrollAccumulator / cachedRowHeight);
-        if (lines !== 0) {
-          term.scrollLines(-lines);
-          touchScrollAccumulator -= (lines * cachedRowHeight);
-          updateScrollIndicator();
-        }
-
-        if (Math.abs(vel) < 0.015) {
-          stopInertia();
-          return;
-        }
-
-        // Termux / Android standard smooth friction deceleration
-        const decay = Math.pow(0.965, dt / 16.0);
-        vel *= decay;
-
-        inertiaAnimId = requestAnimationFrame(momentumStep);
+      const buf = term.buffer.active;
+      // Stop immediately if hitting top or bottom boundary
+      if ((vel > 0 && buf.viewportY <= 0) || (vel < 0 && buf.viewportY >= buf.baseY)) {
+        stopInertia();
+        touchScrollAccumulator = 0;
+        return;
       }
 
-      stopInertia();
+      touchScrollAccumulator += (vel * dt);
+      const lines = Math.trunc(touchScrollAccumulator / cachedRowHeight);
+      if (lines !== 0) {
+        term.scrollLines(-lines);
+        touchScrollAccumulator -= (lines * cachedRowHeight);
+        updateScrollIndicator();
+      }
+
+      if (Math.abs(vel) < 0.01) {
+        stopInertia();
+        return;
+      }
+
+      // Termux / Android standard smooth friction deceleration (0.975 for long natural glide)
+      const decay = Math.pow(0.975, dt / 16.0);
+      vel *= decay;
+
       inertiaAnimId = requestAnimationFrame(momentumStep);
     }
+
+    stopInertia();
+    inertiaAnimId = requestAnimationFrame(momentumStep);
   }
   touchSamples = [];
-}, { passive: true });
+}, { passive: true, capture: true });
 
 terminalEl.addEventListener('touchcancel', function() {
   stopInertia();
   touchSamples = [];
-}, { passive: true });
+}, { passive: true, capture: true });
 
 // ─── Termux-style Copy-on-Select & Bell ───────────────────────────────────────
 term.onSelectionChange(function() {

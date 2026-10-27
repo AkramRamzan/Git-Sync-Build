@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -52,6 +55,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import java.io.File
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -803,10 +807,10 @@ private fun BashShellTab(
     val sessions = BashShellSession.sessions
     val activeIdx = BashShellSession.activeSessionIndex
 
-    // ── Navigation Drawer for Sessions (Swipe from left side or tap ☰) ─────────
+    // ── Navigation Drawer for Sessions (Tap ☰ to open; gestures disabled to prevent gesture collision) ─
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = true,
+        gesturesEnabled = false,
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = Color(0xFF161B22),
@@ -1232,6 +1236,7 @@ private fun BashShellTab(
                         .weight(1f)
                         .fillMaxWidth()
                         .background(Color(0xFF0D1117))
+                        .disableBottomSheetDrag()
                 ) {
                     val session = activeSession
                     if (session != null) {
@@ -1276,6 +1281,24 @@ private fun BashShellTab(
                     }
                 }
             )
+        }
+    }
+}
+
+/**
+ * Prevents ancestor Compose components (like ModalBottomSheet) from intercepting
+ * vertical drag gestures inside the terminal area so history can be scrolled freely.
+ */
+private fun Modifier.disableBottomSheetDrag(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+            event.changes.forEach { pointerInputChange ->
+                val verticalDelta = pointerInputChange.positionChange().y
+                if (abs(verticalDelta) > 0f) {
+                    pointerInputChange.consume()
+                }
+            }
         }
     }
 }
