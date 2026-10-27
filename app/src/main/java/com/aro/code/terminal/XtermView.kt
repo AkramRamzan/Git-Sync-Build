@@ -35,8 +35,8 @@ import androidx.lifecycle.LifecycleEventObserver
  *  - `setTextZoom(100)` and `builtInZoomControls = false` prevent IME focus loss
  *  - `setSupportMultipleWindows(false)` prevents popup focus stealing
  *  - `setLayerType(LAYER_TYPE_HARDWARE, null)` for smooth canvas rendering
- *  - Disallows parent intercept during touch moves so smooth scrolling works without
- *    triggering BottomSheet drag gestures.
+ *  - Touch: uses a slop threshold (8 dp) before locking vertical scroll so that
+ *    single taps still register correctly without fighting the BottomSheet.
  *  - Lifecycle observer automatically restores WebView and triggers xterm repaint
  *    on ON_RESUME (eliminating blank/hidden elements when app is reopened).
  */
@@ -45,11 +45,34 @@ import androidx.lifecycle.LifecycleEventObserver
 fun XtermView(
     session: ShellSession,
     modifier: Modifier = Modifier,
-    refreshTrigger: Int = 0
+    refreshTrigger: Int = 0,
+    onFontSizeChanged: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val jsInterface = session.ensureJsInterface(context)
+
+    // Wire pinch-to-zoom font size & terminal bell vibration callbacks
+    LaunchedEffect(jsInterface) {
+        jsInterface.onFontSizeChangedCallback = onFontSizeChanged
+        jsInterface.onBellCallback = {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                    vm?.defaultVibrator?.vibrate(android.os.VibrationEffect.createOneShot(30, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        vib?.vibrate(android.os.VibrationEffect.createOneShot(30, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vib?.vibrate(30)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
 
     val webView = remember(session.id) {
         session.getOrCreateWebView(context)
@@ -110,15 +133,26 @@ internal fun createTerminalWebView(
     wv.isFocusable = true
     wv.isFocusableInTouchMode = true
 
-    // Request parent container not to intercept vertical touch drags so
-    // user can scroll terminal text smoothly up & down
+    // Touch: use 8dp slop threshold before stealing vertical scroll from parent.
+    // This lets single taps register correctly and avoids fighting BottomSheet.
+    val touchSlop = (8 * context.resources.displayMetrics.density).toInt()
+    var downY = 0f
+    var scrollLocked = false
     wv.setOnTouchListener { v, event ->
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                v.parent?.requestDisallowInterceptTouchEvent(true)
+            MotionEvent.ACTION_DOWN -> {
+                downY = event.y
+                scrollLocked = false
                 if (!v.hasFocus()) v.requestFocus()
             }
+            MotionEvent.ACTION_MOVE -> {
+                if (!scrollLocked && Math.abs(event.y - downY) > touchSlop) {
+                    scrollLocked = true
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                scrollLocked = false
                 v.parent?.requestDisallowInterceptTouchEvent(false)
             }
         }

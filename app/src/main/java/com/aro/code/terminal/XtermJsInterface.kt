@@ -45,6 +45,8 @@ class XtermJsInterface(
 
     var webView: WebView? = null
     var onModifierConsumedCallback: (String) -> Unit = {}
+    var onFontSizeChangedCallback: (Float) -> Unit = {}
+    var onBellCallback: () -> Unit = {}
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
@@ -105,6 +107,40 @@ class XtermJsInterface(
     fun onModifierConsumed(modifier: String) {
         scope.launch(Dispatchers.Main) {
             onModifierConsumedCallback(modifier)
+        }
+    }
+
+    // ── Called by JS: pinch-to-zoom changed font size ──────────────────────
+
+    @JavascriptInterface
+    fun onFontSizeChanged(size: Float) {
+        scope.launch(Dispatchers.Main) {
+            onFontSizeChangedCallback(size)
+        }
+    }
+
+    // ── Called by JS: user selected text (Termux copy-on-select) ───────────
+
+    @JavascriptInterface
+    fun onTextSelected(base64: String) {
+        try {
+            val text = String(Base64.decode(base64, Base64.NO_WRAP), Charsets.UTF_8)
+            if (text.isNotBlank()) {
+                scope.launch(Dispatchers.Main) {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("terminal", text)
+                    cm?.setPrimaryClip(clip)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    // ── Called by JS: terminal bell \x07 (audio/haptic notification) ───────
+
+    @JavascriptInterface
+    fun onBell() {
+        scope.launch(Dispatchers.Main) {
+            onBellCallback()
         }
     }
 

@@ -1,7 +1,13 @@
 package com.aro.code.terminal
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -455,7 +461,29 @@ private fun MobileKeyBar(
 
     var isExpanded by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
     val activeSession = BashShellSession.activeSession
+
+    // Haptic feedback helper (Termux-style tap vibration)
+    fun vibrate() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vm?.defaultVibrator?.vibrate(VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                val vib = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vib?.vibrate(VibrationEffect.createOneShot(18, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vib?.vibrate(18)
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     // Auto-reset sticky modifiers once a key is typed/consumed in xterm.js
     LaunchedEffect(activeSession) {
@@ -481,7 +509,13 @@ private fun MobileKeyBar(
         listOf("ESC", "TAB", "CTRL", "ALT", "/", "-", "↑", "↓", "←", "→", "CTRL+C", "CTRL+D", "CTRL+Z")
     }
 
-    val row2 = listOf("~", "-", "/", "\\", "|", "&", "\"", "'", ";", "↑", "↓", "←", "→", "CTRL+C", "CTRL+D", "CTRL+Z")
+    // Expanded Row 2 — Termux-complete symbol set
+    val row2 = listOf(
+        "~", "`", "!", "@", "#", "$", "%", "^", "&", "*",
+        "(", ")", "[", "]", "{", "}", "=", "+", "_",
+        "-", "/", "\\", "|", "\"", "'", ";", ":", ",", ".",
+        "↑", "↓", "←", "→", "CTRL+C", "CTRL+D", "CTRL+Z"
+    )
 
     Column(
         modifier = Modifier
@@ -503,6 +537,28 @@ private fun MobileKeyBar(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Paste button — first in row like Termux
+                Surface(
+                    onClick = {
+                        vibrate()
+                        val text = clipboardManager.getText()?.text ?: ""
+                        if (text.isNotEmpty()) {
+                            activeSession?.jsInterface?.let { ji ->
+                                val wrapped = "\u001b[200~$text\u001b[201~"
+                                ji.sendBytesToPty(wrapped.toByteArray(Charsets.UTF_8))
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF1E3A2A),
+                    border = BorderStroke(0.5.dp, Color(0xFF3FB950)),
+                    modifier = Modifier.height(21.dp)
+                ) {
+                    Box(Modifier.padding(horizontal = 5.dp), contentAlignment = Alignment.Center) {
+                        Text("📋", fontSize = 9.sp)
+                    }
+                }
+
                 row1.forEach { key ->
                     KeyButton(
                         key = key,
@@ -511,6 +567,7 @@ private fun MobileKeyBar(
                         isAltSticky = isAltSticky,
                         isAltLocked = isAltLocked,
                         onKeyClick = {
+                            vibrate()
                             when (key) {
                                 "CTRL" -> {
                                     val now = System.currentTimeMillis()
@@ -573,7 +630,7 @@ private fun MobileKeyBar(
             }
         }
 
-        // Row 2 (when expanded)
+        // Row 2 (when expanded) — full Termux symbol coverage
         if (isExpanded) {
             Row(
                 Modifier
@@ -591,7 +648,10 @@ private fun MobileKeyBar(
                         isCtrlLocked = isCtrlLocked,
                         isAltSticky = isAltSticky,
                         isAltLocked = isAltLocked,
-                        onKeyClick = { onKey(key) }
+                        onKeyClick = {
+                            vibrate()
+                            onKey(key)
+                        }
                     )
                 }
             }
@@ -724,7 +784,8 @@ private fun BashShellTab(
     isLinuxInstalled: Boolean,
     refreshTrigger: Int = 0,
     drawerState: DrawerState,
-    oauthUrl: String?
+    oauthUrl: String?,
+    onFontSizeChanged: (Float) -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -1176,7 +1237,8 @@ private fun BashShellTab(
                             XtermView(
                                 session = session,
                                 modifier = Modifier.fillMaxSize(),
-                                refreshTrigger = refreshTrigger
+                                refreshTrigger = refreshTrigger,
+                                onFontSizeChanged = onFontSizeChanged
                             )
                         }
                     } else {
@@ -1248,6 +1310,20 @@ fun TerminalBottomSheet(
     var isMinimized by remember { mutableStateOf(false) }
     var isFullScreen by remember { mutableStateOf(false) }
     var currentFontSize by remember { mutableFloatStateOf(9.5f) }
+
+    // WakeLock — keep screen on while terminal is open (like Termux)
+    DisposableEffect(Unit) {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        @Suppress("DEPRECATION")
+        val wakeLock = pm?.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
+            "com.aro.code:TerminalWakeLock"
+        )
+        wakeLock?.acquire(30 * 60 * 1000L) // max 30 min, auto-releases on dispose
+        onDispose {
+            if (wakeLock?.isHeld == true) wakeLock.release()
+        }
+    }
 
     // Lifecycle state management: refresh UI and repaint canvas immediately on ON_RESUME
     var lifecycleRefreshKey by remember { mutableIntStateOf(0) }
@@ -1337,6 +1413,7 @@ fun TerminalBottomSheet(
                             BashShellSession.setFontSize(currentFontSize)
                         }
                     },
+                    onFontSizeChanged = { size -> currentFontSize = size },
                     isAuthNow = isAuthNow,
                     oauthUrl = oauthUrl,
                     selectedTab = selectedTab,
@@ -1410,6 +1487,7 @@ fun TerminalBottomSheet(
                         BashShellSession.setFontSize(currentFontSize)
                     }
                 },
+                onFontSizeChanged = { size -> currentFontSize = size },
                 isAuthNow = isAuthNow,
                 oauthUrl = oauthUrl,
                 selectedTab = selectedTab,
@@ -1447,6 +1525,7 @@ private fun TerminalMainContent(
     onGoogleLogin: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    onFontSizeChanged: (Float) -> Unit = {},
     isAuthNow: Boolean,
     oauthUrl: String?,
     selectedTab: Int,
@@ -1543,7 +1622,8 @@ private fun TerminalMainContent(
                         isLinuxInstalled = isLinuxInstalled,
                         refreshTrigger = refreshTrigger,
                         drawerState = drawerState,
-                        oauthUrl = oauthUrl
+                        oauthUrl = oauthUrl,
+                        onFontSizeChanged = onFontSizeChanged
                     )
                 }
                 if (selectedTab == 0) {

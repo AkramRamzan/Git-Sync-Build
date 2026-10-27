@@ -34,7 +34,14 @@ html, body {
   touch-action: none !important;
   overscroll-behavior: contain !important;
 }
-.xterm-screen canvas { image-rendering: pixelated; }
+.xterm-screen {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+.xterm-screen canvas {
+  image-rendering: auto;
+  transform: translateZ(0);
+}
 </style>
 </head>
 <body>
@@ -96,7 +103,7 @@ const term = new Terminal({
   cursorBlink: true,
   cursorStyle: 'block',
   scrollback: 10000,
-  smoothScrollDuration: 80,
+  smoothScrollDuration: 0,
   scrollSensitivity: 2,
   fastScrollSensitivity: 4,
   convertEol: false,
@@ -134,14 +141,17 @@ term.attachCustomKeyEventHandler(function(e) {
   return true;
 });
 
-// ─── Termux-Calibrated Fluid Kinetic Touch Scrolling ─────────────────────────
+// ─── Termux-Identical Fluid Kinetic Touch Scrolling & Pinch Zoom ─────────────
 let touchStartY = 0;
-let touchStartX = 0;
 let touchLastY = 0;
 let touchLastTime = 0;
 let scrollVelocity = 0;
 let touchScrollAccumulator = 0;
 let inertiaAnimId = null;
+let scrollRafPending = false;
+
+let pinchStartDist = 0;
+let pinchStartFontSize = 9.5;
 
 const terminalEl = document.getElementById('terminal');
 
@@ -152,63 +162,112 @@ function stopInertia() {
   }
 }
 
+// Dynamic cell height: queries rendered DOM from xterm.js dimensions
+function getCellHeight() {
+  try {
+    const dims = term._core._renderService.dimensions;
+    if (dims && dims.css && dims.css.cell && dims.css.cell.height > 0) {
+      return dims.css.cell.height;
+    }
+    if (dims && dims.actualCellHeight > 0) return dims.actualCellHeight;
+  } catch(_) {}
+  return (term.options.fontSize || 9.5) * 1.2;
+}
+
+function getPinchDist(e) {
+  const dx = e.touches[0].clientX - e.touches[1].clientX;
+  const dy = e.touches[0].clientY - e.touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 terminalEl.addEventListener('touchstart', function(e) {
   stopInertia();
   if (e.touches.length === 1) {
     touchStartY = e.touches[0].clientY;
-    touchStartX = e.touches[0].clientX;
     touchLastY = touchStartY;
     touchLastTime = performance.now();
     scrollVelocity = 0;
     touchScrollAccumulator = 0;
+  } else if (e.touches.length === 2) {
+    pinchStartDist = getPinchDist(e);
+    pinchStartFontSize = term.options.fontSize || 9.5;
   }
+  e.stopImmediatePropagation();
 }, { passive: true });
 
 terminalEl.addEventListener('touchmove', function(e) {
+  e.stopImmediatePropagation();
   if (e.touches.length === 1) {
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - touchLastY;
     const now = performance.now();
     const dt = Math.max(1, now - touchLastTime);
 
-    // Exponential moving average for velocity calculation
+    // Fast, responsive exponential moving average (0.2 / 0.8)
     const instantVelocity = deltaY / dt;
-    scrollVelocity = (scrollVelocity * 0.3) + (instantVelocity * 0.7);
+    scrollVelocity = (scrollVelocity * 0.2) + (instantVelocity * 0.8);
     touchLastTime = now;
     touchLastY = currentY;
 
-    // Apply delta directly to accumulator
     touchScrollAccumulator += deltaY;
-    const cellHeight = 11.5;
-    const lines = Math.trunc(touchScrollAccumulator / cellHeight);
-    if (lines !== 0) {
-      term.scrollLines(-lines);
-      touchScrollAccumulator -= (lines * cellHeight);
+
+    // VSync batching: scroll inside next animation frame to eliminate frame drops
+    if (!scrollRafPending) {
+      scrollRafPending = true;
+      requestAnimationFrame(function() {
+        scrollRafPending = false;
+        const ch = getCellHeight();
+        const lines = Math.trunc(touchScrollAccumulator / ch);
+        if (lines !== 0) {
+          term.scrollLines(-lines);
+          touchScrollAccumulator -= (lines * ch);
+        }
+      });
+    }
+  } else if (e.touches.length === 2) {
+    if (e.cancelable) e.preventDefault();
+    const dist = getPinchDist(e);
+    if (pinchStartDist > 0) {
+      const scale = dist / pinchStartDist;
+      const newSize = Math.min(22, Math.max(6, pinchStartFontSize * scale));
+      if (Math.abs(newSize - term.options.fontSize) >= 0.5) {
+        window.setFontSize(Math.round(newSize * 2) / 2);
+      }
     }
   }
-}, { passive: true });
+}, { passive: false });
 
 terminalEl.addEventListener('touchend', function(e) {
+  e.stopImmediatePropagation();
   const now = performance.now();
   const timeSinceMove = now - touchLastTime;
 
-  // Kinetic inertia momentum on fast release
-  if (timeSinceMove < 70 && Math.abs(scrollVelocity) > 0.08) {
+  // Kinetic momentum on fast release with true physical delta-time & Termux decay
+  if (timeSinceMove < 90 && Math.abs(scrollVelocity) > 0.04) {
     let currentVel = scrollVelocity;
-    const cellHeight = 11.5;
+    let lastTick = performance.now();
 
-    function momentumStep() {
-      if (Math.abs(currentVel) < 0.02) {
+    function momentumStep(frameTime) {
+      const dt = Math.min(32, Math.max(1, frameTime - lastTick));
+      lastTick = frameTime;
+
+      if (Math.abs(currentVel) < 0.012) {
         stopInertia();
         return;
       }
-      touchScrollAccumulator += (currentVel * 16);
-      const lines = Math.trunc(touchScrollAccumulator / cellHeight);
+
+      touchScrollAccumulator += (currentVel * dt);
+      const ch = getCellHeight();
+      const lines = Math.trunc(touchScrollAccumulator / ch);
       if (lines !== 0) {
         term.scrollLines(-lines);
-        touchScrollAccumulator -= (lines * cellHeight);
+        touchScrollAccumulator -= (lines * ch);
       }
-      currentVel *= 0.94; // natural Android friction decay
+
+      // Android physical decay: ~0.955 per 16ms, normalized across 60/90/120Hz displays
+      const decay = Math.pow(0.955, dt / 16.0);
+      currentVel *= decay;
+
       inertiaAnimId = requestAnimationFrame(momentumStep);
     }
 
@@ -216,6 +275,21 @@ terminalEl.addEventListener('touchend', function(e) {
     inertiaAnimId = requestAnimationFrame(momentumStep);
   }
 }, { passive: true });
+
+// ─── Termux-style Copy-on-Select & Bell ───────────────────────────────────────
+term.onSelectionChange(function() {
+  const sel = term.getSelection();
+  if (sel && sel.trim().length > 0 && window.AroTerminal && AroTerminal.onTextSelected) {
+    AroTerminal.onTextSelected(toBase64Utf8(sel));
+  }
+});
+
+term.onBell(function() {
+  if (window.AroTerminal && AroTerminal.onBell) {
+    AroTerminal.onBell();
+  }
+});
+
 
 // ─── Output from Android (PTY → xterm.js) ────────────────────────────────────
 window.writeToTerminal = function(base64data) {
@@ -237,10 +311,12 @@ window.clearTerminal = function() {
 window.setFontSize = function(size) {
   try {
     term.options.fontSize = size;
+    pinchStartFontSize = size; // keep pinch baseline in sync
     fitAddon.fit();
     setupInputHandling();
     if (window.AroTerminal) {
       AroTerminal.onResize(term.rows, term.cols);
+      AroTerminal.onFontSizeChanged(size); // notify Kotlin for A-/A+ button sync
     }
   } catch(e) {
     console.warn('setFontSize error:', e);
