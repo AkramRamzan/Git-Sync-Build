@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -39,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -140,7 +143,11 @@ private fun TerminalTopBar(
     onResume: () -> Unit,
     onGoogleLogin: () -> Unit,
     isAuthNow: Boolean,
-    oauthUrl: String?
+    oauthUrl: String?,
+    isFullScreen: Boolean = false,
+    onToggleFullScreen: () -> Unit = {},
+    onZoomIn: () -> Unit = {},
+    onZoomOut: () -> Unit = {}
 ) {
     Row(
         Modifier
@@ -247,6 +254,48 @@ private fun TerminalTopBar(
                             .size(5.dp)
                             .clip(CircleShape)
                             .background(if (isAuthNow) Color(0xFF3FB950) else Color(0xFFF85149))
+                    )
+                }
+            }
+
+            // 🔎 A- Font Zoom Out
+            Surface(
+                onClick = onZoomOut,
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF21262D),
+                modifier = Modifier.size(22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("A-", fontSize = 8.sp, color = Color(0xFF58A6FF), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // 🔎 A+ Font Zoom In
+            Surface(
+                onClick = onZoomIn,
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF21262D),
+                modifier = Modifier.size(22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("A+", fontSize = 8.sp, color = Color(0xFF58A6FF), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // ⛶ Fullscreen / Expand Toggle
+            Surface(
+                onClick = onToggleFullScreen,
+                shape = RoundedCornerShape(4.dp),
+                color = if (isFullScreen) Color(0xFF1F6FEB) else Color(0xFF21262D),
+                border = BorderStroke(1.dp, if (isFullScreen) Color(0xFF58A6FF) else Color(0xFF30363D)),
+                modifier = Modifier.size(22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (isFullScreen) "⛶" else "⤢",
+                        color = if (isFullScreen) Color.White else Color(0xFF58A6FF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.5.sp
                     )
                 }
             }
@@ -389,7 +438,7 @@ private fun TerminalSettingsDialog(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Keyboard Shortcuts Bar (Termux-style compact single row)
+// Mobile Keyboard Shortcuts Bar (Termux-style 1-Row / 2-Row Expandable)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -397,100 +446,225 @@ private fun MobileKeyBar(
     onKey: (String) -> Unit
 ) {
     var isCtrlSticky by remember { mutableStateOf(false) }
+    var isCtrlLocked by remember { mutableStateOf(false) }
+    var lastCtrlTapTime by remember { mutableLongStateOf(0L) }
+
     var isAltSticky by remember { mutableStateOf(false) }
+    var isAltLocked by remember { mutableStateOf(false) }
+    var lastAltTapTime by remember { mutableLongStateOf(0L) }
 
-    // Navigation & Control (Termux style with Arrow keys, sticky CTRL/ALT, and instant / slash trigger)
-    val navKeys = listOf("ESC", "TAB", "CTRL", "ALT", "/", "CTRL+C", "CTRL+D", "↑", "↓", "←", "→", "ALT+F5", "ALT+F6")
+    var isExpanded by remember { mutableStateOf(false) }
 
-    Surface(
-        color = Color(0xFF0D1117),
-        modifier = Modifier.fillMaxWidth().height(25.dp)
-    ) {
-        Row(
-            Modifier
-                .fillMaxSize()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            navKeys.forEach { key ->
-                val isArrow = key == "↑" || key == "↓" || key == "←" || key == "→"
-                val isCtrlC = key == "CTRL+C"
-                val isCtrlD = key == "CTRL+D"
-                val isCtrl = key == "CTRL"
-                val isAlt = key == "ALT"
-                val isSlash = key == "/"
-                val isAccent = key == "ESC" || key == "TAB"
-                val isHighlighted = (isCtrl && isCtrlSticky) || (isAlt && isAltSticky)
+    val activeSession = BashShellSession.activeSession
 
-                Surface(
-                    onClick = {
-                        when (key) {
-                            "CTRL" -> isCtrlSticky = !isCtrlSticky
-                            "ALT"  -> isAltSticky = !isAltSticky
-                            else -> {
-                                if (isCtrlSticky) {
-                                    isCtrlSticky = false
-                                    when (key) {
-                                        "CTRL+C" -> onKey("CTRL+C")
-                                        "CTRL+D" -> onKey("CTRL+D")
-                                        else -> onKey(key)
-                                    }
-                                } else if (isAltSticky) {
-                                    isAltSticky = false
-                                    onKey("\u001B$key")
-                                } else {
-                                    onKey(key)
-                                }
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(4.dp),
-                    color = when {
-                        isHighlighted -> Color(0xFF388BFD)
-                        isSlash -> Color(0xFF6E40C9)
-                        isArrow -> Color(0xFF1F6FEB)
-                        isCtrlC || isCtrlD -> Color(0xFF4E1010)
-                        isCtrl || isAlt -> Color(0xFF21262D)
-                        isAccent -> Color(0xFF21262D)
-                        else -> Color(0xFF21262D)
-                    },
-                    border = BorderStroke(
-                        1.dp,
-                        when {
-                            isHighlighted -> Color(0xFF58A6FF)
-                            isSlash -> Color(0xFFBC8CFF)
-                            isArrow -> Color(0xFF388BFD)
-                            else -> Color(0xFF30363D)
-                        }
-                    ),
-                    modifier = Modifier.height(21.dp)
-                ) {
-                    Box(
-                        Modifier.padding(horizontal = 5.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = key,
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 8.5.sp,
-                                fontWeight = if (isArrow || isHighlighted || isSlash) FontWeight.Bold else FontWeight.Medium
-                            ),
-                            color = when {
-                                isHighlighted || isArrow || isSlash -> Color.White
-                                isCtrlC || isCtrlD -> Color(0xFFFF7B72)
-                                isAccent -> Color(0xFF58A6FF)
-                                else -> Color(0xFFC9D1D9)
-                            }
-                        )
-                    }
-                }
+    // Auto-reset sticky modifiers once a key is typed/consumed in xterm.js
+    LaunchedEffect(activeSession) {
+        activeSession?.jsInterface?.onModifierConsumedCallback = { mod ->
+            if (mod == "CTRL" && !isCtrlLocked) {
+                isCtrlSticky = false
+            } else if (mod == "ALT" && !isAltLocked) {
+                isAltSticky = false
             }
         }
     }
 
+    // Sync active modifiers to PTY / xterm.js
+    LaunchedEffect(isCtrlSticky, isCtrlLocked, isAltSticky, isAltLocked) {
+        val ctrl = isCtrlSticky || isCtrlLocked
+        val alt = isAltSticky || isAltLocked
+        BashShellSession.setModifiers(ctrl, alt)
+    }
+
+    val row1 = if (isExpanded) {
+        listOf("ESC", "TAB", "CTRL", "ALT", "HOME", "END", "PGUP", "PGDN", "INS", "DEL")
+    } else {
+        listOf("ESC", "TAB", "CTRL", "ALT", "/", "-", "↑", "↓", "←", "→", "CTRL+C", "CTRL+D", "CTRL+Z")
+    }
+
+    val row2 = listOf("~", "-", "/", "\\", "|", "&", "\"", "'", ";", "↑", "↓", "←", "→", "CTRL+C", "CTRL+D", "CTRL+Z")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF0D1117))
+    ) {
+        // Row 1
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(26.dp)
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                row1.forEach { key ->
+                    KeyButton(
+                        key = key,
+                        isCtrlSticky = isCtrlSticky,
+                        isCtrlLocked = isCtrlLocked,
+                        isAltSticky = isAltSticky,
+                        isAltLocked = isAltLocked,
+                        onKeyClick = {
+                            when (key) {
+                                "CTRL" -> {
+                                    val now = System.currentTimeMillis()
+                                    if (isCtrlLocked) {
+                                        isCtrlLocked = false
+                                        isCtrlSticky = false
+                                    } else if (isCtrlSticky) {
+                                        if (now - lastCtrlTapTime < 500L) {
+                                            isCtrlLocked = true
+                                            isCtrlSticky = false
+                                        } else {
+                                            isCtrlSticky = false
+                                        }
+                                    } else {
+                                        isCtrlSticky = true
+                                    }
+                                    lastCtrlTapTime = now
+                                }
+                                "ALT" -> {
+                                    val now = System.currentTimeMillis()
+                                    if (isAltLocked) {
+                                        isAltLocked = false
+                                        isAltSticky = false
+                                    } else if (isAltSticky) {
+                                        if (now - lastAltTapTime < 500L) {
+                                            isAltLocked = true
+                                            isAltSticky = false
+                                        } else {
+                                            isAltSticky = false
+                                        }
+                                    } else {
+                                        isAltSticky = true
+                                    }
+                                    lastAltTapTime = now
+                                }
+                                else -> onKey(key)
+                            }
+                        }
+                    )
+                }
+            }
+
+            // Expand / Collapse 2nd row button
+            Surface(
+                onClick = { isExpanded = !isExpanded },
+                shape = RoundedCornerShape(4.dp),
+                color = if (isExpanded) Color(0xFF1F6FEB) else Color(0xFF21262D),
+                border = BorderStroke(0.5.dp, if (isExpanded) Color(0xFF58A6FF) else Color(0xFF30363D)),
+                modifier = Modifier
+                    .padding(start = 2.dp)
+                    .size(22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (isExpanded) "▲" else "▼",
+                        fontSize = 8.sp,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // Row 2 (when expanded)
+        if (isExpanded) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(26.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                row2.forEach { key ->
+                    KeyButton(
+                        key = key,
+                        isCtrlSticky = isCtrlSticky,
+                        isCtrlLocked = isCtrlLocked,
+                        isAltSticky = isAltSticky,
+                        isAltLocked = isAltLocked,
+                        onKeyClick = { onKey(key) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeyButton(
+    key: String,
+    isCtrlSticky: Boolean,
+    isCtrlLocked: Boolean,
+    isAltSticky: Boolean,
+    isAltLocked: Boolean,
+    onKeyClick: () -> Unit
+) {
+    val isCtrl = key == "CTRL"
+    val isAlt = key == "ALT"
+    val isCtrlC = key == "CTRL+C"
+    val isCtrlD = key == "CTRL+D"
+    val isCtrlZ = key == "CTRL+Z"
+    val isArrow = key == "↑" || key == "↓" || key == "←" || key == "→"
+    val isAccent = key == "ESC" || key == "TAB"
+    val isNav = key == "HOME" || key == "END" || key == "PGUP" || key == "PGDN" || key == "INS" || key == "DEL"
+
+    val isHighlighted = (isCtrl && (isCtrlSticky || isCtrlLocked)) || (isAlt && (isAltSticky || isAltLocked))
+    val displayText = when {
+        isCtrl && isCtrlLocked -> "CTRL🔒"
+        isAlt && isAltLocked -> "ALT🔒"
+        else -> key
+    }
+
+    Surface(
+        onClick = onKeyClick,
+        shape = RoundedCornerShape(4.dp),
+        color = when {
+            isHighlighted -> Color(0xFF388BFD)
+            isArrow -> Color(0xFF1F6FEB)
+            isCtrlC || isCtrlD || isCtrlZ -> Color(0xFF4E1010)
+            isNav -> Color(0xFF263238)
+            else -> Color(0xFF21262D)
+        },
+        border = BorderStroke(
+            0.5.dp,
+            when {
+                isHighlighted -> Color(0xFF58A6FF)
+                isArrow -> Color(0xFF388BFD)
+                else -> Color(0xFF30363D)
+            }
+        ),
+        modifier = Modifier.height(21.dp)
+    ) {
+        Box(
+            Modifier.padding(horizontal = 5.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = displayText,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 8.5.sp,
+                    fontWeight = if (isArrow || isHighlighted) FontWeight.Bold else FontWeight.Medium
+                ),
+                color = when {
+                    isHighlighted || isArrow -> Color.White
+                    isCtrlC || isCtrlD || isCtrlZ -> Color(0xFFFF7B72)
+                    isAccent -> Color(0xFF58A6FF)
+                    isNav -> Color(0xFF80CBC4)
+                    else -> Color(0xFFC9D1D9)
+                }
+            )
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -924,6 +1098,72 @@ private fun BashShellTab(
                     }
                 }
             } else {
+                // Multi-session tab row (Termux / VS Code style)
+                if (BashShellSession.sessions.isNotEmpty()) {
+                    Surface(
+                        color = Color(0xFF161B22),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        LazyRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            itemsIndexed(BashShellSession.sessions) { index, session ->
+                                val isActive = index == BashShellSession.activeSessionIndex
+                                Surface(
+                                    onClick = { BashShellSession.switchSession(index) },
+                                    color = if (isActive) Color(0xFF1F6FEB) else Color(0xFF21262D),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(1.dp, if (isActive) Color(0xFF58A6FF) else Color(0xFF30363D))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = session.title,
+                                            fontSize = 9.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                                            color = Color.White
+                                        )
+                                        if (BashShellSession.sessions.size > 1) {
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Close Tab",
+                                                tint = if (isActive) Color.White else Color(0xFF8B949E),
+                                                modifier = Modifier
+                                                    .size(11.dp)
+                                                    .clickable { BashShellSession.closeSession(index) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            item {
+                                Surface(
+                                    onClick = { BashShellSession.createSession(context) },
+                                    color = Color(0xFF238636),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = "New Tab", tint = Color.White, modifier = Modifier.size(11.dp))
+                                        Spacer(Modifier.width(2.dp))
+                                        Text("New", fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -956,6 +1196,12 @@ private fun BashShellTab(
                         "CTRL+Z" -> { BashShellSession.sendCtrlZ(); activeSession?.refocus() }
                         "ESC"    -> { BashShellSession.sendRaw("\u001B"); activeSession?.refocus() }
                         "TAB"    -> { BashShellSession.sendRaw("\t"); activeSession?.refocus() }
+                        "HOME"   -> { BashShellSession.sendRaw("\u001B[H"); activeSession?.refocus() }
+                        "END"    -> { BashShellSession.sendRaw("\u001B[F"); activeSession?.refocus() }
+                        "PGUP"   -> { BashShellSession.sendRaw("\u001B[5~"); activeSession?.refocus() }
+                        "PGDN"   -> { BashShellSession.sendRaw("\u001B[6~"); activeSession?.refocus() }
+                        "INS"    -> { BashShellSession.sendRaw("\u001B[2~"); activeSession?.refocus() }
+                        "DEL"    -> { BashShellSession.sendRaw("\u001B[3~"); activeSession?.refocus() }
                         "↑"      -> { BashShellSession.sendRaw("\u001B[A"); activeSession?.refocus() }
                         "↓"      -> { BashShellSession.sendRaw("\u001B[B"); activeSession?.refocus() }
                         "←"      -> { BashShellSession.sendRaw("\u001B[D"); activeSession?.refocus() }
@@ -1000,6 +1246,8 @@ fun TerminalBottomSheet(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var isMinimized by remember { mutableStateOf(false) }
+    var isFullScreen by remember { mutableStateOf(false) }
+    var currentFontSize by remember { mutableFloatStateOf(9.5f) }
 
     // Lifecycle state management: refresh UI and repaint canvas immediately on ON_RESUME
     var lifecycleRefreshKey by remember { mutableIntStateOf(0) }
@@ -1034,42 +1282,100 @@ fun TerminalBottomSheet(
         viewModel.startShell(context)
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF161B22),
-        dragHandle = {
-            if (!isMinimized) {
-                BottomSheetDefaults.DragHandle(color = Color(0xFF555555), modifier = Modifier.height(8.dp))
-            }
-        },
-        modifier = if (isMinimized) {
-            Modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-        } else {
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-        }
-    ) {
-        Column(
-            Modifier
-                .then(
-                    if (isMinimized) Modifier
-                        .fillMaxWidth()
-                        .wrapContentHeight()
-                    else Modifier
-                        .fillMaxSize()
-                )
-                .imePadding()
-                .navigationBarsPadding()
+    if (isFullScreen) {
+        Dialog(
+            onDismissRequest = { isFullScreen = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
         ) {
-
-            // ── Top Bar: Termux Logo, Clear, Setting, Resume, Google Key+Dot, Minimize ────
-            TerminalTopBar(
+            Surface(
+                color = Color(0xFF0D1117),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .imePadding()
+            ) {
+                TerminalMainContent(
+                    isMinimized = false,
+                    isFullScreen = true,
+                    onToggleMinimize = {},
+                    onToggleFullScreen = { isFullScreen = false },
+                    onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
+                    onOpenTermux = { viewModel.openTermux(context) },
+                    onClear = {
+                        BashShellSession.clear()
+                        viewModel.clearLogs()
+                    },
+                    onSettings = { showSettingsDialog = true },
+                    onResume = { BashShellSession.sendCommand("agy --continue") },
+                    onGoogleLogin = {
+                        if (oauthUrl != null) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(oauthUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error: " + e.message, Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            BashShellSession.sendCommand("agy")
+                        }
+                    },
+                    onZoomIn = {
+                        if (currentFontSize < 20f) {
+                            currentFontSize += 1f
+                            BashShellSession.setFontSize(currentFontSize)
+                        }
+                    },
+                    onZoomOut = {
+                        if (currentFontSize > 7f) {
+                            currentFontSize -= 1f
+                            BashShellSession.setFontSize(currentFontSize)
+                        }
+                    },
+                    isAuthNow = isAuthNow,
+                    oauthUrl = oauthUrl,
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it },
+                    tabs = tabs,
+                    logs = logs,
+                    onSend = { viewModel.sendBashCommand(it) },
+                    onSetupLinux = { viewModel.installMiniLinux(context) },
+                    isLinuxInstalled = isLinuxInstalled,
+                    refreshTrigger = lifecycleRefreshKey,
+                    drawerState = drawerState
+                )
+            }
+        }
+    } else {
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState = sheetState,
+            containerColor = Color(0xFF161B22),
+            dragHandle = {
+                if (!isMinimized) {
+                    BottomSheetDefaults.DragHandle(color = Color(0xFF555555), modifier = Modifier.height(8.dp))
+                }
+            },
+            modifier = if (isMinimized) {
+                Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+            } else {
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+            }
+        ) {
+            TerminalMainContent(
                 isMinimized = isMinimized,
+                isFullScreen = false,
                 onToggleMinimize = { isMinimized = !isMinimized },
+                onToggleFullScreen = { isFullScreen = true },
                 onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
                 onOpenTermux = { viewModel.openTermux(context) },
                 onClear = {
@@ -1092,78 +1398,30 @@ fun TerminalBottomSheet(
                         BashShellSession.sendCommand("agy")
                     }
                 },
+                onZoomIn = {
+                    if (currentFontSize < 20f) {
+                        currentFontSize += 1f
+                        BashShellSession.setFontSize(currentFontSize)
+                    }
+                },
+                onZoomOut = {
+                    if (currentFontSize > 7f) {
+                        currentFontSize -= 1f
+                        BashShellSession.setFontSize(currentFontSize)
+                    }
+                },
                 isAuthNow = isAuthNow,
-                oauthUrl = oauthUrl
+                oauthUrl = oauthUrl,
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it },
+                tabs = tabs,
+                logs = logs,
+                onSend = { viewModel.sendBashCommand(it) },
+                onSetupLinux = { viewModel.installMiniLinux(context) },
+                isLinuxInstalled = isLinuxInstalled,
+                refreshTrigger = lifecycleRefreshKey,
+                drawerState = drawerState
             )
-
-            if (!isMinimized) {
-                // ── Compact Tab Bar ──────────────────────────────────────────
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0D1117))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        val isSelected = selectedTab == index
-                        Surface(
-                            onClick = { selectedTab = index },
-                            shape = RoundedCornerShape(4.dp),
-                            color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF161B22),
-                            border = BorderStroke(1.dp, if (isSelected) Color(0xFF388BFD) else Color(0xFF30363D)),
-                            modifier = Modifier.height(20.dp)
-                        ) {
-                            Box(Modifier.padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
-                                Text(
-                                    title,
-                                    style = TextStyle(
-                                        fontSize = 8.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) Color.White else Color(0xFF8B949E)
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // ── Tab Content ───────────────────────────────────────────────
-                // Keep BOTH tabs mounted at all times to prevent WebView destroy/recreate
-                // which causes screen blinking and terminal state loss on tab switch.
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    // BashShellTab always mounted — only visibility toggled
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .then(
-                                if (selectedTab == 1) Modifier
-                                else Modifier.size(0.dp)
-                            )
-                    ) {
-                        BashShellTab(
-                            logs = logs,
-                            onSend = { viewModel.sendBashCommand(it) },
-                            onSetupLinux = { viewModel.installMiniLinux(context) },
-                            isLinuxInstalled = isLinuxInstalled,
-                            refreshTrigger = lifecycleRefreshKey,
-                            drawerState = drawerState,
-                            oauthUrl = oauthUrl
-                        )
-                    }
-                    // BridgeLogsTab overlaid when Tab 0 selected
-                    if (selectedTab == 0) {
-                        Box(Modifier.fillMaxSize()) {
-                            BridgeLogsTab(logs)
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -1172,6 +1430,129 @@ fun TerminalBottomSheet(
             isLinuxInstalled = isLinuxInstalled,
             onDismiss = { showSettingsDialog = false }
         )
+    }
+}
+
+@Composable
+private fun TerminalMainContent(
+    isMinimized: Boolean,
+    isFullScreen: Boolean,
+    onToggleMinimize: () -> Unit,
+    onToggleFullScreen: () -> Unit,
+    onOpenDrawer: () -> Unit,
+    onOpenTermux: () -> Unit,
+    onClear: () -> Unit,
+    onSettings: () -> Unit,
+    onResume: () -> Unit,
+    onGoogleLogin: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    isAuthNow: Boolean,
+    oauthUrl: String?,
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit,
+    tabs: List<String>,
+    logs: List<String>,
+    onSend: (String) -> Unit,
+    onSetupLinux: () -> Unit,
+    isLinuxInstalled: Boolean,
+    refreshTrigger: Int,
+    drawerState: DrawerState
+) {
+    Column(
+        Modifier
+            .then(
+                if (isMinimized) Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                else Modifier
+                    .fillMaxSize()
+            )
+            .imePadding()
+            .navigationBarsPadding()
+    ) {
+        // ── Top Bar ────
+        TerminalTopBar(
+            isMinimized = isMinimized,
+            onToggleMinimize = onToggleMinimize,
+            onOpenDrawer = onOpenDrawer,
+            onOpenTermux = onOpenTermux,
+            onClear = onClear,
+            onSettings = onSettings,
+            onResume = onResume,
+            onGoogleLogin = onGoogleLogin,
+            isAuthNow = isAuthNow,
+            oauthUrl = oauthUrl,
+            isFullScreen = isFullScreen,
+            onToggleFullScreen = onToggleFullScreen,
+            onZoomIn = onZoomIn,
+            onZoomOut = onZoomOut
+        )
+
+        if (!isMinimized) {
+            // ── Compact Tab Bar ──────────────────────────────────────────
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0D1117))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                tabs.forEachIndexed { index, title ->
+                    val isSelected = selectedTab == index
+                    Surface(
+                        onClick = { onTabSelected(index) },
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isSelected) Color(0xFF1F6FEB) else Color(0xFF161B22),
+                        border = BorderStroke(1.dp, if (isSelected) Color(0xFF388BFD) else Color(0xFF30363D)),
+                        modifier = Modifier.height(20.dp)
+                    ) {
+                        Box(Modifier.padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                title,
+                                style = TextStyle(
+                                    fontSize = 8.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else Color(0xFF8B949E)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Tab Content ───────────────────────────────────────────────
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (selectedTab == 1) Modifier
+                            else Modifier.size(0.dp)
+                        )
+                ) {
+                    BashShellTab(
+                        logs = logs,
+                        onSend = onSend,
+                        onSetupLinux = onSetupLinux,
+                        isLinuxInstalled = isLinuxInstalled,
+                        refreshTrigger = refreshTrigger,
+                        drawerState = drawerState,
+                        oauthUrl = oauthUrl
+                    )
+                }
+                if (selectedTab == 0) {
+                    Box(Modifier.fillMaxSize()) {
+                        BridgeLogsTab(logs)
+                    }
+                }
+            }
+        }
     }
 }
 

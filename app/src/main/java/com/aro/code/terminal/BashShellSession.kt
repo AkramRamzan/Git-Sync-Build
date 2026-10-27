@@ -285,6 +285,14 @@ class ShellSession(
         jsInterface?.refocus()
     }
 
+    fun setModifiers(ctrl: Boolean, alt: Boolean) {
+        jsInterface?.setModifiers(ctrl, alt)
+    }
+
+    fun setFontSize(size: Float) {
+        jsInterface?.setFontSize(size)
+    }
+
     fun stop() {
         ptySession.stop()
         isRunning = false
@@ -423,6 +431,14 @@ object BashShellSession {
 
     fun clear() {
         activeSession?.clear()
+    }
+
+    fun setModifiers(ctrl: Boolean, alt: Boolean) {
+        activeSession?.setModifiers(ctrl, alt)
+    }
+
+    fun setFontSize(size: Float) {
+        activeSession?.setFontSize(size)
     }
 
     fun installMiniLinux(context: Context) {

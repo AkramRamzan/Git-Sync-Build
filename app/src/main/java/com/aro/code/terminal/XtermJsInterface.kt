@@ -44,6 +44,7 @@ class XtermJsInterface(
     }
 
     var webView: WebView? = null
+    var onModifierConsumedCallback: (String) -> Unit = {}
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
@@ -95,6 +96,15 @@ class XtermJsInterface(
             session.write(bytes)
         } catch (e: Exception) {
             Log.w(TAG, "sendInput decode error: ${e.message}")
+        }
+    }
+
+    // ── Called by JS: user typed a key that consumed sticky modifier ───────
+
+    @JavascriptInterface
+    fun onModifierConsumed(modifier: String) {
+        scope.launch(Dispatchers.Main) {
+            onModifierConsumedCallback(modifier)
         }
     }
 
@@ -155,6 +165,20 @@ class XtermJsInterface(
     fun refresh() {
         scope.launch(Dispatchers.Main) {
             webView?.evaluateJavascript("window.refreshTerminal && window.refreshTerminal()", null)
+        }
+    }
+
+    /** Update active CTRL and ALT modifier flags in xterm.js */
+    fun setModifiers(ctrl: Boolean, alt: Boolean) {
+        scope.launch(Dispatchers.Main) {
+            webView?.evaluateJavascript("window.setModifiers && window.setModifiers($ctrl, $alt);", null)
+        }
+    }
+
+    /** Set dynamic terminal font size in xterm.js */
+    fun setFontSize(size: Float) {
+        scope.launch(Dispatchers.Main) {
+            webView?.evaluateJavascript("window.setFontSize && window.setFontSize($size);", null)
         }
     }
 

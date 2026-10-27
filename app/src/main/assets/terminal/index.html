@@ -18,21 +18,20 @@ html, body {
   width: 100%; height: 100%;
   background: #0d1117;
   overflow: hidden;
-  touch-action: pan-y;
+  touch-action: none;
   overscroll-behavior: contain;
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-user-select: text;
+  user-select: text;
 }
 #terminal {
   width: 100%; height: 100%;
-  touch-action: pan-y;
+  touch-action: none;
   overscroll-behavior: contain;
 }
-/* Override xterm default font with JetBrains Mono and enable smooth touch scrolling */
+/* Ensure xterm viewport does not fight custom kinetic touch gestures */
 .xterm .xterm-viewport {
-  overflow-y: auto !important;
-  touch-action: pan-y !important;
-  -webkit-overflow-scrolling: touch !important;
+  overflow-y: hidden !important;
+  touch-action: none !important;
   overscroll-behavior: contain !important;
 }
 .xterm-screen canvas { image-rendering: pixelated; }
@@ -54,6 +53,15 @@ function toBase64Utf8(str) {
   }
   return btoa(bin);
 }
+
+// ─── Active Modifier Keys State (CTRL / ALT from Mobile Keybar) ──────────────
+let ctrlModifierActive = false;
+let altModifierActive = false;
+
+window.setModifiers = function(ctrl, alt) {
+  ctrlModifierActive = !!ctrl;
+  altModifierActive = !!alt;
+};
 
 // ─── Terminal Init (Termux Compact Font Size 9.5 & Crisp Line Height) ────────
 const term = new Terminal({
@@ -123,13 +131,10 @@ setupInputHandling();
 
 // ─── Native Key Event Delegation ──────────────────────────────────────────────
 term.attachCustomKeyEventHandler(function(e) {
-  // Let xterm.js process keys natively through its input pipeline.
-  // We do NOT intercept Space or Enter here because the helper textarea simultaneously
-  // receives the input event, which would cause double command execution / duplicate prompts.
   return true;
 });
 
-// ─── Enhanced Fluid Kinetic Touch Scrolling with Velocity & Inertia ───────────
+// ─── Termux-Calibrated Fluid Kinetic Touch Scrolling ─────────────────────────
 let touchStartY = 0;
 let touchStartX = 0;
 let touchLastY = 0;
@@ -162,28 +167,23 @@ terminalEl.addEventListener('touchstart', function(e) {
 terminalEl.addEventListener('touchmove', function(e) {
   if (e.touches.length === 1) {
     const currentY = e.touches[0].clientY;
-    const currentX = e.touches[0].clientX;
     const deltaY = currentY - touchLastY;
-    const totalDeltaY = currentY - touchStartY;
-    const totalDeltaX = currentX - touchStartX;
     const now = performance.now();
-    const dt = now - touchLastTime;
+    const dt = Math.max(1, now - touchLastTime);
 
-    if (dt > 8) {
-      scrollVelocity = deltaY / dt;
-      touchLastTime = now;
-      touchLastY = currentY;
-    }
+    // Exponential moving average for velocity calculation
+    const instantVelocity = deltaY / dt;
+    scrollVelocity = (scrollVelocity * 0.3) + (instantVelocity * 0.7);
+    touchLastTime = now;
+    touchLastY = currentY;
 
-    // Dominant vertical gesture = scroll buffer history smoothly
-    if (Math.abs(totalDeltaY) > Math.abs(totalDeltaX) || Math.abs(deltaY) > 2) {
-      touchScrollAccumulator += deltaY;
-      const cellHeight = 11.5;
-      const lines = Math.trunc(touchScrollAccumulator / cellHeight);
-      if (lines !== 0) {
-        term.scrollLines(-lines);
-        touchScrollAccumulator -= (lines * cellHeight);
-      }
+    // Apply delta directly to accumulator
+    touchScrollAccumulator += deltaY;
+    const cellHeight = 11.5;
+    const lines = Math.trunc(touchScrollAccumulator / cellHeight);
+    if (lines !== 0) {
+      term.scrollLines(-lines);
+      touchScrollAccumulator -= (lines * cellHeight);
     }
   }
 }, { passive: true });
@@ -192,8 +192,8 @@ terminalEl.addEventListener('touchend', function(e) {
   const now = performance.now();
   const timeSinceMove = now - touchLastTime;
 
-  // Kinetic momentum on flick gesture
-  if (timeSinceMove < 80 && Math.abs(scrollVelocity) > 0.1) {
+  // Kinetic inertia momentum on fast release
+  if (timeSinceMove < 70 && Math.abs(scrollVelocity) > 0.08) {
     let currentVel = scrollVelocity;
     const cellHeight = 11.5;
 
@@ -208,7 +208,7 @@ terminalEl.addEventListener('touchend', function(e) {
         term.scrollLines(-lines);
         touchScrollAccumulator -= (lines * cellHeight);
       }
-      currentVel *= 0.92; // smooth friction decay
+      currentVel *= 0.94; // natural Android friction decay
       inertiaAnimId = requestAnimationFrame(momentumStep);
     }
 
@@ -231,6 +231,20 @@ window.writeToTerminal = function(base64data) {
 
 window.clearTerminal = function() {
   term.write('\x1b[H\x1b[2J\x1b[3J');
+};
+
+// ─── Dynamic Font Sizing ──────────────────────────────────────────────────────
+window.setFontSize = function(size) {
+  try {
+    term.options.fontSize = size;
+    fitAddon.fit();
+    setupInputHandling();
+    if (window.AroTerminal) {
+      AroTerminal.onResize(term.rows, term.cols);
+    }
+  } catch(e) {
+    console.warn('setFontSize error:', e);
+  }
 };
 
 // ─── Refresh on Visibility / App Reopen ──────────────────────────────────────
@@ -259,14 +273,46 @@ window.addEventListener('focus', function() {
   } catch(e) {}
 });
 
-// ─── Input from xterm.js → Android (PTY) ─────────────────────────────────────
+// ─── Input from xterm.js → Android (PTY) with Universal Modifiers ────────────
 term.onData(function(data) {
-  // Normalize soft-keyboard newline (\n or \r\n) to carriage return (\r)
-  // so POSIX shell and interactive TUI tools (agy, inquirer, readline) receive
-  // single Enter submit without duplicating line breaks or commands.
   var out = data;
-  if (out === '\n' || out === '\r\n') {
-    out = '\r';
+
+  if (ctrlModifierActive) {
+    // Notify native Android to consume modifier if not locked
+    if (window.AroTerminal && window.AroTerminal.onModifierConsumed) {
+      AroTerminal.onModifierConsumed('CTRL');
+    }
+    // Convert ASCII letters to Control Bytes:
+    // 'A'-'Z' (65..90) & 'a'-'z' (97..122) -> 1..26
+    // E.g. 'O'/'o' -> 15 (Ctrl+O), 'C'/'c' -> 3 (Ctrl+C), 'Z'/'z' -> 26 (Ctrl+Z)
+    var ctrlStr = '';
+    for (var i = 0; i < out.length; i++) {
+      var code = out.charCodeAt(i);
+      if (code >= 65 && code <= 90) { // 'A'-'Z'
+        ctrlStr += String.fromCharCode(code - 64);
+      } else if (code >= 97 && code <= 122) { // 'a'-'z'
+        ctrlStr += String.fromCharCode(code - 96);
+      } else if (code === 32 || code === 64) { // Space or @ -> NUL (0x00)
+        ctrlStr += String.fromCharCode(0);
+      } else if (code >= 91 && code <= 95) { // [ \ ] ^ _ -> 27..31
+        ctrlStr += String.fromCharCode(code - 64);
+      } else if (code === 63) { // ? -> DEL (0x7F)
+        ctrlStr += String.fromCharCode(127);
+      } else {
+        ctrlStr += out[i];
+      }
+    }
+    out = ctrlStr;
+  } else if (altModifierActive) {
+    if (window.AroTerminal && window.AroTerminal.onModifierConsumed) {
+      AroTerminal.onModifierConsumed('ALT');
+    }
+    out = '\x1b' + out;
+  } else {
+    // Normalize soft-keyboard newline (\n or \r\n) to carriage return (\r)
+    if (out === '\n' || out === '\r\n') {
+      out = '\r';
+    }
   }
 
   if (window.AroTerminal) {
@@ -345,8 +391,6 @@ window.refocusTerminal = function() {
     const textarea = term.textarea || document.querySelector('.xterm-helper-textarea');
     if (textarea) { textarea.focus(); }
   } catch(e) {}
-  // Do NOT call refreshTerminal() here — it triggers fitAddon.fit() which
-  // causes canvas resize → screen flash. Only refocus keyboard/cursor.
 };
 
 // ─── Link handling ────────────────────────────────────────────────────────────

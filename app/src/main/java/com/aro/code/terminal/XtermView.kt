@@ -114,7 +114,7 @@ internal fun createTerminalWebView(
     // user can scroll terminal text smoothly up & down
     wv.setOnTouchListener { v, event ->
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                 v.parent?.requestDisallowInterceptTouchEvent(true)
                 if (!v.hasFocus()) v.requestFocus()
             }
