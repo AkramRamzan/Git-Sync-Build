@@ -133,6 +133,12 @@ internal fun createTerminalWebView(
     wv.isFocusable = true
     wv.isFocusableInTouchMode = true
 
+    // Disable Android OS stretch overscroll & native scrollbars to prevent gesture jank
+    wv.overScrollMode = android.view.View.OVER_SCROLL_NEVER
+    wv.isVerticalScrollBarEnabled = false
+    wv.isHorizontalScrollBarEnabled = false
+    wv.isNestedScrollingEnabled = false
+
     // Request parent container not to intercept vertical touch drags so
     // user can scroll terminal text smoothly up & down without BottomSheet stealing the gesture
     wv.setOnTouchListener { v, event ->

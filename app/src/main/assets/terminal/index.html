@@ -33,6 +33,20 @@ html, body {
   overflow-y: hidden !important;
   touch-action: none !important;
   overscroll-behavior: contain !important;
+  pointer-events: none !important;
+}
+/* Sleek overlay scroll indicator (Termux-style) */
+#scroll-indicator {
+  position: fixed;
+  top: 0;
+  right: 2px;
+  width: 3.5px;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 3px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1000;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .xterm-screen {
   transform: translateZ(0);
@@ -46,6 +60,7 @@ html, body {
 </head>
 <body>
 <div id="terminal"></div>
+<div id="scroll-indicator"></div>
 <script src="xterm.js"></script>
 <script src="xterm-addon-fit.js"></script>
 <script>
@@ -121,6 +136,110 @@ term.loadAddon(fitAddon);
 
 term.open(document.getElementById('terminal'));
 
+// ─── Neutralize xterm.js Internal Viewport Touch & Scroll Handlers ────────────
+// Eliminates dual-handler conflict so our kinetic touch engine has exclusive control
+try {
+  const vp = term._core && term._core.viewport;
+  if (vp) {
+    vp.handleTouchStart = function() {};
+    vp.handleTouchMove = function() { return true; };
+    vp._handleScroll = function() {};
+    vp._bubbleScroll = function() { return false; };
+  }
+} catch(e) {
+  console.warn('Viewport touch patch warning', e);
+}
+
+// ─── Fast Non-Reflow Character Row Height Cache ──────────────────────────────
+let cachedRowHeight = 12;
+function updateRowHeight() {
+  try {
+    const dims = term._core && term._core._renderService && term._core._renderService.dimensions;
+    if (dims && dims.css && dims.css.cell && dims.css.cell.height > 0) {
+      cachedRowHeight = dims.css.cell.height;
+      return;
+    }
+  } catch(_) {}
+  try {
+    const row = document.querySelector('.xterm-rows > div');
+    if (row) {
+      const h = row.getBoundingClientRect().height;
+      if (h > 0) {
+        cachedRowHeight = h;
+        return;
+      }
+    }
+  } catch(_) {}
+  cachedRowHeight = (term.options.fontSize || 9.5) * (term.options.lineHeight || 1.1);
+}
+updateRowHeight();
+
+// ─── Sleek Overlay Scroll Indicator (Termux Style) ────────────────────────────
+let indicatorFadeTimeout = null;
+function updateScrollIndicator() {
+  const ind = document.getElementById('scroll-indicator');
+  if (!ind) return;
+  const buf = term.buffer.active;
+  const total = buf.lines.length;
+  const visible = term.rows;
+  if (total <= visible) {
+    ind.style.opacity = '0';
+    return;
+  }
+  const maxScroll = Math.max(1, total - visible);
+  const pct = Math.max(0, Math.min(1, buf.viewportY / maxScroll));
+  const termHeight = terminalEl.clientHeight || window.innerHeight;
+  const thumbHeight = Math.max(24, Math.round((visible / total) * termHeight));
+  const thumbTop = Math.round(pct * (termHeight - thumbHeight));
+
+  ind.style.height = thumbHeight + 'px';
+  ind.style.top = thumbTop + 'px';
+  ind.style.opacity = '1';
+
+  if (indicatorFadeTimeout) clearTimeout(indicatorFadeTimeout);
+  indicatorFadeTimeout = setTimeout(function() {
+    ind.style.opacity = '0';
+  }, 750);
+}
+
+// ─── Clickable URL Link Detection (Termux Feature) ────────────────────────────
+try {
+  term.registerLinkProvider({
+    provideLinks: function(bufferLineNumber, callback) {
+      try {
+        const line = term.buffer.active.getLine(bufferLineNumber - 1);
+        if (!line) return callback(undefined);
+        const text = line.translateToString(true);
+        const urlRegex = /https?:\/\/[^\s"'`<>]+/g;
+        const links = [];
+        let match;
+        while ((match = urlRegex.exec(text)) !== null) {
+          const url = match[0];
+          const startX = match.index + 1;
+          const endX = startX + url.length;
+          links.push({
+            range: {
+              start: { x: startX, y: bufferLineNumber },
+              end: { x: endX, y: bufferLineNumber }
+            },
+            text: url,
+            activate: function(e, text) {
+              if (window.AroTerminal && window.AroTerminal.openUrl) {
+                AroTerminal.openUrl(text);
+              }
+            }
+          });
+        }
+        callback(links);
+      } catch(_) {
+        callback(undefined);
+      }
+    }
+  });
+} catch(e) {
+  console.warn('LinkProvider error:', e);
+}
+
 // ─── Helper Textarea Configuration (Prevents soft keyboard buffering) ────────
 function setupInputHandling() {
   const textarea = term.textarea || document.querySelector('.xterm-helper-textarea');
@@ -162,24 +281,6 @@ function stopInertia() {
   }
 }
 
-// Measure exact physical character row height in CSS pixels
-function getRowHeight() {
-  try {
-    const row = document.querySelector('.xterm-rows > div');
-    if (row) {
-      const h = row.getBoundingClientRect().height;
-      if (h > 0) return h;
-    }
-  } catch(_) {}
-  try {
-    const dims = term._core._renderService.dimensions;
-    if (dims && dims.css && dims.css.cell && dims.css.cell.height > 0) {
-      return dims.css.cell.height;
-    }
-  } catch(_) {}
-  return (term.options.fontSize || 9.5) * 1.15;
-}
-
 function recordTouchSample(y, t) {
   touchSamples.push({ y: y, t: t });
   // Keep only the most recent 80ms window of samples
@@ -195,7 +296,6 @@ function getVelocity() {
   const last = touchSamples[touchSamples.length - 1];
   const dt = last.t - first.t;
   if (dt < 10) return 0;
-  // Velocity in pixels per millisecond (smoothed over the entire 80ms window)
   return (last.y - first.y) / dt;
 }
 
@@ -209,6 +309,7 @@ terminalEl.addEventListener('touchstart', function(e) {
   stopInertia();
   touchSamples = [];
   if (e.touches.length === 1) {
+    updateRowHeight();
     const y = e.touches[0].clientY;
     touchStartY = y;
     touchLastY = y;
@@ -222,22 +323,33 @@ terminalEl.addEventListener('touchstart', function(e) {
 
 terminalEl.addEventListener('touchmove', function(e) {
   if (e.touches.length === 1) {
+    if (e.cancelable) e.preventDefault();
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - touchLastY;
     touchLastY = currentY;
     const now = performance.now();
-
     recordTouchSample(currentY, now);
+
+    // Termux boundary check: guard against accumulating remainder past top/bottom buffer
+    const buf = term.buffer.active;
+    const isAtTop = buf.viewportY <= 0;
+    const isAtBottom = buf.viewportY >= buf.baseY;
+
+    if ((isAtTop && deltaY > 0) || (isAtBottom && deltaY < 0)) {
+      touchScrollAccumulator = 0;
+      return;
+    }
 
     // 1:1 true physical drag — finger and terminal text move in perfect lockstep
     touchScrollAccumulator += deltaY;
-    const rowHeight = getRowHeight();
-    const lines = Math.trunc(touchScrollAccumulator / rowHeight);
+    const lines = Math.trunc(touchScrollAccumulator / cachedRowHeight);
     if (lines !== 0) {
       term.scrollLines(-lines);
-      touchScrollAccumulator -= (lines * rowHeight);
+      touchScrollAccumulator -= (lines * cachedRowHeight);
+      updateScrollIndicator();
     }
   } else if (e.touches.length === 2) {
+    if (e.cancelable) e.preventDefault();
     const dist = getPinchDist(e);
     if (pinchStartDist > 0) {
       const scale = dist / pinchStartDist;
@@ -247,41 +359,48 @@ terminalEl.addEventListener('touchmove', function(e) {
       }
     }
   }
-}, { passive: true });
+}, { passive: false });
 
 terminalEl.addEventListener('touchend', function(e) {
   const now = performance.now();
   const lastSample = touchSamples[touchSamples.length - 1];
 
-  // If user paused finger for more than 70ms before release, keep position without fling
-  if (lastSample && (now - lastSample.t) < 70) {
+  // If user paused finger for more than 65ms before release, keep position without fling
+  if (lastSample && (now - lastSample.t) <= 65) {
     let vel = getVelocity(); // px/ms
-    if (Math.abs(vel) > 0.15) {
-      // Clamp velocity to reasonable maximum (prevent crazy rocket fling)
+    if (Math.abs(vel) > 0.05) {
       vel = Math.max(-3.5, Math.min(3.5, vel));
 
       let lastFrame = performance.now();
-      const rowHeight = getRowHeight();
 
       function momentumStep(frameNow) {
         const dt = Math.min(32, Math.max(1, frameNow - lastFrame));
         lastFrame = frameNow;
 
-        if (Math.abs(vel) < 0.05) {
+        const buf = term.buffer.active;
+        // Stop immediately if hitting top or bottom boundary
+        if ((vel > 0 && buf.viewportY <= 0) || (vel < 0 && buf.viewportY >= buf.baseY)) {
           stopInertia();
+          touchScrollAccumulator = 0;
           return;
         }
 
         // Physical distance = velocity * elapsed time
         touchScrollAccumulator += (vel * dt);
-        const lines = Math.trunc(touchScrollAccumulator / rowHeight);
+        const lines = Math.trunc(touchScrollAccumulator / cachedRowHeight);
         if (lines !== 0) {
           term.scrollLines(-lines);
-          touchScrollAccumulator -= (lines * rowHeight);
+          touchScrollAccumulator -= (lines * cachedRowHeight);
+          updateScrollIndicator();
         }
 
-        // Standard Android physical friction deceleration
-        const decay = Math.pow(0.94, dt / 16.0);
+        if (Math.abs(vel) < 0.015) {
+          stopInertia();
+          return;
+        }
+
+        // Termux / Android standard smooth friction deceleration
+        const decay = Math.pow(0.965, dt / 16.0);
         vel *= decay;
 
         inertiaAnimId = requestAnimationFrame(momentumStep);
@@ -336,6 +455,7 @@ window.setFontSize = function(size) {
     term.options.fontSize = size;
     pinchStartFontSize = size; // keep pinch baseline in sync
     fitAddon.fit();
+    updateRowHeight();
     setupInputHandling();
     if (window.AroTerminal) {
       AroTerminal.onResize(term.rows, term.cols);
@@ -350,6 +470,7 @@ window.setFontSize = function(size) {
 window.refreshTerminal = function() {
   try {
     fitAddon.fit();
+    updateRowHeight();
     term.refresh(0, Math.max(0, term.rows - 1));
     setupInputHandling();
     if (window.AroTerminal) {
@@ -430,6 +551,7 @@ let resizeTimer = null;
 function doFitAndResize() {
   try {
     fitAddon.fit();
+    updateRowHeight();
     setupInputHandling();
     if (window.AroTerminal) {
       AroTerminal.onResize(term.rows, term.cols);
@@ -450,6 +572,7 @@ function startup() {
   isStarted = true;
   try {
     fitAddon.fit();
+    updateRowHeight();
     setupInputHandling();
   } catch(e) {
     console.warn('fitAddon.fit error:', e);
