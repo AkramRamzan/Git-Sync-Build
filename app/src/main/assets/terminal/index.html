@@ -103,7 +103,7 @@ const term = new Terminal({
   cursorBlink: true,
   cursorStyle: 'block',
   scrollback: 10000,
-  smoothScrollDuration: 0,
+  smoothScrollDuration: 80,
   scrollSensitivity: 2,
   fastScrollSensitivity: 4,
   convertEol: false,
@@ -141,14 +141,13 @@ term.attachCustomKeyEventHandler(function(e) {
   return true;
 });
 
-// ─── Termux-Identical Fluid Kinetic Touch Scrolling & Pinch Zoom ─────────────
+// ─── Termux Fluid Kinetic Touch Scrolling & Pinch Zoom ───────────────────────
 let touchStartY = 0;
 let touchLastY = 0;
 let touchLastTime = 0;
 let scrollVelocity = 0;
 let touchScrollAccumulator = 0;
 let inertiaAnimId = null;
-let scrollRafPending = false;
 
 let pinchStartDist = 0;
 let pinchStartFontSize = 9.5;
@@ -160,18 +159,6 @@ function stopInertia() {
     cancelAnimationFrame(inertiaAnimId);
     inertiaAnimId = null;
   }
-}
-
-// Dynamic cell height: queries rendered DOM from xterm.js dimensions
-function getCellHeight() {
-  try {
-    const dims = term._core._renderService.dimensions;
-    if (dims && dims.css && dims.css.cell && dims.css.cell.height > 0) {
-      return dims.css.cell.height;
-    }
-    if (dims && dims.actualCellHeight > 0) return dims.actualCellHeight;
-  } catch(_) {}
-  return (term.options.fontSize || 9.5) * 1.2;
 }
 
 function getPinchDist(e) {
@@ -192,40 +179,30 @@ terminalEl.addEventListener('touchstart', function(e) {
     pinchStartDist = getPinchDist(e);
     pinchStartFontSize = term.options.fontSize || 9.5;
   }
-  e.stopImmediatePropagation();
 }, { passive: true });
 
 terminalEl.addEventListener('touchmove', function(e) {
-  e.stopImmediatePropagation();
   if (e.touches.length === 1) {
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - touchLastY;
     const now = performance.now();
     const dt = Math.max(1, now - touchLastTime);
 
-    // Fast, responsive exponential moving average (0.2 / 0.8)
+    // Instant responsive velocity
     const instantVelocity = deltaY / dt;
-    scrollVelocity = (scrollVelocity * 0.2) + (instantVelocity * 0.8);
+    scrollVelocity = (scrollVelocity * 0.25) + (instantVelocity * 0.75);
     touchLastTime = now;
     touchLastY = currentY;
 
+    // Apply delta directly to accumulator and scroll lines immediately — zero lag!
     touchScrollAccumulator += deltaY;
-
-    // VSync batching: scroll inside next animation frame to eliminate frame drops
-    if (!scrollRafPending) {
-      scrollRafPending = true;
-      requestAnimationFrame(function() {
-        scrollRafPending = false;
-        const ch = getCellHeight();
-        const lines = Math.trunc(touchScrollAccumulator / ch);
-        if (lines !== 0) {
-          term.scrollLines(-lines);
-          touchScrollAccumulator -= (lines * ch);
-        }
-      });
+    const cellHeight = (term.options.fontSize || 9.5) * 1.15;
+    const lines = Math.trunc(touchScrollAccumulator / cellHeight);
+    if (lines !== 0) {
+      term.scrollLines(-lines);
+      touchScrollAccumulator -= (lines * cellHeight);
     }
   } else if (e.touches.length === 2) {
-    if (e.cancelable) e.preventDefault();
     const dist = getPinchDist(e);
     if (pinchStartDist > 0) {
       const scale = dist / pinchStartDist;
@@ -235,39 +212,29 @@ terminalEl.addEventListener('touchmove', function(e) {
       }
     }
   }
-}, { passive: false });
+}, { passive: true });
 
 terminalEl.addEventListener('touchend', function(e) {
-  e.stopImmediatePropagation();
   const now = performance.now();
   const timeSinceMove = now - touchLastTime;
 
-  // Kinetic momentum on fast release with true physical delta-time & Termux decay
-  if (timeSinceMove < 90 && Math.abs(scrollVelocity) > 0.04) {
+  // Kinetic momentum: fast release launches smooth inertial glide
+  if (timeSinceMove < 100 && Math.abs(scrollVelocity) > 0.04) {
     let currentVel = scrollVelocity;
-    let lastTick = performance.now();
+    const cellHeight = (term.options.fontSize || 9.5) * 1.15;
 
-    function momentumStep(frameTime) {
-      const dt = Math.min(32, Math.max(1, frameTime - lastTick));
-      lastTick = frameTime;
-
-      if (Math.abs(currentVel) < 0.012) {
+    function momentumStep() {
+      if (Math.abs(currentVel) < 0.015) {
         stopInertia();
         return;
       }
-
-      touchScrollAccumulator += (currentVel * dt);
-      const ch = getCellHeight();
-      const lines = Math.trunc(touchScrollAccumulator / ch);
+      touchScrollAccumulator += (currentVel * 16);
+      const lines = Math.trunc(touchScrollAccumulator / cellHeight);
       if (lines !== 0) {
         term.scrollLines(-lines);
-        touchScrollAccumulator -= (lines * ch);
+        touchScrollAccumulator -= (lines * cellHeight);
       }
-
-      // Android physical decay: ~0.955 per 16ms, normalized across 60/90/120Hz displays
-      const decay = Math.pow(0.955, dt / 16.0);
-      currentVel *= decay;
-
+      currentVel *= 0.955; // Termux-matched long glide
       inertiaAnimId = requestAnimationFrame(momentumStep);
     }
 

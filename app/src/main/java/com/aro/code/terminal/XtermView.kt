@@ -133,26 +133,15 @@ internal fun createTerminalWebView(
     wv.isFocusable = true
     wv.isFocusableInTouchMode = true
 
-    // Touch: use 8dp slop threshold before stealing vertical scroll from parent.
-    // This lets single taps register correctly and avoids fighting BottomSheet.
-    val touchSlop = (8 * context.resources.displayMetrics.density).toInt()
-    var downY = 0f
-    var scrollLocked = false
+    // Request parent container not to intercept vertical touch drags so
+    // user can scroll terminal text smoothly up & down without BottomSheet stealing the gesture
     wv.setOnTouchListener { v, event ->
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downY = event.y
-                scrollLocked = false
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                v.parent?.requestDisallowInterceptTouchEvent(true)
                 if (!v.hasFocus()) v.requestFocus()
             }
-            MotionEvent.ACTION_MOVE -> {
-                if (!scrollLocked && Math.abs(event.y - downY) > touchSlop) {
-                    scrollLocked = true
-                    v.parent?.requestDisallowInterceptTouchEvent(true)
-                }
-            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                scrollLocked = false
                 v.parent?.requestDisallowInterceptTouchEvent(false)
             }
         }
