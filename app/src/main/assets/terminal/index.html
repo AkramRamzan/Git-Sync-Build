@@ -103,7 +103,7 @@ const term = new Terminal({
   cursorBlink: true,
   cursorStyle: 'block',
   scrollback: 10000,
-  smoothScrollDuration: 80,
+  smoothScrollDuration: 0,
   scrollSensitivity: 2,
   fastScrollSensitivity: 4,
   convertEol: false,
@@ -152,6 +152,9 @@ let inertiaAnimId = null;
 let pinchStartDist = 0;
 let pinchStartFontSize = 9.5;
 
+// Effortless scroll multiplier — high sensitivity so user doesn't have to apply force
+const TOUCH_SCROLL_SENSITIVITY = 2.5;
+
 const terminalEl = document.getElementById('terminal');
 
 function stopInertia() {
@@ -188,14 +191,14 @@ terminalEl.addEventListener('touchmove', function(e) {
     const now = performance.now();
     const dt = Math.max(1, now - touchLastTime);
 
-    // Instant responsive velocity
+    // Instant responsive velocity calculation
     const instantVelocity = deltaY / dt;
     scrollVelocity = (scrollVelocity * 0.25) + (instantVelocity * 0.75);
     touchLastTime = now;
     touchLastY = currentY;
 
-    // Apply delta directly to accumulator and scroll lines immediately — zero lag!
-    touchScrollAccumulator += deltaY;
+    // Multiply delta for effortless feather-touch scrolling (Termux feel)
+    touchScrollAccumulator += (deltaY * TOUCH_SCROLL_SENSITIVITY);
     const cellHeight = (term.options.fontSize || 9.5) * 1.15;
     const lines = Math.trunc(touchScrollAccumulator / cellHeight);
     if (lines !== 0) {
@@ -218,23 +221,23 @@ terminalEl.addEventListener('touchend', function(e) {
   const now = performance.now();
   const timeSinceMove = now - touchLastTime;
 
-  // Kinetic momentum: fast release launches smooth inertial glide
-  if (timeSinceMove < 100 && Math.abs(scrollVelocity) > 0.04) {
+  // Kinetic momentum: gentle flick launches long smooth Termux-style glide
+  if (timeSinceMove < 120 && Math.abs(scrollVelocity) > 0.02) {
     let currentVel = scrollVelocity;
     const cellHeight = (term.options.fontSize || 9.5) * 1.15;
 
     function momentumStep() {
-      if (Math.abs(currentVel) < 0.015) {
+      if (Math.abs(currentVel) < 0.01) {
         stopInertia();
         return;
       }
-      touchScrollAccumulator += (currentVel * 16);
+      touchScrollAccumulator += (currentVel * 38);
       const lines = Math.trunc(touchScrollAccumulator / cellHeight);
       if (lines !== 0) {
         term.scrollLines(-lines);
         touchScrollAccumulator -= (lines * cellHeight);
       }
-      currentVel *= 0.955; // Termux-matched long glide
+      currentVel *= 0.965; // Long Termux glide
       inertiaAnimId = requestAnimationFrame(momentumStep);
     }
 
