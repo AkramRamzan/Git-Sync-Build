@@ -307,4 +307,94 @@ class SafProjectManager @Inject constructor(
         val candidate = File("/storage/emulated/0", relative)
         return if (candidate.exists()) candidate else null
     }
+
+    suspend fun createFile(parentPathOrUri: String, fileName: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (parentPathOrUri.startsWith("content://")) {
+                val parentUri = Uri.parse(parentPathOrUri)
+                val parentDoc = if (parentPathOrUri.contains("/tree/")) {
+                    DocumentFile.fromTreeUri(context, parentUri)
+                } else {
+                    DocumentFile.fromSingleUri(context, parentUri)
+                } ?: error("Cannot resolve parent document")
+                val mime = when {
+                    fileName.endsWith(".kt") || fileName.endsWith(".java") -> "text/x-java-source"
+                    fileName.endsWith(".json") -> "application/json"
+                    fileName.endsWith(".py") -> "text/x-python"
+                    fileName.endsWith(".js") || fileName.endsWith(".ts") -> "application/javascript"
+                    fileName.endsWith(".html") -> "text/html"
+                    fileName.endsWith(".xml") -> "text/xml"
+                    fileName.endsWith(".md") -> "text/markdown"
+                    else -> "text/plain"
+                }
+                val newDoc = parentDoc.createFile(mime, fileName) ?: error("Failed to create file: $fileName")
+                newDoc.uri.toString()
+            } else {
+                val parentDir = File(parentPathOrUri)
+                parentDir.mkdirs()
+                val newFile = File(parentDir, fileName)
+                require(!newFile.exists()) { "File already exists: $fileName" }
+                newFile.createNewFile()
+                newFile.absolutePath
+            }
+        }
+    }
+
+    suspend fun createDirectory(parentPathOrUri: String, dirName: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (parentPathOrUri.startsWith("content://")) {
+                val parentUri = Uri.parse(parentPathOrUri)
+                val parentDoc = if (parentPathOrUri.contains("/tree/")) {
+                    DocumentFile.fromTreeUri(context, parentUri)
+                } else {
+                    DocumentFile.fromSingleUri(context, parentUri)
+                } ?: error("Cannot resolve parent document")
+                val newDir = parentDoc.createDirectory(dirName) ?: error("Failed to create folder: $dirName")
+                newDir.uri.toString()
+            } else {
+                val parentDir = File(parentPathOrUri)
+                val newDir = File(parentDir, dirName)
+                require(!newDir.exists()) { "Directory already exists: $dirName" }
+                newDir.mkdirs()
+                newDir.absolutePath
+            }
+        }
+    }
+
+    suspend fun deleteItem(pathOrUri: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (pathOrUri.startsWith("content://")) {
+                val uri = Uri.parse(pathOrUri)
+                val doc = DocumentFile.fromSingleUri(context, uri)
+                    ?: DocumentFile.fromTreeUri(context, uri)
+                    ?: error("Cannot resolve item to delete")
+                require(doc.delete()) { "Failed to delete document: $pathOrUri" }
+            } else {
+                val file = File(pathOrUri)
+                if (file.isDirectory) {
+                    file.deleteRecursively()
+                } else {
+                    file.delete()
+                }
+                Unit
+            }
+        }
+    }
+
+    suspend fun renameItem(pathOrUri: String, newName: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (pathOrUri.startsWith("content://")) {
+                val uri = Uri.parse(pathOrUri)
+                val doc = DocumentFile.fromSingleUri(context, uri) ?: error("Cannot resolve item to rename")
+                require(doc.renameTo(newName)) { "Failed to rename document" }
+                doc.uri.toString()
+            } else {
+                val file = File(pathOrUri)
+                val newFile = File(file.parentFile, newName)
+                require(!newFile.exists()) { "Target name already exists: $newName" }
+                require(file.renameTo(newFile)) { "Failed to rename file" }
+                newFile.absolutePath
+            }
+        }
+    }
 }

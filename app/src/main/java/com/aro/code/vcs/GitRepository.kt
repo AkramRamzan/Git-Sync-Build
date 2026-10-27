@@ -82,6 +82,25 @@ class GitRepository @Inject constructor(
             }
         }
 
+    // ── Pull ────────────────────────────────────────────────────────────────
+    suspend fun pull(repoDir: File, token: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                Git.open(repoDir).use { git ->
+                    val pullResult = git.pull()
+                        .setCredentialsProvider(
+                            UsernamePasswordCredentialsProvider("oauth2", token)
+                        )
+                        .call()
+                    if (pullResult.isSuccessful) {
+                        "Pull successful: ${pullResult.mergeResult?.mergeStatus ?: "Up to date"}"
+                    } else {
+                        error("Pull failed: ${pullResult.mergeResult?.mergeStatus ?: "Unknown"}")
+                    }
+                }
+            }
+        }
+
     // ── Stash (pre-patch checkpoint) ────────────────────────────────────────
     suspend fun stash(repoDir: File): Result<Boolean> = withContext(Dispatchers.IO) {
         runCatching {

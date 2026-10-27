@@ -36,7 +36,11 @@ data class WorkspaceUiState(
     val showCloneDialog: Boolean = false,
     val showAntiGravityDialog: Boolean = false,
     val showGitDialog: Boolean = false,
-    val gitStatus: GitStatusInfo? = null
+    val gitStatus: GitStatusInfo? = null,
+    val searchQuery: String = "",
+    val showCreateFileDialog: Boolean = false,
+    val showCreateFolderDialog: Boolean = false,
+    val selectedTargetParent: String? = null
 )
 
 @HiltViewModel
@@ -114,10 +118,36 @@ class WorkspaceViewModel @Inject constructor(
 
             cachedRawNodes = rawNodes
 
-            // Apply expanded state
-            val flattened = applyExpandedState(rawNodes)
+            // Apply filter and expanded state
+            val filtered = if (_uiState.value.searchQuery.isBlank()) rawNodes else filterNodes(rawNodes, _uiState.value.searchQuery.trim())
+            val flattened = applyExpandedState(filtered)
             _uiState.update { it.copy(projectNodes = flattened, isLoading = false) }
         }
+    }
+
+    fun setSearchQuery(q: String) {
+        _uiState.update { it.copy(searchQuery = q) }
+        if (cachedRawNodes.isNotEmpty()) {
+            val filtered = if (q.isBlank()) cachedRawNodes else filterNodes(cachedRawNodes, q.trim())
+            val flattened = applyExpandedState(filtered)
+            _uiState.update { it.copy(projectNodes = flattened) }
+        }
+    }
+
+    private fun filterNodes(nodes: List<ProjectNode>, query: String): List<ProjectNode> {
+        val result = mutableListOf<ProjectNode>()
+        for (node in nodes) {
+            val matches = node.name.contains(query, ignoreCase = true)
+            if (node.isDirectory) {
+                val matchingChildren = filterNodes(node.children, query)
+                if (matches || matchingChildren.isNotEmpty()) {
+                    result.add(node.copy(children = matchingChildren))
+                }
+            } else if (matches) {
+                result.add(node)
+            }
+        }
+        return result
     }
 
     private fun applyExpandedState(nodes: List<ProjectNode>): List<ProjectNode> {
@@ -352,6 +382,90 @@ class WorkspaceViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    fun openCreateFileDialog(parent: String? = null) {
+        val target = parent ?: _uiState.value.projectUriString ?: fs.reposRoot.absolutePath
+        _uiState.update { it.copy(showCreateFileDialog = true, selectedTargetParent = target) }
+    }
+
+    fun dismissCreateFileDialog() {
+        _uiState.update { it.copy(showCreateFileDialog = false, selectedTargetParent = null) }
+    }
+
+    fun openCreateFolderDialog(parent: String? = null) {
+        val target = parent ?: _uiState.value.projectUriString ?: fs.reposRoot.absolutePath
+        _uiState.update { it.copy(showCreateFolderDialog = true, selectedTargetParent = target) }
+    }
+
+    fun dismissCreateFolderDialog() {
+        _uiState.update { it.copy(showCreateFolderDialog = false, selectedTargetParent = null) }
+    }
+
+    fun createFile(fileName: String) {
+        if (fileName.isBlank()) return
+        val parent = _uiState.value.selectedTargetParent ?: _uiState.value.projectUriString ?: fs.reposRoot.absolutePath
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showCreateFileDialog = false) }
+            safManager.createFile(parent, fileName.trim())
+                .onSuccess {
+                    _uiState.update { it.copy(statusMessage = "Created $fileName ✓") }
+                    refreshFileTree()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isLoading = false, statusMessage = "Create failed: ${e.message}") }
+                }
+        }
+    }
+
+    fun createFolder(folderName: String) {
+        if (folderName.isBlank()) return
+        val parent = _uiState.value.selectedTargetParent ?: _uiState.value.projectUriString ?: fs.reposRoot.absolutePath
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, showCreateFolderDialog = false) }
+            safManager.createDirectory(parent, folderName.trim())
+                .onSuccess {
+                    _uiState.update { it.copy(statusMessage = "Created folder $folderName ✓") }
+                    refreshFileTree()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isLoading = false, statusMessage = "Create failed: ${e.message}") }
+                }
+        }
+    }
+
+    fun deleteNode(node: ProjectNode) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val pathOrUri = node.uri?.toString() ?: node.file?.absolutePath ?: node.path
+            safManager.deleteItem(pathOrUri)
+                .onSuccess {
+                    _uiState.update { it.copy(statusMessage = "Deleted ${node.name} ✓") }
+                    refreshFileTree()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isLoading = false, statusMessage = "Delete failed: ${e.message}") }
+                }
+        }
+    }
+
+    fun gitPull() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, statusMessage = "Pulling latest changes…") }
+            val projectPath = safManager.getPhysicalPath(_uiState.value.projectUriString)
+            val repoDir = if (projectPath != null) File(projectPath) else fs.reposRoot
+            val token = credentialStore.githubToken.firstOrNull() ?: ""
+
+            git.pull(repoDir, token)
+                .onSuccess { msg ->
+                    _uiState.update { it.copy(isLoading = false, statusMessage = msg) }
+                    refreshFileTree()
+                    openGitDialog()
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isLoading = false, statusMessage = "Pull failed: ${e.message}") }
+                }
         }
     }
 

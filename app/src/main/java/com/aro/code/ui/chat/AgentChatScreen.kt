@@ -6,13 +6,16 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +66,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AgentChatScreen(
     initialEngine: ChatEngine = ChatEngine.ANTIGRAVITY,
+    initialFilePath: String = "",
     onBack: (() -> Unit)? = null,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
@@ -76,6 +81,18 @@ fun AgentChatScreen(
 
     LaunchedEffect(initialEngine) {
         viewModel.selectEngine(initialEngine)
+    }
+
+    LaunchedEffect(initialFilePath) {
+        if (initialFilePath.isNotBlank()) {
+            coroutineScope.launch(Dispatchers.IO) {
+                val fileName = initialFilePath.substringAfterLast('/').substringAfterLast(':')
+                val content = runCatching {
+                    java.io.File(initialFilePath).takeIf { it.exists() }?.readText(Charsets.UTF_8) ?: ""
+                }.getOrDefault("")
+                viewModel.attachFile(name = fileName, content = content, uriString = initialFilePath)
+            }
+        }
     }
 
     // File picker launcher — single file (asynchronous on IO dispatcher to prevent UI thread ANR)
@@ -772,17 +789,32 @@ fun AgentChatScreen(
                             color = Color(0xFF8B949E)
                         )
                     }
-                    Button(
-                        onClick = {
-                            viewModel.startNewSession()
-                            viewModel.dismissSessionHistory()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("New", fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = {
+                                exportChat(context, state.currentMessages, state.engine)
+                            },
+                            enabled = state.currentMessages.isNotEmpty(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(end = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Export (.md)", fontSize = 11.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.startNewSession()
+                                viewModel.dismissSessionHistory()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF238636)),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("New", fontSize = 12.sp)
+                        }
                     }
                 }
 
@@ -986,14 +1018,46 @@ private fun ChatBubble(
                     }
                 }
 
-                // Dense, compact conversation text (Termux formatting)
-                Text(
-                    text = if (message.isStreaming && message.text.isEmpty()) "..." else message.text,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp,
-                    color = if (!isUser && isAntiGravity) Color(0xFFE6EDF3) else Color.White
-                )
+                // Message Content (Parsed Markdown code blocks for assistant, plain text for user)
+                if (isUser) {
+                    Text(
+                        text = message.text,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp,
+                        lineHeight = 15.sp,
+                        color = Color.White
+                    )
+                } else {
+                    val segments = remember(message.text) { parseMessageSegments(message.text) }
+                    if (segments.isEmpty() && message.isStreaming) {
+                        Text(
+                            text = "...",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                            lineHeight = 15.sp,
+                            color = Color(0xFF8B949E)
+                        )
+                    } else {
+                        segments.forEach { segment ->
+                            when (segment) {
+                                is MessageSegment.Text -> {
+                                    if (segment.text.isNotBlank()) {
+                                        Text(
+                                            text = segment.text,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 15.sp,
+                                            color = if (isAntiGravity) Color(0xFFE6EDF3) else Color.White
+                                        )
+                                    }
+                                }
+                                is MessageSegment.CodeBlock -> {
+                                    CodeBlockCard(language = segment.language, code = segment.code)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Copy to clipboard button — visible on non-streaming, non-empty messages
                 if (!message.isStreaming && message.text.isNotBlank()) {
@@ -1126,3 +1190,173 @@ private suspend fun readFolderFiles(context: Context, treeUri: Uri): List<Attach
         traverseDir(docId)
         result
     }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Markdown Code Block & Chat Export Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+private sealed class MessageSegment {
+    data class Text(val text: String) : MessageSegment()
+    data class CodeBlock(val language: String, val code: String) : MessageSegment()
+}
+
+private fun parseMessageSegments(text: String): List<MessageSegment> {
+    val segments = mutableListOf<MessageSegment>()
+    val fenceRegex = Regex("```([a-zA-Z0-9_-]*)\\s*\\n([\\s\\S]*?)```")
+    var lastIndex = 0
+    val matches = fenceRegex.findAll(text)
+    for (match in matches) {
+        val range = match.range
+        if (range.first > lastIndex) {
+            val plainText = text.substring(lastIndex, range.first)
+            if (plainText.isNotEmpty()) {
+                segments.add(MessageSegment.Text(plainText))
+            }
+        }
+        val lang = match.groupValues[1].trim().ifBlank { "code" }
+        val code = match.groupValues[2].trimEnd()
+        segments.add(MessageSegment.CodeBlock(lang, code))
+        lastIndex = range.last + 1
+    }
+    if (lastIndex < text.length) {
+        val remaining = text.substring(lastIndex)
+        val unclosedMatch = Regex("```([a-zA-Z0-9_-]*)\\s*\\n([\\s\\S]*)$").find(remaining)
+        if (unclosedMatch != null) {
+            val prefix = remaining.substring(0, unclosedMatch.range.first)
+            if (prefix.isNotEmpty()) segments.add(MessageSegment.Text(prefix))
+            val lang = unclosedMatch.groupValues[1].trim().ifBlank { "code" }
+            val code = unclosedMatch.groupValues[2]
+            segments.add(MessageSegment.CodeBlock(lang, code))
+        } else {
+            if (remaining.isNotEmpty()) {
+                segments.add(MessageSegment.Text(remaining))
+            }
+        }
+    }
+    return segments
+}
+
+@Composable
+private fun CodeBlockCard(
+    language: String,
+    code: String
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2000L)
+            copied = false
+        }
+    }
+
+    Surface(
+        color = Color(0xFF0D1117),
+        shape = RoundedCornerShape(6.dp),
+        border = BorderStroke(1.dp, Color(0xFF30363D)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF161B22))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = language.uppercase(),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF58A6FF)
+                )
+                Surface(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(code))
+                        copied = true
+                    },
+                    color = if (copied) Color(0xFF238636) else Color(0xFF21262D),
+                    shape = RoundedCornerShape(4.dp),
+                    border = BorderStroke(0.5.dp, Color(0xFF30363D))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy code",
+                            tint = if (copied) Color.White else Color(0xFF8B949E),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (copied) "Copied!" else "Copy",
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (copied) Color.White else Color(0xFF8B949E)
+                        )
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = code,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = Color(0xFFE6EDF3)
+                )
+            }
+        }
+    }
+}
+
+private fun exportChat(context: Context, messages: List<ChatMessage>, engine: ChatEngine) {
+    if (messages.isEmpty()) return
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+    val timestamp = sdf.format(java.util.Date())
+    val sb = java.lang.StringBuilder()
+    val engineName = if (engine == ChatEngine.ANTIGRAVITY) "AntiGravity Agent" else "Gemini Model"
+    sb.append("# ARO Code AI Session Export ($engineName)\n")
+    sb.append("*Generated: $timestamp*\n\n---\n\n")
+
+    for (msg in messages) {
+        val role = if (msg.role == "user") "### 👤 User" else "### 🤖 Assistant"
+        sb.append("$role\n\n")
+        if (msg.attachments.isNotEmpty()) {
+            sb.append("*📎 Attached: ${msg.attachments.joinToString(", ") { it.name }}*\n\n")
+        }
+        sb.append("${msg.text}\n\n---\n\n")
+    }
+
+    val markdownContent = sb.toString()
+
+    // 1. Copy to clipboard
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+    val clip = android.content.ClipData.newPlainText("ARO Code Chat Export", markdownContent)
+    clipboard?.setPrimaryClip(clip)
+
+    // 2. Open Share Intent
+    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_SUBJECT, "ARO Code AI Chat Export")
+        putExtra(android.content.Intent.EXTRA_TEXT, markdownContent)
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(android.content.Intent.createChooser(shareIntent, "Share / Save Chat Export").apply {
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    })
+    android.widget.Toast.makeText(context, "Chat exported & copied to clipboard!", android.widget.Toast.LENGTH_SHORT).show()
+}
