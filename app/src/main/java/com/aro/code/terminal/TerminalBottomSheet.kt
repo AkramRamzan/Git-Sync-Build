@@ -1446,7 +1446,6 @@ fun TerminalBottomSheet(
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState = sheetState,
-            sheetGesturesEnabled = false,
             containerColor = Color(0xFF161B22),
             dragHandle = {
                 if (!isMinimized) {
