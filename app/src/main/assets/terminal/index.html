@@ -18,15 +18,15 @@ html, body {
   width: 100%; height: 100%;
   background: #0d1117;
   overflow: hidden;
-  touch-action: none;
-  overscroll-behavior: contain;
+  touch-action: none !important;
+  overscroll-behavior: contain !important;
   -webkit-user-select: text;
   user-select: text;
 }
-#terminal {
+#terminal, .xterm, .xterm-screen, .xterm-screen canvas, .xterm-rows {
   width: 100%; height: 100%;
-  touch-action: none;
-  overscroll-behavior: contain;
+  touch-action: none !important;
+  overscroll-behavior: contain !important;
 }
 /* Ensure xterm viewport does not fight custom kinetic touch gestures */
 .xterm .xterm-viewport {
@@ -278,11 +278,9 @@ term.attachCustomKeyEventHandler(function(e) {
 let touchStartY = 0;
 let touchLastY = 0;
 let touchScrollRemainder = 0;
-let pendingScrollLines = 0;
-let scrollRafId = null;
 let inertiaAnimId = null;
 
-// Windowed touch sample buffer for stable velocity tracking
+// Windowed touch sample buffer for stable velocity tracking (last 120ms)
 let touchSamples = [];
 
 let pinchStartDist = 0;
@@ -300,38 +298,44 @@ function stopInertia() {
   }
 }
 
-function flushPendingScroll() {
-  if (scrollRafId) {
-    cancelAnimationFrame(scrollRafId);
-    scrollRafId = null;
-  }
-  if (pendingScrollLines !== 0) {
-    const lines = pendingScrollLines;
-    pendingScrollLines = 0;
-    term.scrollLines(lines);
-    updateScrollIndicatorFast();
-  }
-}
+function doScroll(deltaRows) {
+  if (deltaRows === 0) return;
 
-function scheduleScroll(lines) {
-  pendingScrollLines += lines;
-  if (!scrollRafId) {
-    scrollRafId = requestAnimationFrame(function() {
-      scrollRafId = null;
-      if (pendingScrollLines !== 0) {
-        const linesToScroll = pendingScrollLines;
-        pendingScrollLines = 0;
-        term.scrollLines(linesToScroll);
-        updateScrollIndicatorFast();
-      }
-    });
+  const isAlt = term.buffer.active && term.buffer.active.type === 'alternate';
+  if (isAlt) {
+    // Termux behavior: inside alternate buffer (e.g. less, nano, vim, man, agy),
+    // scrolling translates into UP/DOWN arrow keys sent to the shell/PTY
+    const key = deltaRows > 0 ? '\x1b[A' : '\x1b[B'; // drag down -> scroll up
+    const count = Math.min(6, Math.abs(deltaRows));
+    let str = '';
+    for (let i = 0; i < count; i++) str += key;
+    if (window.AroTerminal && AroTerminal.sendInput) {
+      AroTerminal.sendInput(toBase64Utf8(str));
+    }
+    return;
   }
+
+  // Normal buffer scrollback
+  const buf = term.buffer.active;
+  if (!buf) return;
+
+  // deltaRows > 0: finger dragged DOWN -> scroll UP into scrollback history
+  // deltaRows < 0: finger dragged UP -> scroll DOWN towards latest prompt
+  if (deltaRows > 0 && buf.viewportY <= 0) {
+    return; // Already at top of scrollback
+  }
+  if (deltaRows < 0 && buf.viewportY >= buf.baseY) {
+    return; // Already at bottom
+  }
+
+  term.scrollLines(-deltaRows);
+  updateScrollIndicatorFast();
 }
 
 function recordTouchSample(y, t) {
   touchSamples.push({ y: y, t: t });
-  // Keep only the most recent 100ms window of samples
-  const cutoff = t - 100;
+  // Keep only the most recent 120ms window of samples
+  const cutoff = t - 120;
   while (touchSamples.length > 2 && touchSamples[0].t < cutoff) {
     touchSamples.shift();
   }
@@ -339,22 +343,10 @@ function recordTouchSample(y, t) {
 
 function getVelocity() {
   if (touchSamples.length < 2) return 0;
-  const now = performance.now();
+  const first = touchSamples[0];
   const last = touchSamples[touchSamples.length - 1];
-  // If finger stopped moving before release (> 60ms pause), do not fling
-  if (now - last.t > 60) return 0;
-
-  // Use release window of ~80ms to calculate fling velocity
-  const windowStart = last.t - 80;
-  let first = touchSamples[0];
-  for (let i = touchSamples.length - 2; i >= 0; i--) {
-    if (touchSamples[i].t <= windowStart) {
-      first = touchSamples[i];
-      break;
-    }
-  }
   const dt = last.t - first.t;
-  if (dt < 12) return 0;
+  if (dt < 10) return 0;
   return (last.y - first.y) / dt; // px/ms
 }
 
@@ -366,7 +358,6 @@ function getPinchDist(e) {
 
 terminalEl.addEventListener('touchstart', function(e) {
   stopInertia();
-  flushPendingScroll();
   touchScrollRemainder = 0;
   touchSamples = [];
   if (e.touches.length === 1) {
@@ -383,38 +374,21 @@ terminalEl.addEventListener('touchstart', function(e) {
 
 terminalEl.addEventListener('touchmove', function(e) {
   if (e.touches.length === 1) {
-    if (e.cancelable) e.preventDefault();
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - touchLastY;
     touchLastY = currentY;
-    const now = performance.now();
-    recordTouchSample(currentY, now);
+    recordTouchSample(currentY, performance.now());
 
-    // Termux remainder line accumulator with calibrated sensitivity
+    // Termux remainder line accumulator with calibrated sensitivity (immediate 1:1 physical response)
     touchScrollRemainder += (deltaY * SCROLL_SENSITIVITY);
     const rowHeight = cachedRowHeight || 12;
     const deltaRows = Math.trunc(touchScrollRemainder / rowHeight);
 
     if (deltaRows !== 0) {
-      const buf = term.buffer.active;
-      // Boundary guards:
-      // deltaRows > 0 means dragging downward -> scroll upward into history
-      if (deltaRows > 0 && buf.viewportY <= 0) {
-        touchScrollRemainder = 0;
-        return;
-      }
-      // deltaRows < 0 means dragging upward -> scroll downward to active screen
-      if (deltaRows < 0 && buf.viewportY >= buf.baseY) {
-        touchScrollRemainder = 0;
-        return;
-      }
-
       touchScrollRemainder -= (deltaRows * rowHeight);
-      // deltaRows > 0 -> pass negative lines to xterm to scroll up
-      scheduleScroll(-deltaRows);
+      doScroll(deltaRows);
     }
   } else if (e.touches.length === 2) {
-    if (e.cancelable) e.preventDefault();
     const dist = getPinchDist(e);
     if (pinchStartDist > 0) {
       const scale = dist / pinchStartDist;
@@ -424,70 +398,77 @@ terminalEl.addEventListener('touchmove', function(e) {
       }
     }
   }
-}, { passive: false });
+}, { passive: true });
 
 terminalEl.addEventListener('touchend', function(e) {
-  flushPendingScroll();
-
   let vel = getVelocity(); // px/ms
-  // If velocity is above threshold, launch smooth Termux-style inertial glide
-  if (Math.abs(vel) > 0.05) {
-    vel = Math.max(-2.8, Math.min(2.8, vel * SCROLL_SENSITIVITY));
+  touchSamples = [];
 
-    let lastFrame = performance.now();
-    let momentumRemainder = touchScrollRemainder;
+  // Minimum fling threshold: 0.08 px/ms (80 px/s)
+  if (Math.abs(vel) > 0.08) {
+    // Only launch momentum glide in normal scrollback buffer (not in alternate buffer)
+    if (term.buffer.active && term.buffer.active.type !== 'alternate') {
+      // Clamped max velocity: 3.2 px/ms (~3200 px/s)
+      vel = Math.max(-3.2, Math.min(3.2, vel * SCROLL_SENSITIVITY));
 
-    function momentumStep(frameNow) {
-      const dt = Math.min(32, Math.max(1, frameNow - lastFrame));
-      lastFrame = frameNow;
+      let lastFrame = performance.now();
+      let momentumRemainder = touchScrollRemainder;
 
-      const buf = term.buffer.active;
-      // Stop immediately if hitting top or bottom boundary
-      if ((vel > 0 && buf.viewportY <= 0) || (vel < 0 && buf.viewportY >= buf.baseY)) {
-        stopInertia();
-        touchScrollRemainder = 0;
-        return;
-      }
+      function momentumStep(frameNow) {
+        const dt = Math.min(32, Math.max(1, frameNow - lastFrame));
+        lastFrame = frameNow;
 
-      momentumRemainder += (vel * dt);
-      const rowHeight = cachedRowHeight || 12;
-      const lines = Math.trunc(momentumRemainder / rowHeight);
-      if (lines !== 0) {
-        if ((lines > 0 && buf.viewportY <= 0) || (lines < 0 && buf.viewportY >= buf.baseY)) {
+        const buf = term.buffer.active;
+        if (!buf) {
+          stopInertia();
+          return;
+        }
+
+        // Stop immediately if hitting top or bottom boundary
+        if ((vel > 0 && buf.viewportY <= 0) || (vel < 0 && buf.viewportY >= buf.baseY)) {
           stopInertia();
           touchScrollRemainder = 0;
           return;
         }
 
-        term.scrollLines(-lines);
-        momentumRemainder -= (lines * rowHeight);
-        updateScrollIndicatorFast();
+        momentumRemainder += (vel * dt);
+        const rowHeight = cachedRowHeight || 12;
+        const deltaRows = Math.trunc(momentumRemainder / rowHeight);
+
+        if (deltaRows !== 0) {
+          if ((deltaRows > 0 && buf.viewportY <= 0) || (deltaRows < 0 && buf.viewportY >= buf.baseY)) {
+            stopInertia();
+            touchScrollRemainder = 0;
+            return;
+          }
+
+          momentumRemainder -= (deltaRows * rowHeight);
+          doScroll(deltaRows);
+        }
+
+        // Android standard smooth exponential deceleration (0.962 decay per 16ms)
+        const decay = Math.pow(0.962, dt / 16.0);
+        vel *= decay;
+
+        if (Math.abs(vel) < 0.02) {
+          stopInertia();
+          touchScrollRemainder = 0;
+          return;
+        }
+
+        inertiaAnimId = requestAnimationFrame(momentumStep);
       }
 
-      // Termux exponential friction decay: 0.965 per 16ms
-      const decay = Math.pow(0.965, dt / 16.0);
-      vel *= decay;
-
-      if (Math.abs(vel) < 0.015) {
-        stopInertia();
-        touchScrollRemainder = 0;
-        return;
-      }
-
+      stopInertia();
       inertiaAnimId = requestAnimationFrame(momentumStep);
     }
-
-    stopInertia();
-    inertiaAnimId = requestAnimationFrame(momentumStep);
   } else {
     touchScrollRemainder = 0;
   }
-  touchSamples = [];
 }, { passive: true });
 
 terminalEl.addEventListener('touchcancel', function() {
   stopInertia();
-  flushPendingScroll();
   touchScrollRemainder = 0;
   touchSamples = [];
 }, { passive: true });

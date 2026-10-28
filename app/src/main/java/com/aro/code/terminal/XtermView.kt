@@ -143,9 +143,12 @@ internal fun createTerminalWebView(
     // user can scroll terminal text smoothly up & down without BottomSheet stealing the gesture
     wv.setOnTouchListener { v, event ->
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+            MotionEvent.ACTION_DOWN -> {
                 v.parent?.requestDisallowInterceptTouchEvent(true)
                 if (!v.hasFocus()) v.requestFocus()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                v.parent?.requestDisallowInterceptTouchEvent(true)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 v.parent?.requestDisallowInterceptTouchEvent(false)
