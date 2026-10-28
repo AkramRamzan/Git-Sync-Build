@@ -298,14 +298,71 @@ function stopInertia() {
   }
 }
 
+function isMouseTrackingActive() {
+  try {
+    if (term.modes && term.modes.mouseTrackingMode && term.modes.mouseTrackingMode !== 'none') {
+      return true;
+    }
+    const ms = term._core && term._core.coreMouseService;
+    if (ms && ms.areMouseEventsActive) {
+      return true;
+    }
+  } catch(_) {}
+  return false;
+}
+
+function sendMouseWheel(up, count) {
+  const col = Math.max(1, Math.floor(term.cols / 2));
+  const row = Math.max(1, Math.floor(term.rows / 2));
+  const ms = term._core && term._core.coreMouseService;
+
+  if (ms && ms.areMouseEventsActive) {
+    const action = up ? 0 : 1; // 0 = wheel up, 1 = wheel down
+    for (let i = 0; i < count; i++) {
+      ms.triggerMouseEvent({
+        col: col - 1,
+        row: row - 1,
+        x: (col - 1) * (cachedRowHeight || 12),
+        y: (row - 1) * (cachedRowHeight || 12),
+        button: 4, // 4 = mouse wheel
+        action: action,
+        ctrl: false,
+        alt: false,
+        shift: false
+      });
+    }
+    return;
+  }
+
+  // Fallback: direct SGR mouse escape sequences (standard for agy, tmux, etc.)
+  const btn = up ? 64 : 65;
+  const seq = '\x1b[<' + btn + ';' + col + ';' + row + 'M';
+  let fullStr = '';
+  for (let i = 0; i < count; i++) fullStr += seq;
+  if (window.AroTerminal && AroTerminal.sendInput) {
+    AroTerminal.sendInput(toBase64Utf8(fullStr));
+  }
+}
+
 function doScroll(deltaRows) {
   if (deltaRows === 0) return;
 
+  // 1. Mouse Tracking Priority (Termux approach):
+  // When running interactive CLI apps like agy, tmux, htop that enable mouse reporting,
+  // touch scroll must translate into mouse wheel events to scroll the conversation!
+  if (isMouseTrackingActive()) {
+    const up = deltaRows > 0;
+    const count = Math.min(8, Math.max(1, Math.abs(deltaRows)));
+    sendMouseWheel(up, count);
+    return;
+  }
+
+  // 2. Alternate buffer without mouse tracking (e.g. less, nano, vim, man, git log)
   const isAlt = term.buffer.active && term.buffer.active.type === 'alternate';
   if (isAlt) {
-    // Termux behavior: inside alternate buffer (e.g. less, nano, vim, man, agy),
-    // scrolling translates into UP/DOWN arrow keys sent to the shell/PTY
-    const key = deltaRows > 0 ? '\x1b[A' : '\x1b[B'; // drag down -> scroll up
+    const appCursor = term._core && term._core.coreService && term._core.coreService.decPrivateModes.applicationCursorKeys;
+    const prefix = appCursor ? '\x1bO' : '\x1b[';
+    const key = deltaRows > 0 ? (prefix + 'A') : (prefix + 'B'); // drag down -> scroll up
     const count = Math.min(6, Math.abs(deltaRows));
     let str = '';
     for (let i = 0; i < count; i++) str += key;
@@ -315,7 +372,7 @@ function doScroll(deltaRows) {
     return;
   }
 
-  // Normal buffer scrollback
+  // 3. Normal buffer scrollback
   const buf = term.buffer.active;
   if (!buf) return;
 
